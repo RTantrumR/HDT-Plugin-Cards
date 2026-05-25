@@ -1,0 +1,20 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio / Rider
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Third-party HDT reference assemblies — copied locally, not redistributed.
+# See README for how to populate libs/.
+libs/
+
+# Plugin bundle staging
+dist/
+
+# Bundled card snapshot — derived from the web-app repo, copied locally (see README).
+HsbgCardLookup/data/

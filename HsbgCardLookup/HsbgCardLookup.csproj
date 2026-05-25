@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{E53BEEE6-D1E5-41EA-8F48-8D807F9E706D}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>HsbgCardLookup</RootNamespace>
+    <AssemblyName>HsbgCardLookup</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <LangVersion>7.3</LangVersion>
+    <!-- Source files use UTF-8 (Cyrillic alias literals); tell csc so it doesn't mis-decode. -->
+    <CodePage>65001</CodePage>
+    <!-- HDT plugins are loaded as AnyCPU and run inside HDT's process. -->
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <!-- WPF: needed now because IPlugin.MenuItem is System.Windows.Controls.MenuItem -->
+    <Reference Include="System.Xaml" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <!-- HDT host assembly. Private=False: do NOT copy the 11 MB exe into our output. -->
+    <Reference Include="HearthstoneDeckTracker">
+      <HintPath>..\libs\HearthstoneDeckTracker.exe</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- HearthDb ships with HDT and is loaded in-process; reference its copy (GameTag/Race/Card etc.). -->
+    <Reference Include="HearthDb">
+      <HintPath>..\libs\HearthDb.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- Newtonsoft ships with HDT and is loaded in-process; reference its copy, don't redistribute. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\libs\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Config\PluginConfig.cs" />
+    <Compile Include="Data\CardStore.cs" />
+    <Compile Include="Game\GameStateProbe.cs" />
+    <Compile Include="Hotkey\HotkeyManager.cs" />
+    <Compile Include="Plugin.cs" />
+    <Compile Include="Search\BgCard.cs" />
+    <Compile Include="Search\Levenshtein.cs" />
+    <Compile Include="Search\Aliases.cs" />
+    <Compile Include="Search\QueryParser.cs" />
+    <Compile Include="Search\SearchEngine.cs" />
+    <Compile Include="Ui\ImageCache.cs" />
+    <Compile Include="Ui\ResultConverters.cs" />
+    <Compile Include="Ui\UiKit.cs" />
+    <Compile Include="Ui\Dropdown.cs" />
+    <Compile Include="Ui\OverlayBase.cs" />
+    <Compile Include="Ui\OverlayLarge.cs" />
+    <Compile Include="Ui\SettingsWindow.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Bundled card snapshot, copied next to the DLL (CardStore loads it from there). -->
+    <None Include="data\cards.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
