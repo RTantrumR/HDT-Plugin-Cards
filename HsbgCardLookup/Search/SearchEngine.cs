@@ -170,6 +170,18 @@ namespace HsbgCardLookup.Search
                 else res = res.Where(hasCat).ToList();
             }
 
+            // Trinket tier (lesser/greater): filters only when a trinket card type is also present
+            // ("greater trinket"); otherwise demoted to name/text so "Greater Pouches" resolves by name.
+            foreach (var tt in parsed.TrinketTiers)
+            {
+                if (parsed.CardTypes.Contains("trinket"))
+                {
+                    string t = tt;
+                    res = res.Where(c => c.TrinketTier == t).ToList();
+                }
+                else demotedTerms.Add(tt);
+            }
+
             // Name/text search with fuzzy fallback. Demoted facet words join the name query.
             bool isFuzzy = false;
             string effectiveNameQuery = string.Join(" ",

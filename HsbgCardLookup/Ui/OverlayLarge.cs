@@ -50,9 +50,9 @@ namespace HsbgCardLookup.Ui
         private readonly DispatcherTimer _debounce;
 
         // Filters
-        private string _type, _tribe, _spellSchool;
+        private string _type, _tribe, _spellSchool, _trinketTier;
         private int? _tier;
-        private Dropdown _tribeDd, _spellDd;
+        private Dropdown _tribeDd, _spellDd, _trinketDd;
 
         // Detail
         private BgCard _selected;
@@ -174,6 +174,7 @@ namespace HsbgCardLookup.Ui
                 _type = v;
                 if (v != "minion") { _tribe = null; _tribeDd?.SetSelected(null); }
                 if (v != "spell") { _spellSchool = null; _spellDd?.SetSelected(null); }
+                if (v != "trinket") { _trinketTier = null; _trinketDd?.SetSelected(null); }
                 ApplyTypeContext();
                 Refresh();
             }));
@@ -188,12 +189,21 @@ namespace HsbgCardLookup.Ui
             var spellItems = _store.SpellSchools.Select(s => new Dropdown.Item(s, s)).ToList();
             _spellDd = new Dropdown(this, "All Schools", spellItems, v => { _spellSchool = v; Refresh(); });
             dds.Children.Add(_spellDd);
+
+            var trinketItems = new List<Dropdown.Item>
+            {
+                new Dropdown.Item("lesser", "Lesser"),
+                new Dropdown.Item("greater", "Greater"),
+            };
+            _trinketDd = new Dropdown(this, "All Trinkets", trinketItems, v => { _trinketTier = v; Refresh(); });
+            dds.Children.Add(_trinketDd);
         }
 
         private void ApplyTypeContext()
         {
             if (_tribeDd != null) _tribeDd.Visibility = _type == "minion" ? Visibility.Visible : Visibility.Collapsed;
             if (_spellDd != null) _spellDd.Visibility = _type == "spell" ? Visibility.Visible : Visibility.Collapsed;
+            if (_trinketDd != null) _trinketDd.Visibility = _type == "trinket" ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private UIElement BuildDetail()
@@ -681,6 +691,7 @@ namespace HsbgCardLookup.Ui
                 if (!ok) return false;
             }
             if (_spellSchool != null && !string.Equals(c.SpellSchool, _spellSchool, StringComparison.OrdinalIgnoreCase)) return false;
+            if (_trinketTier != null && !string.Equals(c.TrinketTier, _trinketTier, StringComparison.OrdinalIgnoreCase)) return false;
             return true;
         }
 

@@ -60,6 +60,9 @@ namespace HsbgCardLookup.Search
             new AliasEntry("spellcraft", "category", new[] { "spellcraft" }),
             new AliasEntry("battlecruiser", "category", new[] { "battlecruiser" }),
             new AliasEntry("darkmoon", "category", new[] { "darkmoon", "dark moon" }),
+            // Trinket tiers (only filter when a trinket card type is also present)
+            new AliasEntry("lesser", "trinket_tier", new[] { "lesser", "менший" }),
+            new AliasEntry("greater", "trinket_tier", new[] { "greater", "більший" }),
             // Card types
             new AliasEntry("minion", "card_type", new[] { "minion", "minions", "мініон" }),
             new AliasEntry("hero", "card_type", new[] { "hero", "heroes", "герой" }),

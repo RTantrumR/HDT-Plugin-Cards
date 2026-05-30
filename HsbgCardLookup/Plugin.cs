@@ -46,7 +46,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 1, 0);
+        public Version Version => new Version(0, 1, 1);
 
         public MenuItem MenuItem => null;
 

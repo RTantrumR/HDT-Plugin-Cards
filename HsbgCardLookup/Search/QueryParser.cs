@@ -15,6 +15,7 @@ namespace HsbgCardLookup.Search
         public List<string> Tribes = new List<string>();
         public List<string> CardTypes = new List<string>();
         public List<string> Categories = new List<string>();
+        public List<string> TrinketTiers = new List<string>();
         public string NameQuery = "";
         public bool IsStructured;
     }
@@ -37,6 +38,7 @@ namespace HsbgCardLookup.Search
             var tribes = new List<string>();
             var cardTypes = new List<string>();
             var categories = new List<string>();
+            var trinketTiers = new List<string>();
             var remaining = new List<string>();
 
             // Pass 1: slash-stats (5/6) and tier markers (t3 / т3)
@@ -80,7 +82,10 @@ namespace HsbgCardLookup.Search
             // rather than an impossible type==trinket AND type==hero_power).
             var unmatched = new List<string>();
             var consumed = new HashSet<int>();
+            // Card types and trinket tiers are both single-valued first-wins: keep the earliest by
+            // position and demote the rest to the name/text query.
             var cardTypeHits = new List<(int Index, string Canonical, string[] Tokens)>();
+            var trinketTierHits = new List<(int Index, string Canonical, string[] Tokens)>();
 
             for (int i = 0; i < remaining.Count - 2; i++)
             {
@@ -88,10 +93,10 @@ namespace HsbgCardLookup.Search
                 var match = Aliases.FuzzyMatch(remaining[i] + " " + remaining[i + 1] + " " + remaining[i + 2]);
                 if (match != null)
                 {
-                    if (match.Type == "card_type")
-                        cardTypeHits.Add((i, match.Canonical, new[] { remaining[i], remaining[i + 1], remaining[i + 2] }));
-                    else
-                        Route(match, keywords, textKeywords, tribes, cardTypes, categories);
+                    var toks = new[] { remaining[i], remaining[i + 1], remaining[i + 2] };
+                    if (match.Type == "card_type") cardTypeHits.Add((i, match.Canonical, toks));
+                    else if (match.Type == "trinket_tier") trinketTierHits.Add((i, match.Canonical, toks));
+                    else Route(match, keywords, textKeywords, tribes, cardTypes, categories);
                     consumed.Add(i); consumed.Add(i + 1); consumed.Add(i + 2);
                 }
             }
@@ -102,10 +107,10 @@ namespace HsbgCardLookup.Search
                 var match = Aliases.FuzzyMatch(remaining[i] + " " + remaining[i + 1]);
                 if (match != null)
                 {
-                    if (match.Type == "card_type")
-                        cardTypeHits.Add((i, match.Canonical, new[] { remaining[i], remaining[i + 1] }));
-                    else
-                        Route(match, keywords, textKeywords, tribes, cardTypes, categories);
+                    var toks = new[] { remaining[i], remaining[i + 1] };
+                    if (match.Type == "card_type") cardTypeHits.Add((i, match.Canonical, toks));
+                    else if (match.Type == "trinket_tier") trinketTierHits.Add((i, match.Canonical, toks));
+                    else Route(match, keywords, textKeywords, tribes, cardTypes, categories);
                     consumed.Add(i); consumed.Add(i + 1);
                 }
             }
@@ -121,6 +126,10 @@ namespace HsbgCardLookup.Search
                 else if (match.Type == "card_type")
                 {
                     cardTypeHits.Add((i, match.Canonical, new[] { remaining[i] }));
+                }
+                else if (match.Type == "trinket_tier")
+                {
+                    trinketTierHits.Add((i, match.Canonical, new[] { remaining[i] }));
                 }
                 else if (IsDuplicate(match, keywords, textKeywords, tribes, cardTypes, categories))
                 {
@@ -141,10 +150,19 @@ namespace HsbgCardLookup.Search
                     unmatched.AddRange(cardTypeHits[k].Tokens);
             }
 
+            // Trinket tiers: same first-wins resolution (a trinket is lesser xor greater).
+            if (trinketTierHits.Count > 0)
+            {
+                trinketTierHits.Sort((a, b) => a.Index.CompareTo(b.Index));
+                trinketTiers.Add(trinketTierHits[0].Canonical);
+                for (int k = 1; k < trinketTierHits.Count; k++)
+                    unmatched.AddRange(trinketTierHits[k].Tokens);
+            }
+
             bool isStructured =
                 statsA.HasValue || tier.HasValue || keywords.Count > 0 ||
                 textKeywords.Count > 0 || tribes.Count > 0 || cardTypes.Count > 0 ||
-                categories.Count > 0;
+                categories.Count > 0 || trinketTiers.Count > 0;
 
             return new ParsedQuery
             {
@@ -156,6 +174,7 @@ namespace HsbgCardLookup.Search
                 Tribes = tribes,
                 CardTypes = cardTypes,
                 Categories = categories,
+                TrinketTiers = trinketTiers,
                 NameQuery = string.Join(" ", unmatched),
                 IsStructured = isStructured,
             };
