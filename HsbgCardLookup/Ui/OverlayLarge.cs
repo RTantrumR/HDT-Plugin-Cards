@@ -8,8 +8,11 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Windows.Shapes;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Hotkey;
+using HsbgCardLookup.Net;
 using HsbgCardLookup.Search;
 
 namespace HsbgCardLookup.Ui
@@ -25,13 +28,24 @@ namespace HsbgCardLookup.Ui
 
         private readonly CardStore _store;
         private readonly PluginConfig _config;
+        private readonly HotkeyManager _hotkey;
 
         private readonly TextBox _search;
         private ListBox _grid;
         private TextBlock _hint;
         private TextBlock _status;
+        private Border _notice;            // update banner (auto-update success / restart / failed)
         private Border _bulbHost;
         private Border _clearSearch;
+        private Border _searchField;                          // for the "active input" border tint
+
+        // Notification bell (manual patch-notes notices), right of search.
+        private Border _bell;
+        private Border _bellBadge;
+        private TextBlock _bellCount;
+        private Path _bellGlyph;
+        private Popup _bellPopup;
+        private List<PluginNotice> _notices;
         private bool _smart = true;
         private readonly DispatcherTimer _debounce;
 
@@ -49,10 +63,11 @@ namespace HsbgCardLookup.Ui
         private TextBlock _relatedHeader;
         private UniformGrid _relatedPanel;
 
-        public OverlayLarge(CardStore store, PluginConfig config) : base(880, 800)
+        public OverlayLarge(CardStore store, PluginConfig config, HotkeyManager hotkey) : base(880, 800)
         {
             _store = store;
             _config = config;
+            _hotkey = hotkey;
 
             try { Resources[typeof(ScrollBar)] = UiKit.ThinScrollBarStyle(); } catch { }
 
@@ -69,6 +84,11 @@ namespace HsbgCardLookup.Ui
             BuildDropdownsInto(dds);
             DockPanel.SetDock(dds, Dock.Right);
             topRow.Children.Add(dds);
+            // Bell sits between the search box and the filter dropdowns (docked right, after dds, so
+            // it lands to the left of the filters). Hidden until there's an unread notification.
+            var bell = BuildBell();
+            DockPanel.SetDock(bell, Dock.Right);
+            topRow.Children.Add(bell);
             _bulbHost = new Border
             {
                 Cursor = Cursors.Hand, Padding = new Thickness(4), Background = Brushes.Transparent,
@@ -82,7 +102,8 @@ namespace HsbgCardLookup.Ui
             var trailing = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             trailing.Children.Add(_clearSearch);
             trailing.Children.Add(_bulbHost);
-            topRow.Children.Add(UiKit.SearchField("Search: name, tribe, keyword, t3, 5/5…", out _search, 18, trailing));
+            _searchField = UiKit.SearchField("Search: name, tribe, keyword, t3, 5/5…", out _search, 18, trailing);
+            topRow.Children.Add(_searchField);
             Grid.SetRow(topRow, 0);
             grid.Children.Add(topRow);
 
@@ -116,17 +137,28 @@ namespace HsbgCardLookup.Ui
             Grid.SetRow(body, 1);
             grid.Children.Add(body);
 
-            SetRoot(UiKit.Panel(grid));
+            // Update banner sits above everything, collapsed until there's something to say.
+            _notice = new Border { Visibility = Visibility.Collapsed };
+            var withNotice = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(_notice, Dock.Top);
+            withNotice.Children.Add(_notice);
+            withNotice.Children.Add(grid);
+
+            SetRoot(UiKit.Panel(withNotice));
 
             _search.TextChanged += (s, e) =>
             {
                 _debounce.Stop(); _debounce.Start();
                 _clearSearch.Visibility = string.IsNullOrEmpty(_search.Text) ? Visibility.Collapsed : Visibility.Visible;
             };
-            // Focus the search on every open (IsVisibleChanged fires on each Hide->Show; Activated
-            // alone only reliably fired on the first open).
-            Activated += (s, e) => FocusSearch();
-            IsVisibleChanged += (s, e) => { if (IsVisible) FocusSearch(); };
+            // The overlay takes real keyboard focus (via OverlayBase's thread-attach trick) without
+            // taking the OS foreground, so the search box gets native text input (any language/IME).
+            // Focus it + show the active indicator on each open.
+            IsVisibleChanged += (s, e) =>
+            {
+                if (IsVisible) { FocusSearch(); SetInputActive(true); }
+                else SetInputActive(false);
+            };
             PreviewKeyDown += OnKey;
 
             UpdateBulb();
@@ -217,23 +249,28 @@ namespace HsbgCardLookup.Ui
             return sv;
         }
 
+        // Window-level key handling. The search box holds real keyboard focus, so it natively consumes
+        // character keys (any language). Esc/Tab/Enter always act here; the letter-bound Golden and
+        // Focus keys act ONLY when the search box isn't focused (so typing 'g'/'s' in a query still
+        // works) — focus leaves the box when you click a card or press Enter.
         private void OnKey(object sender, KeyEventArgs e)
         {
-            // Tab always toggles Smart/Normal while the window is open (it auto-closes on alt-tab,
-            // so there's no other use for Tab here). Handled at window level, so it works
-            // regardless of which control has focus.
+            if (e.Key == Key.Escape) { Hide(); e.Handled = true; return; }
             if (e.Key == Key.Tab) { ToggleSmart(); e.Handled = true; return; }
+            if (e.Key == Key.Enter) { SelectFirstResult(); e.Handled = true; return; }
 
-            // Re-focus search (default S) when it isn't focused — e.g. after clicking a card.
-            // Gated on !search-focused so typing 's' in a query still works.
-            if (e.Key == _config.FocusKeyParsed && !_search.IsKeyboardFocused)
+            bool searchFocused = _search.IsKeyboardFocused;
+
+            // Focus key (default S): return keyboard focus to the search box.
+            if (e.Key == _config.FocusKeyParsed && !searchFocused)
             {
                 FocusSearch();
                 e.Handled = true;
                 return;
             }
 
-            if (e.Key == _config.GoldenKeyParsed && !_search.IsKeyboardFocused
+            // Golden key (default G): toggle golden art of the selected minion.
+            if (e.Key == _config.GoldenKeyParsed && !searchFocused
                 && _selected != null && _selected.CardType == "minion" && _selected.HasGoldenDiff)
             {
                 ToggleGolden();
@@ -241,20 +278,331 @@ namespace HsbgCardLookup.Ui
             }
         }
 
-        // Focus the search box on open (deferred so it lands after the window activates over the
-        // game), selecting any existing text so the user can immediately type a fresh query.
+        private void SelectFirstResult()
+        {
+            var first = (_grid?.Items != null && _grid.Items.Count > 0)
+                ? (_grid.Items[0] as System.Collections.Generic.IList<BgCard>)?.FirstOrDefault(c => c != null)
+                : null;
+            if (first != null) OnCardClicked(first);
+        }
+
+        // Focus the search box on open (deferred so it lands after the window's thread-attach focus
+        // grab), selecting existing text so the user can immediately type a fresh query.
         private void FocusSearch()
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                _search.Focus();
-                Keyboard.Focus(_search);
-                _search.SelectAll();
+                try { _search.Focus(); Keyboard.Focus(_search); _search.SelectAll(); } catch { }
             }), DispatcherPriority.Input);
+        }
+
+        // Accent border on the search box while the overlay is open (the real OS caret shows now
+        // that the window takes focus, so no fake caret is needed).
+        private void SetInputActive(bool active)
+        {
+            try
+            {
+                if (_searchField == null) return;
+                _searchField.BorderBrush = active ? UiKit.AccentBrush : UiKit.StrokeBrush;
+                _searchField.BorderThickness = new Thickness(active ? 1.5 : 1);
+            }
+            catch { }
         }
 
         /// <summary>Re-run the current query/browse (e.g. after the Show-Duos setting changes).</summary>
         public void RefreshPool() => Refresh();
+
+        // ── Notification bell (manual patch-notes notices) ──
+
+        private UIElement BuildBell()
+        {
+            _bellGlyph = new Path
+            {
+                // Feather "bell": body + clapper.
+                Data = Geometry.Parse("M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0"),
+                Stroke = UiKit.TextMuted,
+                StrokeThickness = 1.8,
+                Stretch = Stretch.Uniform,
+                Width = 18,
+                Height = 18,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _bellCount = new TextBlock
+            {
+                Foreground = Brushes.White, FontSize = 9, FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            };
+            _bellBadge = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(0xE0, 0x3A, 0x3A)),
+                CornerRadius = new CornerRadius(7), MinWidth = 14, Height = 14,
+                Padding = new Thickness(3, 0, 3, 0),
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, -4, -4, 0), Child = _bellCount, Visibility = Visibility.Collapsed
+            };
+            var box = new Grid { Width = 26, Height = 24 };
+            box.Children.Add(_bellGlyph);
+            box.Children.Add(_bellBadge);
+
+            _bell = new Border
+            {
+                Cursor = Cursors.Hand, Background = Brushes.Transparent,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0),
+                Child = box, Visibility = Visibility.Collapsed,
+                ToolTip = "Notifications"
+            };
+            _bell.MouseEnter += (s, e) => _bellGlyph.Stroke = UiKit.AccentBrush;
+            _bell.MouseLeave += (s, e) => { if (_bellPopup == null || !_bellPopup.IsOpen) _bellGlyph.Stroke = UiKit.TextMuted; };
+
+            _bellPopup = new Popup
+            {
+                PlacementTarget = _bell,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                PopupAnimation = PopupAnimation.Fade,
+                VerticalOffset = 6
+            };
+            // Guard the overlay's focus-loss auto-hide while the popup is open, and mark everything
+            // shown as seen on close (the user has now viewed the panel → badge clears next refresh).
+            _bellPopup.Closed += (s, e) =>
+            {
+                _ownerEndPopup();
+                MarkShownSeen();
+                UpdateBell();
+            };
+
+            _bell.MouseLeftButtonUp += (s, e) => ToggleBellPopup();
+            return _bell;
+        }
+
+        // BeginPopup/EndPopup live on OverlayBase; tiny wrappers so the lambda above reads cleanly.
+        private void _ownerEndPopup() => EndPopup();
+
+        /// <summary>Receive the notices discovered at load; refresh the bell.</summary>
+        public void SetNotices(List<PluginNotice> notices) { _notices = notices; UpdateBell(); }
+
+        // Fresh + active notices, newest first — what the popup lists.
+        private List<PluginNotice> Shown() =>
+            (_notices ?? new List<PluginNotice>())
+                .Where(n => n != null && n.Active && IsFresh(n))
+                .OrderByDescending(n => n.Id).ToList();
+
+        private List<PluginNotice> Unread() =>
+            Shown().Where(n => n.Id > _config.PatchNoticeLastSeenId).ToList();
+
+        private static bool IsFresh(PluginNotice n)
+        {
+            if (string.IsNullOrEmpty(n.Date)) return true;   // no date → treat as current
+            if (DateTime.TryParse(n.Date, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d))
+                return (DateTime.UtcNow - d.ToUniversalTime()).TotalDays <= 7;
+            return true;
+        }
+
+        private void UpdateBell()
+        {
+            if (_bell == null) return;
+            var unread = Unread();
+            // Keep the bell visible while the popup is open even after marking seen, so the popup
+            // (anchored to the bell) doesn't lose its placement target mid-view.
+            bool keepForPopup = _bellPopup != null && _bellPopup.IsOpen;
+            if (unread.Count == 0 && !keepForPopup) { _bell.Visibility = Visibility.Collapsed; return; }
+            _bell.Visibility = Visibility.Visible;
+            _bellBadge.Visibility = unread.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _bellCount.Text = unread.Count > 9 ? "9+" : unread.Count.ToString();
+        }
+
+        private void MarkShownSeen()
+        {
+            var shown = Shown();
+            if (shown.Count == 0) return;
+            int maxId = shown.Max(n => n.Id);
+            if (maxId > _config.PatchNoticeLastSeenId)
+            {
+                _config.PatchNoticeLastSeenId = maxId;
+                _config.Save();
+            }
+        }
+
+        // First click opens the panel listing notifications; clicking a row there opens its link.
+        private void ToggleBellPopup()
+        {
+            if (_bellPopup == null) return;
+            if (_bellPopup.IsOpen) { _bellPopup.IsOpen = false; return; }
+            _bellPopup.Child = BuildBellPopupContent();
+            BeginPopup();
+            _bellPopup.IsOpen = true;
+        }
+
+        private FrameworkElement BuildBellPopupContent()
+        {
+            var list = new StackPanel();
+            list.Children.Add(new TextBlock
+            {
+                Text = "NOTIFICATIONS",
+                Foreground = UiKit.AccentBrush, FontSize = 11, FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(14, 11, 14, 6)
+            });
+
+            var shown = Shown();
+            if (shown.Count == 0)
+                list.Children.Add(new TextBlock
+                {
+                    Text = "No new notifications.", Foreground = UiKit.TextMuted, FontSize = 13,
+                    Margin = new Thickness(14, 2, 14, 12)
+                });
+            else
+                foreach (var n in shown) list.Children.Add(NotificationRow(n));
+
+            return new Border
+            {
+                Background = new LinearGradientBrush(UiKit.PanelBg2, UiKit.PanelBg, 90),
+                BorderBrush = UiKit.AccentBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Width = 340,
+                Child = new ScrollViewer
+                {
+                    MaxHeight = 380,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = list
+                }
+            };
+        }
+
+        private Border NotificationRow(PluginNotice n)
+        {
+            bool unread = n.Id > _config.PatchNoticeLastSeenId;
+            var col = new StackPanel();
+
+            var titleRow = new DockPanel { LastChildFill = true };
+            if (unread)
+            {
+                var dot = new System.Windows.Shapes.Ellipse
+                {
+                    Width = 7, Height = 7, Fill = new SolidColorBrush(Color.FromRgb(0xE0, 0x3A, 0x3A)),
+                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0)
+                };
+                DockPanel.SetDock(dot, Dock.Left);
+                titleRow.Children.Add(dot);
+            }
+            titleRow.Children.Add(new TextBlock
+            {
+                Text = n.Title ?? "Notification",
+                Foreground = UiKit.TextPrimary, FontSize = 14.5, FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+            col.Children.Add(titleRow);
+
+            if (!string.IsNullOrEmpty(n.Description))
+                col.Children.Add(new TextBlock
+                {
+                    Text = n.Description, Foreground = UiKit.TextSecondary, FontSize = 12.5,
+                    TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0)
+                });
+
+            string when = FormatNoticeDate(n.Date);
+            var meta = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 5, 0, 0) };
+            if (!string.IsNullOrEmpty(when))
+            {
+                var dateText = new TextBlock { Text = when, Foreground = UiKit.TextMuted, FontSize = 11 };
+                DockPanel.SetDock(dateText, Dock.Left);
+                meta.Children.Add(dateText);
+            }
+            var open = new TextBlock
+            {
+                Text = "Open →", Foreground = UiKit.AccentBrush, FontSize = 11.5, FontWeight = FontWeights.SemiBold
+            };
+            DockPanel.SetDock(open, Dock.Right);
+            meta.Children.Add(open);
+            col.Children.Add(meta);
+
+            var row = new Border
+            {
+                Background = Brushes.Transparent,
+                Padding = new Thickness(14, 9, 14, 9),
+                Cursor = Cursors.Hand,
+                Child = col
+            };
+            row.MouseEnter += (s, e) => row.Background = UiKit.Br(UiKit.RowBgHover);
+            row.MouseLeave += (s, e) => row.Background = Brushes.Transparent;
+            row.MouseLeftButtonUp += (s, e) => OpenNotice(n);
+            return row;
+        }
+
+        private static string FormatNoticeDate(string iso)
+        {
+            if (string.IsNullOrEmpty(iso)) return null;
+            return DateTime.TryParse(iso, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d)
+                ? d.ToLocalTime().ToString("MMM d, yyyy")
+                : null;
+        }
+
+        private void OpenNotice(PluginNotice n)
+        {
+            try
+            {
+                string url = string.IsNullOrEmpty(n.Url)
+                    ? AssetClient.SiteBase + "/patch-notes?utm_source=hdt&utm_medium=plugin&utm_campaign=patch-notes"
+                    : n.Url;
+                Process.Start(url);
+            }
+            catch { /* launching the browser is best-effort */ }
+            // This notice is now seen; closing the popup (StaysOpen=false) finalizes via MarkShownSeen.
+            if (n.Id > _config.PatchNoticeLastSeenId)
+            {
+                _config.PatchNoticeLastSeenId = n.Id;
+                _config.Save();
+            }
+            if (_bellPopup != null) _bellPopup.IsOpen = false;
+        }
+
+        /// <summary>Show a dismissible banner at the top of the overlay (auto-update status). An
+        /// error notice gets a red tint and, when <paramref name="url"/> is set, a clickable
+        /// manual-install link.</summary>
+        public void SetUpdateNotice(string message, bool isError, string url)
+        {
+            if (_notice == null) return;
+            if (string.IsNullOrEmpty(message)) { _notice.Visibility = Visibility.Collapsed; return; }
+
+            var content = new DockPanel { LastChildFill = true, Margin = new Thickness(14, 9, 8, 9) };
+            var dismiss = UiKit.ClearButton(() => { _notice.Visibility = Visibility.Collapsed; }, "Dismiss");
+            DockPanel.SetDock(dismiss, Dock.Right);
+            content.Children.Add(dismiss);
+
+            var text = new StackPanel { Orientation = Orientation.Vertical };
+            text.Children.Add(new TextBlock
+            {
+                Text = message,
+                Foreground = UiKit.TextPrimary,
+                FontSize = 13.5,
+                TextWrapping = TextWrapping.Wrap
+            });
+            if (!string.IsNullOrEmpty(url))
+            {
+                var link = new TextBlock
+                {
+                    Text = url,
+                    Foreground = UiKit.AccentBrush,
+                    FontSize = 13,
+                    Cursor = Cursors.Hand,
+                    TextDecorations = TextDecorations.Underline,
+                    Margin = new Thickness(0, 3, 0, 0)
+                };
+                link.MouseLeftButtonUp += (s, e) => { try { Process.Start(url); } catch { } };
+                text.Children.Add(link);
+            }
+            content.Children.Add(text);
+
+            _notice.Child = content;
+            _notice.Background = isError
+                ? new SolidColorBrush(Color.FromRgb(0x4A, 0x1F, 0x1F))
+                : UiKit.Br(UiKit.PanelActive);
+            _notice.BorderBrush = isError ? new SolidColorBrush(Color.FromRgb(0x7A, 0x33, 0x33)) : UiKit.AccentBrush;
+            _notice.BorderThickness = new Thickness(0, 0, 0, 1);
+            _notice.Visibility = Visibility.Visible;
+        }
 
         /// <summary>Open the selected card's page on hsbg.cards (UTM-tagged; content = slug for
         /// per-card click attribution). Best-effort — never throws into the UI.</summary>
@@ -281,8 +629,10 @@ namespace HsbgCardLookup.Ui
             bool fuzzy = false;
             List<BgCard> cards;
             if (q.Length == 0)
-                // Default/browse order = website order: by type (minion, spell, hero, ...), then tier, then name.
-                cards = pool.OrderBy(c => CardStore.TypeRank(c.CardType))
+                // Default/browse order: regular minions, then token/hero-power minions; regular
+                // spells, then spellcraft/other spells; then heroes, hero powers, quests, rewards,
+                // trinkets, anomalies. Within a group: tier then name. (See CardStore.BrowseRank.)
+                cards = pool.OrderBy(CardStore.BrowseRank)
                             .ThenBy(c => c.Tier ?? 99)
                             .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
             else
@@ -365,8 +715,29 @@ namespace HsbgCardLookup.Ui
             if (c == null) { ClearDetail(); return; }
 
             bool goldenOn = _golden && c.CardType == "minion";
-            string path = CardStore.ResolveImagePath(c, goldenOn) ?? CardStore.ResolveImagePath(c, false);
-            _art.Source = ImageCache.LoadTrimmed(path, 0);   // full native, transparent edges trimmed
+            _art.Source = null;
+            var artNow = CardArt.GetSync(c, goldenOn, 0);   // memory / dev PNG / disk (full, native)
+            if (artNow != null)
+            {
+                _art.Source = artNow;
+            }
+            else
+            {
+                // Not cached yet — fetch the full WebP in the background and apply only if the user
+                // is still on this card and the same golden state when it arrives.
+                var token = c;
+                bool g = goldenOn;
+                CardArt.LoadAsync(c, goldenOn, 0).ContinueWith(t =>
+                {
+                    var bmp = t.Result;
+                    if (bmp == null) return;
+                    _art.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        bool stillGold = _golden && _selected != null && _selected.CardType == "minion";
+                        if (ReferenceEquals(_selected, token) && stillGold == g) _art.Source = bmp;
+                    }));
+                }, System.Threading.Tasks.TaskContinuationOptions.OnlyOnRanToCompletion);
+            }
 
             bool canGold = c.CardType == "minion" && c.HasGoldenDiff;
             _goldenBtn.Visibility = canGold ? Visibility.Visible : Visibility.Collapsed;
@@ -388,13 +759,15 @@ namespace HsbgCardLookup.Ui
         private UIElement RelatedItem(BgCard card)
         {
             var stack = new StackPanel();   // fills its UniformGrid cell
-            stack.Children.Add(new Image
+            var thumb = new Image
             {
-                Source = ImageCache.LoadTrimmed(CardStore.ResolveImagePath(card, false), 256),
                 Stretch = Stretch.Uniform,
                 HorizontalAlignment = HorizontalAlignment.Stretch,   // fill the column width
                 MaxHeight = 200
-            });
+            };
+            ArtImage.SetDecode(thumb, 256);
+            ArtImage.SetCard(thumb, card);   // async load (cached WebP), same path as the grid
+            stack.Children.Add(thumb);
             stack.Children.Add(new TextBlock
             {
                 Text = card.Name, Foreground = UiKit.TextSecondary, FontSize = 12.5,

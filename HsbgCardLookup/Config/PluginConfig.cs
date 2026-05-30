@@ -11,26 +11,36 @@ namespace HsbgCardLookup.Config
     /// </summary>
     public class PluginConfig
     {
-        // Hotkey to summon the overlay (WPF Key enum name). Default F3.
-        // (BrowserKey kept as the name for config back-compat with earlier builds.)
+        // Summon hotkey (WPF Key name). Name kept "BrowserKey" for config back-compat.
         public string BrowserKey { get; set; } = "F3";
-
-        // Key to toggle golden art in the detail pane (default G).
+        // Toggle golden art; acts only when the search box isn't focused.
         public string GoldenKey { get; set; } = "G";
-
-        // Key to re-focus the search box (default S). Only acts when search isn't already focused.
+        // Re-focus the search box; acts only when it isn't already focused.
         public string FocusKey { get; set; } = "S";
-
-        // Whether duos-only cards appear in results/browse (default: shown).
+        // Whether duos-only cards appear in results/browse.
         public bool ShowDuos { get; set; } = true;
+        // Dev shortcut: use local public/ PNGs instead of the pack/CDN WebP. Off by default.
+        public bool UseLocalDevArt { get; set; } = false;
 
         [XmlIgnore] public Key BrowserKeyParsed => Enum.TryParse(BrowserKey, out Key k) ? k : Key.F3;
         [XmlIgnore] public Key GoldenKeyParsed => Enum.TryParse(GoldenKey, out Key k) ? k : Key.G;
         [XmlIgnore] public Key FocusKeyParsed => Enum.TryParse(FocusKey, out Key k) ? k : Key.S;
 
-        private static string Dir => Path.Combine(
+        // Content hash (patch-independent) of the last loaded card snapshot — drives the data refresh.
+        public string LastDataHash { get; set; } = "";
+        // Last GitHub update check (UTC "o"); throttles the check.
+        public string LastUpdateCheckUtc { get; set; } = "";
+        // Highest notification id already seen (bell); larger ids are unread.
+        public int PatchNoticeLastSeenId { get; set; } = 0;
+        // Aggregate manifest hash of the art pack already applied; a change triggers re-sync.
+        public string ArtPackHash { get; set; } = "";
+
+        /// <summary>Writable data folder in %APPDATA% (config, caches) — survives DLL redeploys.</summary>
+        public static string DataDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "HearthstoneDeckTracker", "HsbgCardLookup");
+
+        private static string Dir => DataDir;
 
         private static string FilePath => Path.Combine(Dir, "config.xml");
 

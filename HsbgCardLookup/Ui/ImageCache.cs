@@ -59,7 +59,7 @@ namespace HsbgCardLookup.Ui
             return result;
         }
 
-        private static BitmapSource Trim(BitmapSource src)
+        internal static BitmapSource Trim(BitmapSource src)
         {
             var bgra = src.Format == PixelFormats.Bgra32 ? src : new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
             int w = bgra.PixelWidth, h = bgra.PixelHeight, stride = w * 4;

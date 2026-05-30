@@ -1,0 +1,20 @@
+HSBG Card Lookup — Hearthstone Deck Tracker plugin
+Copyright 2026 RTantrumR (hsbg.cards)
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles third-party components:
+
+  - SixLabors.ImageSharp (https://github.com/SixLabors/ImageSharp)
+    Licensed under the Apache License, Version 2.0.
+
+  - System.* runtime support assemblies (System.Buffers, System.Memory,
+    System.Numerics.Vectors, System.Runtime.CompilerServices.Unsafe,
+    System.Text.Encoding.CodePages) — © .NET Foundation, MIT License.
+
+Hearthstone Deck Tracker assemblies (HearthstoneDeckTracker.exe, HearthDb.dll,
+Newtonsoft.Json.dll) are referenced at build time only and are NOT redistributed
+with this plugin's source.
+
+Hearthstone is a trademark of Blizzard Entertainment, Inc. This project is an
+unofficial, fan-made tool and is not affiliated with or endorsed by Blizzard.

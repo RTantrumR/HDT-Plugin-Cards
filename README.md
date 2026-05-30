@@ -1,74 +1,84 @@
 # HSBG Card Lookup — Hearthstone Deck Tracker plugin
 
-In-game quick search for Hearthstone Battlegrounds cards. Press a hotkey, a search
-overlay pops over the game, type, find the card, dismiss. The desktop sibling of the
-[hsbg.cards](https://hsbg.cards) Twitch extension and bots.
+An in-game search overlay for **Hearthstone Battlegrounds** cards. Press a hotkey, a search panel
+pops over the game, type to find any card (smart filters for tier, tribe, keywords, stats), browse
+art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 
-> **Status: spike in progress.** See [`hdt-plugin-plan.md`](hdt-plugin-plan.md) for the full plan.
+- 🔎 Fast fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools)
+- 🖼 Full card art, golden variants, related cards (buddies / tokens / hero powers)
+- 🔔 In-app patch-notes notifications
+- ♻️ Card data and art self-update from hsbg.cards; the plugin auto-updates via GitHub Releases
+
+> Windows only — it's a Hearthstone Deck Tracker plugin. (Mac players: use the website.)
+
+## Install
+
+1. Download the latest release zip from [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases).
+2. Extract it, then double-click **`install.bat`** (it closes HDT, copies the plugin into place).
+   *Or* manually drop the `HsbgCardLookup` folder into
+   `%APPDATA%\HearthstoneDeckTracker\Plugins\`.
+3. Start HDT (enable the plugin under **Options → Plugins** if prompted).
+4. Press **F3** to open the search.
+
+On first launch the plugin downloads card art in the background (~200 MB, one time); after that it
+loads instantly and only fetches changed cards.
+
+### Controls
+
+| Key | Action |
+|---|---|
+| `F3` | open / close the overlay |
+| type | search (Tab toggles smart search, Esc closes, Enter opens the first result) |
+| `F2`/`G` | toggle the golden version of the selected minion |
+| `S` | re-focus the search box |
+| click art | open that card on hsbg.cards |
+
+Keys are rebindable via the plugin's **Settings** button in HDT.
 
 ## Requirements
 
 - **Hearthstone Deck Tracker** installed.
-- Hearthstone running in **Borderless / Windowed (Fullscreen)** mode — exclusive
-  fullscreen blocks any overlay (this is already HDT's own requirement).
+- Hearthstone in **Borderless / Windowed (Fullscreen)** mode (exclusive fullscreen blocks any
+  overlay — this is HDT's own requirement too).
+- .NET Framework 4.7.2 (already present if HDT runs).
 
-## Install (users)
+## Building from source
 
-1. Download the release zip.
-2. Drop the `HsbgCardLookup\` folder into
-   `%appdata%\HearthstoneDeckTracker\Plugins` (no spaces in the folder name).
-3. Restart HDT. Enable the plugin under **Options → Tracker → Plugins**.
+**Toolchain:** .NET Framework 4.7.2, WPF, C#. Build with **MSBuild from Visual Studio 2022** — the
+`dotnet` CLI can't run the WPF markup compiler for net472. The project is a classic-style `.csproj`
+on purpose (SDK-style `<UseWPF>` is a .NET Core feature, unreliable on net472).
 
-## Development
-
-**Toolchain:** .NET Framework 4.7.2, WPF, C#. Build with **MSBuild from Visual Studio
-2022** (the `dotnet` CLI cannot run the WPF markup compiler for net472). Classic-style
-`.csproj` on purpose — SDK-style `<UseWPF>` is a .NET Core feature and unreliable on net472.
-
-### One-time setup: reference assemblies
-
-The build references HDT's own assemblies, which are **not committed** (third-party,
-large). Copy them from your local HDT install into `libs\`:
+Two sets of files are **not** committed and must be placed in `libs\` once (they're third-party /
+large):
 
 ```powershell
-$src = "$env:LOCALAPPDATA\HearthstoneDeckTracker\app-<version>"  # newest app-* folder
+# 1. HDT's own assemblies — referenced, not redistributed (Private=False).
+$src = "$env:LOCALAPPDATA\HearthstoneDeckTracker\app-<newest version>"
 Copy-Item "$src\HearthstoneDeckTracker.exe" .\libs\
 Copy-Item "$src\HearthDb.dll" .\libs\
 Copy-Item "$src\Newtonsoft.Json.dll" .\libs\
+
+# 2. The WebP decoder closure (bundled with the plugin, Private=True).
+#    Build a throwaway net472 project that references SixLabors.ImageSharp 2.1.11 and copy its
+#    output DLLs into libs\: SixLabors.ImageSharp.dll, System.Buffers.dll, System.Memory.dll,
+#    System.Numerics.Vectors.dll, System.Runtime.CompilerServices.Unsafe.dll,
+#    System.Text.Encoding.CodePages.dll
 ```
 
-### One-time setup: card data
-
-The bundled card snapshot is also not committed. Copy it from the web-app repo:
+The bundled card snapshot `HsbgCardLookup\data\cards.json` is also gitignored — drop in any
+`{ patch, cardCount, cards: [...] }` snapshot (the plugin refreshes it from the API at runtime
+anyway).
 
 ```powershell
-New-Item -ItemType Directory -Force .\HsbgCardLookup\data | Out-Null
-Copy-Item "<web-app repo>\data\production\cards.json" .\HsbgCardLookup\data\
+.\deploy.ps1                 # build Release + copy into HDT's Plugins folder (restart HDT to load)
+.\package.ps1 -Version x.y.z # build + produce dist\HsbgCardLookup-v<ver>.zip for release
 ```
 
-### Build & deploy
+AnyCPU loaded into HDT's x86 process → the `MSB3270` arch-mismatch warning is expected and harmless.
 
-```powershell
-.\deploy.ps1            # builds Release + copies the DLL into HDT's Plugins folder
-```
+## License
 
-Then restart HDT. The `deploy.ps1` MSBuild path assumes VS 2022 **Community** — edit it
-for your edition.
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for bundled third-party components.
 
-### Verifying the spike
-
-The skeleton logs each lifecycle call to
-`%appdata%\HearthstoneDeckTracker\HsbgCardLookup\spike.log`. If you see `OnLoad`
-entries after launching HDT, the plugin loaded.
-
-## Layout
-
-```
-HsbgCardLookup.sln
-HsbgCardLookup/            class library (the plugin)
-  Plugin.cs               IPlugin implementation
-  Properties/             AssemblyInfo
-libs/                     HDT reference assemblies (gitignored — copy locally)
-deploy.ps1                build + deploy to HDT Plugins folder
-hdt-plugin-plan.md        the founding spec
-```
+Hearthstone is a trademark of Blizzard Entertainment, Inc. This is an unofficial fan project, not
+affiliated with or endorsed by Blizzard.

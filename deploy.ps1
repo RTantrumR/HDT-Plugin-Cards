@@ -21,13 +21,16 @@ Write-Host "Building ($Configuration)..." -ForegroundColor Cyan
 & $msbuild "$root\HsbgCardLookup.sln" /t:Build /p:Configuration=$Configuration /v:minimal /nologo
 if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)." }
 
-$dll = "$root\HsbgCardLookup\bin\$Configuration\HsbgCardLookup.dll"
-$pdb = "$root\HsbgCardLookup\bin\$Configuration\HsbgCardLookup.pdb"
+$binDir = "$root\HsbgCardLookup\bin\$Configuration"
+$dll = "$binDir\HsbgCardLookup.dll"
+$pdb = "$binDir\HsbgCardLookup.pdb"
 if (-not (Test-Path $dll)) { throw "DLL not found at $dll" }
 
 $dest = Join-Path $env:APPDATA "HearthstoneDeckTracker\Plugins\HsbgCardLookup"
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
-Copy-Item $dll $dest -Force
+# Copy our DLL plus the bundled runtime deps (SixLabors.ImageSharp + its System.* closure).
+# HDT's own assemblies are Private=False so they're not in bin and won't be copied.
+Copy-Item "$binDir\*.dll" $dest -Force
 if (Test-Path $pdb) { Copy-Item $pdb $dest -Force }
 
 # Bundled data (cards.json etc.) lives in a data\ subfolder next to the DLL.

@@ -583,13 +583,12 @@ namespace HsbgCardLookup.Ui
         /// </summary>
         public static ListBox CreateCardGrid(int columns, int decodeWidth, Action<BgCard> onSelect)
         {
-            var thumbConv = new ThumbConverter(decodeWidth);
             var flat = FlatButtonTemplate();
 
             var row = new FrameworkElementFactory(typeof(UniformGrid));
             row.SetValue(UniformGrid.ColumnsProperty, columns);
             for (int i = 0; i < columns; i++)
-                row.AppendChild(GridCell(i, thumbConv, flat, onSelect));
+                row.AppendChild(GridCell(i, decodeWidth, flat, onSelect));
             var dt = new DataTemplate { VisualTree = row };
 
             var lb = new ListBox
@@ -608,7 +607,7 @@ namespace HsbgCardLookup.Ui
             return lb;
         }
 
-        private static FrameworkElementFactory GridCell(int index, IValueConverter thumbConv,
+        private static FrameworkElementFactory GridCell(int index, int decodeWidth,
             ControlTemplate flat, Action<BgCard> onSelect)
         {
             string path = "[" + index + "]";   // this cell's slot within the row item (an IList<BgCard>)
@@ -632,7 +631,10 @@ namespace HsbgCardLookup.Ui
             var img = new FrameworkElementFactory(typeof(Image));
             img.SetValue(Image.StretchProperty, Stretch.Uniform);          // fill the column width
             img.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
-            img.SetBinding(Image.SourceProperty, new Binding(path) { Converter = thumbConv });
+            // Art loads asynchronously (downloaded WebP, disk-cached) via the attached behavior,
+            // which is virtualization-safe: a recycled cell restarts its load and drops stale ones.
+            img.SetValue(ArtImage.DecodeProperty, decodeWidth);
+            img.SetBinding(ArtImage.CardProperty, new Binding(path));
             sp.AppendChild(img);
             var name = new FrameworkElementFactory(typeof(TextBlock));
             name.SetBinding(TextBlock.TextProperty, new Binding(path + ".Name"));

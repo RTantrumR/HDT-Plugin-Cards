@@ -13,10 +13,8 @@ namespace HsbgCardLookup.Search
     }
 
     /// <summary>
-    /// Port of lib/search/index.ts. Two modes, mirroring the website:
-    ///   Smart  = applySmartSearch  (parses t3 / 5/5 / tribes / keywords -> structured filter)
-    ///   Simple = applySimpleSearch (plain name/text substring + fuzzy fallback, relevance-ranked)
-    /// Smart results are sorted tier-asc then name (plan §6); Simple results are relevance-sorted.
+    /// Port of the web app's lib/search. Smart = structured (t3 / 5/5 / tribes / keywords), sorted
+    /// tier→name. Simple = name/text substring + fuzzy fallback, relevance-ranked.
     /// </summary>
     public static class SearchEngine
     {
@@ -137,35 +135,54 @@ namespace HsbgCardLookup.Search
                 result = result.Where(c => (c.Text ?? "").ToLowerInvariant().Contains(pattern));
             }
 
-            // Tribes — snapshot pre-tribe pool for possible union with a name query
-            List<BgCard> preTribe = parsed.Tribes.Count > 0 ? result.ToList() : null;
-            if (preTribe != null) result = preTribe;
-            foreach (var tribe in parsed.Tribes)
-            {
-                if (tribe == "Neutral")
-                    result = result.Where(c => (c.MinionTypes ?? new List<string>()).Count == 0);
-                else if (tribe == "All")
-                    result = result.Where(c => (c.MinionTypes ?? new List<string>()).Contains("All"));
-                else
-                    result = result.Where(c => (c.MinionTypes ?? new List<string>()).Contains(tribe));
-            }
-
+            // Card type filters first; then a tribe/category no card of that type has is demoted to
+            // the name/text query (`demotedTerms`) instead of zeroing results — but only when a card
+            // type was parsed. All/Neutral stay structural, never demoted.
             foreach (var cardType in parsed.CardTypes)
                 result = result.Where(c => c.CardType == cardType);
+            var res = result.ToList();
+            var demotedTerms = new List<string>();
 
-            foreach (var cat in parsed.Categories)
-                result = result.Where(c =>
-                    (c.Categories ?? new List<string>()).Contains(cat) ||
-                    (c.SpellSchool != null && c.SpellSchool.ToLowerInvariant() == cat));
-
-            bool isFuzzy = false;
-            if (!string.IsNullOrEmpty(parsed.NameQuery))
+            // Snapshot the pre-tribe pool for the name-query union ("beast beast").
+            List<BgCard> preTribe = parsed.Tribes.Count > 0 ? res : null;
+            var appliedTribes = new List<string>();
+            foreach (var tribe in parsed.Tribes)
             {
-                var resultList = result.ToList();
-                var queryWords = Words2(parsed.NameQuery.ToLowerInvariant());
+                string t = tribe;
+                Func<BgCard, bool> hasTribe = c =>
+                    t == "Neutral" ? (c.MinionTypes ?? new List<string>()).Count == 0
+                    : t == "All" ? (c.MinionTypes ?? new List<string>()).Contains("All")
+                    : (c.MinionTypes ?? new List<string>()).Contains(t);
+                if (parsed.CardTypes.Count > 0 && t != "Neutral" && t != "All" && !res.Any(hasTribe))
+                    demotedTerms.Add(t);
+                else { res = res.Where(hasTribe).ToList(); appliedTribes.Add(t); }
+            }
 
+            // Categories (minion subcategories + spell schools).
+            foreach (var cat in parsed.Categories)
+            {
+                string ct = cat;
+                Func<BgCard, bool> hasCat = c =>
+                    (c.Categories ?? new List<string>()).Contains(ct) ||
+                    (c.SpellSchool != null && c.SpellSchool.ToLowerInvariant() == ct);
+                if (parsed.CardTypes.Count > 0 && !res.Any(hasCat))
+                    demotedTerms.Add(ct);
+                else res = res.Where(hasCat).ToList();
+            }
+
+            // Name/text search with fuzzy fallback. Demoted facet words join the name query.
+            bool isFuzzy = false;
+            string effectiveNameQuery = string.Join(" ",
+                new[] { parsed.NameQuery }.Concat(demotedTerms).Where(s => !string.IsNullOrEmpty(s)));
+            if (!string.IsNullOrEmpty(effectiveNameQuery))
+            {
+                var resultList = res;
+                var queryWords = Words2(effectiveNameQuery.ToLowerInvariant());
+
+                // Only tribes that were actually applied as a filter count for the union; demoted
+                // tribes are already handled by the substring branch below.
                 bool nameOverlapsTribe = preTribe != null &&
-                    parsed.Tribes.Any(t => t.ToLowerInvariant() == parsed.NameQuery.ToLowerInvariant());
+                    appliedTribes.Any(t => t.ToLowerInvariant() == (parsed.NameQuery ?? "").ToLowerInvariant());
 
                 if (nameOverlapsTribe)
                 {
@@ -178,7 +195,7 @@ namespace HsbgCardLookup.Search
                     var idSet = new HashSet<int>(resultList.Select(c => c.Id));
                     foreach (var card in textMatches)
                         if (!idSet.Contains(card.Id)) resultList.Add(card);
-                    result = resultList;
+                    res = resultList;
                 }
                 else
                 {
@@ -191,7 +208,7 @@ namespace HsbgCardLookup.Search
 
                     if (substring.Count > 0)
                     {
-                        result = substring;
+                        res = substring;
                     }
                     else
                     {
@@ -211,13 +228,13 @@ namespace HsbgCardLookup.Search
                             });
                         }).ToList();
 
-                        if (fuzzy.Count > 0) { result = fuzzy; isFuzzy = true; }
-                        else result = new List<BgCard>();
+                        if (fuzzy.Count > 0) { res = fuzzy; isFuzzy = true; }
+                        else res = new List<BgCard>();
                     }
                 }
             }
 
-            return new SearchResult { Cards = SortTierThenName(result), Parsed = parsed, IsFuzzy = isFuzzy };
+            return new SearchResult { Cards = SortTierThenName(res), Parsed = parsed, IsFuzzy = isFuzzy };
         }
 
         public static SearchResult Simple(IList<BgCard> cards, string query)

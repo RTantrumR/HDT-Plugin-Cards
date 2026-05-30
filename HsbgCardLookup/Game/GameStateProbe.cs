@@ -1,7 +1,8 @@
-// DISTRIBUTION GUARD: this diagnostic logger must NOT ship. Before building a release for
-// distribution, delete this file, drop its <Compile> item from the csproj, and clear the
-// _probe wiring in Plugin.cs (OnLoad + OnUpdate). The #warning below fires on every build.
-#warning GameStateProbe diagnostic is ACTIVE (writes gamestate.log via OnUpdate) - REMOVE before distributing.
+// DEV-ONLY diagnostic logger. Compiled into Debug builds only (#if DEBUG) — Release/distribution
+// builds exclude it entirely (and the Plugin.cs _probe wiring is likewise #if DEBUG'd), so it never
+// ships and never writes gamestate.log for end users.
+#if DEBUG
+#warning GameStateProbe diagnostic is ACTIVE in this DEBUG build (writes gamestate.log via OnUpdate).
 
 using System;
 using System.Collections.Generic;
@@ -150,3 +151,4 @@ namespace HsbgCardLookup.Game
         }
     }
 }
+#endif

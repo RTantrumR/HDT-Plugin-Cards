@@ -9,54 +9,93 @@ using System.Windows.Media;
 namespace HsbgCardLookup.Ui
 {
     /// <summary>
-    /// Shared overlay chrome: a Topmost, borderless, transparent-edged window that hides on
-    /// Esc or focus loss and toggles open/closed. Variants supply their own content via
-    /// <see cref="SetRoot"/>. This is shared infrastructure — deleting a variant file does
-    /// not touch it.
+    /// Shared overlay chrome: a borderless, transparent-edged, topmost window that toggles open/closed
+    /// and dismisses on Esc / focus loss. Variants supply content via <see cref="SetRoot"/>.
     /// </summary>
     public abstract class OverlayBase : Window
     {
         protected OverlayBase(double width, double height)
         {
             WindowStyle = WindowStyle.None;
-            AllowsTransparency = true;        // requires WindowStyle.None; gives rounded edges
+            AllowsTransparency = true;
             Topmost = true;
             ShowInTaskbar = false;
             ResizeMode = ResizeMode.NoResize;
             Width = width;
             Height = height;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = Brushes.Transparent;  // the inner panel paints the (mostly) opaque bg
+            Background = Brushes.Transparent;
 
-            KeyDown += (s, e) => { if (e.Key == Key.Escape) Hide(); };
-            // Clicking back into the game dismisses it — but not while a filter dropdown
-            // (a Popup, which can briefly deactivate the window) is open.
+            // Focus mode: a normal activating window that takes the OS foreground on summon so the
+            // search box gets real keyboard focus (native typing). HDT hides its own overlay while
+            // ours is open — accepted trade-off.
+            ShowActivated = true;
+            SourceInitialized += (s, e) => ApplyToolWindow();
+            // Dismiss on lost activation, unless a popup (dropdown / notification panel) stole it.
             Deactivated += (s, e) => { if (_popupGuard == 0) Hide(); };
         }
 
+        // Take foreground + keyboard focus. AttachThreadInput to the current foreground thread lifts
+        // Windows' foreground lock so SetForegroundWindow succeeds from our background process.
+        private void ForceForegroundAndFocus()
+        {
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+                IntPtr fore = GetForegroundWindow();
+                uint foreThread = fore == IntPtr.Zero ? 0u : GetWindowThreadProcessId(fore, out _);
+                uint ourThread = GetCurrentThreadId();
+                bool attached = foreThread != 0 && foreThread != ourThread
+                                && AttachThreadInput(foreThread, ourThread, true);
+                try
+                {
+                    SetForegroundWindow(hwnd);
+                    SetFocus(hwnd);
+                }
+                finally { if (attached) AttachThreadInput(foreThread, ourThread, false); }
+                Activate();
+            }
+            catch { }
+        }
+
+        // WS_EX_TOOLWINDOW keeps the overlay out of the taskbar / Alt-Tab list (no WS_EX_NOACTIVATE —
+        // focus mode wants activation).
+        private void ApplyToolWindow()
+        {
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+                int ex = GetWindowLong(hwnd, GWL_EXSTYLE);
+                SetWindowLong(hwnd, GWL_EXSTYLE, ex | WS_EX_TOOLWINDOW);
+            }
+            catch { }
+        }
+
+        // Guards the focus-loss auto-hide while a WPF Popup (which briefly deactivates us) is open.
         private int _popupGuard;
         public void BeginPopup() => _popupGuard++;
         public void EndPopup() { if (_popupGuard > 0) _popupGuard--; }
 
         protected void SetRoot(UIElement content)
         {
-            // Overlay the panel with a thin transparent strip along the very top that drags the
-            // window (the window is borderless, so there's no title bar otherwise).
             var grid = new Grid();
             grid.Children.Add(content);
 
+            // Transparent top strip to drag the borderless window.
             var dragBar = new System.Windows.Controls.Border
             {
                 Height = 18,
                 VerticalAlignment = VerticalAlignment.Top,
-                Background = Brushes.Transparent,   // transparent but hit-testable
+                Background = Brushes.Transparent,
                 Cursor = Cursors.SizeAll
             };
             dragBar.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.ButtonState == MouseButtonState.Pressed)
                 {
-                    try { DragMove(); } catch { /* DragMove throws if button released mid-call */ }
+                    try { DragMove(); } catch { }
                 }
             };
             grid.Children.Add(dragBar);
@@ -67,12 +106,7 @@ namespace HsbgCardLookup.Ui
         public void Toggle()
         {
             if (IsVisible) Hide();
-            else
-            {
-                Show();
-                ForceForeground();   // lift the cross-process focus lock, then activate
-                Activate();
-            }
+            else { Show(); ForceForegroundAndFocus(); }
         }
 
         public void HideIfOpen()
@@ -80,51 +114,21 @@ namespace HsbgCardLookup.Ui
             if (IsVisible) Hide();
         }
 
-        /// <summary>
-        /// When the hotkey fires while another *process* owns the foreground, Windows refuses to
-        /// let us steal it (the SetForegroundWindow lock), so Show()+Activate() leaves the overlay
-        /// visible but unfocused — typing goes nowhere and our Activated handler never fires.
-        /// Briefly attaching our input queue to the foreground thread lifts that lock for the
-        /// duration of the call, so SetForegroundWindow succeeds and the search box can focus.
-        /// (If another window later appears *over* us it just deactivates us — same as alt-tab —
-        /// which is the intended dismiss.)
-        /// </summary>
-        private void ForceForeground()
-        {
-            try
-            {
-                var hwnd = new WindowInteropHelper(this).Handle;
-                if (hwnd == IntPtr.Zero) return;
-
-                IntPtr fore = GetForegroundWindow();
-                uint foreThread = fore == IntPtr.Zero ? 0u : GetWindowThreadProcessId(fore, out _);
-                uint ourThread = GetCurrentThreadId();
-
-                bool attached = foreThread != 0 && foreThread != ourThread
-                                && AttachThreadInput(foreThread, ourThread, true);
-                try
-                {
-                    SetForegroundWindow(hwnd);
-                    BringWindowToTop(hwnd);
-                }
-                finally
-                {
-                    if (attached) AttachThreadInput(foreThread, ourThread, false);
-                }
-            }
-            catch { /* focus is best-effort; never throw out of a UI callback */ }
-        }
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
         [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool BringWindowToTop(IntPtr hWnd);
+        private static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -135,5 +139,8 @@ namespace HsbgCardLookup.Ui
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetFocus(IntPtr hWnd);
     }
 }

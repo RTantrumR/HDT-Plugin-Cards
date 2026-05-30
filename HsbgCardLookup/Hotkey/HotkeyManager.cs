@@ -7,17 +7,9 @@ using System.Windows.Input;
 namespace HsbgCardLookup.Hotkey
 {
     /// <summary>
-    /// System-wide single-key hotkey via a low-level keyboard hook (WH_KEYBOARD_LL).
-    /// Chosen over RegisterHotKey because it (a) supports binding to virtually any key and
-    /// (b) lets us decide per-press whether to act/swallow based on the foreground window,
-    /// instead of hijacking the key across the whole OS.
-    ///
-    /// Install/Uninstall must run on a thread that pumps Win32 messages. HDT calls
-    /// OnLoad/OnUnload on its WPF UI thread, which does, so that's where we live.
-    ///
-    /// Spike note: this build OBSERVES only — it never swallows the key. It raises
-    /// <see cref="HotkeyPressed"/> with the current foreground process name so we can tell
-    /// "fired while Hearthstone focused" from "blocked by HS" from "never fired".
+    /// System-wide single-key hotkey via a low-level keyboard hook (WH_KEYBOARD_LL) — supports any
+    /// key and lets us decide per-press. Normal mode never swallows (the key still reaches the game);
+    /// capture mode (settings rebind) swallows every key. Installed on HDT's message-pumping UI thread.
     /// </summary>
     public sealed class HotkeyManager : IDisposable
     {
@@ -32,27 +24,16 @@ namespace HsbgCardLookup.Hotkey
         /// <summary>Raised when a registered key is pressed. Args: the key, and foreground process name.</summary>
         public event Action<Key, string> HotkeyPressed;
 
-        /// <summary>
-        /// Raised for EVERY key while in capture mode (see <see cref="BeginCapture"/>). Used by the
-        /// settings dialog to read a key to rebind. Fires on the hook thread (HDT's UI thread).
-        /// </summary>
+        /// <summary>Raised for every key while in capture mode — the settings dialog reads it to
+        /// rebind. Fires on the hook thread.</summary>
         public event Action<Key> KeyCaptured;
 
         private bool _capturing;
 
-        /// <summary>
-        /// Enter capture mode: every key-down is swallowed (so it never summons an overlay or
-        /// reaches the game) and reported via <see cref="KeyCaptured"/>. Used while the settings
-        /// window is active so rebinding doesn't trigger the very hotkeys being rebound.
-        /// </summary>
+        // Capture mode (settings window active): swallow every key-down and report it via KeyCaptured,
+        // so rebinding doesn't trigger the hotkeys being rebound.
         public void BeginCapture() => _capturing = true;
         public void EndCapture() => _capturing = false;
-
-        /// <summary>
-        /// Decides whether to swallow the key (block it from the foreground app) for the given
-        /// foreground process name. Null = never swallow. Kept fast — runs inside the hook.
-        /// </summary>
-        public Func<string, bool> ShouldSwallow;
 
         public HotkeyManager()
         {
@@ -95,17 +76,13 @@ namespace HsbgCardLookup.Hotkey
                     int vk = Marshal.ReadInt32(lParam);
                     if (_capturing)
                     {
-                        // Rebind in progress: report the key and swallow it (return non-zero), so
-                        // it neither summons an overlay, reaches the game, nor bubbles anywhere.
-                        try { KeyCaptured?.Invoke(KeyInterop.KeyFromVirtualKey(vk)); }
-                        catch { /* never let the hook callback throw */ }
-                        return (IntPtr)1;
+                        try { KeyCaptured?.Invoke(KeyInterop.KeyFromVirtualKey(vk)); } catch { }
+                        return (IntPtr)1;   // swallow during rebind
                     }
                     if (_targets.TryGetValue(vk, out Key key))
                     {
-                        try { HotkeyPressed?.Invoke(key, GetForegroundProcessName()); }
-                        catch { /* never let the hook callback throw */ }
-                        // Normal mode: fall through to CallNextHookEx (do NOT swallow).
+                        try { HotkeyPressed?.Invoke(key, GetForegroundProcessName()); } catch { }
+                        // fall through — normal mode never swallows
                     }
                 }
             }

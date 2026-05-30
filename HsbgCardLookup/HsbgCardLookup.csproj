@@ -36,6 +36,9 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
     <!-- WPF: needed now because IPlugin.MenuItem is System.Windows.Controls.MenuItem -->
@@ -58,19 +61,52 @@
       <HintPath>..\libs\Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <!-- WebP decoder (pure-managed) + its dependency closure. These ARE redistributed (bundled in
+         the plugin folder): HDT does not ship them, so Private=True copies them to our output.
+         Repopulate libs\ on a fresh clone via the dotnet-resolve snippet in the README/CLAUDE.md. -->
+    <Reference Include="SixLabors.ImageSharp">
+      <HintPath>..\libs\SixLabors.ImageSharp.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>..\libs\System.Buffers.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>..\libs\System.Memory.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>..\libs\System.Numerics.Vectors.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>..\libs\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Text.Encoding.CodePages">
+      <HintPath>..\libs\System.Text.Encoding.CodePages.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Config\PluginConfig.cs" />
     <Compile Include="Data\CardStore.cs" />
     <Compile Include="Game\GameStateProbe.cs" />
     <Compile Include="Hotkey\HotkeyManager.cs" />
+    <Compile Include="Net\AssetClient.cs" />
+    <Compile Include="Net\PluginNotice.cs" />
     <Compile Include="Plugin.cs" />
     <Compile Include="Search\BgCard.cs" />
     <Compile Include="Search\Levenshtein.cs" />
     <Compile Include="Search\Aliases.cs" />
     <Compile Include="Search\QueryParser.cs" />
     <Compile Include="Search\SearchEngine.cs" />
+    <Compile Include="Update\Updater.cs" />
     <Compile Include="Ui\ImageCache.cs" />
+    <Compile Include="Ui\CardArt.cs" />
+    <Compile Include="Ui\ArtPack.cs" />
+    <Compile Include="Ui\WebpDecoder.cs" />
     <Compile Include="Ui\ResultConverters.cs" />
     <Compile Include="Ui\UiKit.cs" />
     <Compile Include="Ui\Dropdown.cs" />
@@ -82,6 +118,13 @@
   <ItemGroup>
     <!-- Bundled card snapshot, copied next to the DLL (CardStore loads it from there). -->
     <None Include="data\cards.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Bundled tier/tribe icons (small, shipped so distributed users have them offline). -->
+    <None Include="data\tiers\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\tribes\*.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

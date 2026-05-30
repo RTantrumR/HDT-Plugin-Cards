@@ -18,3 +18,9 @@ dist/
 
 # Bundled card snapshot — derived from the web-app repo, copied locally (see README).
 HsbgCardLookup/data/
+
+# Local-only documentation (internal notes / rationale / research, not published).
+docs/
+CLAUDE.md
+hdt-plugin-plan.md
+hdt-game-state.md
