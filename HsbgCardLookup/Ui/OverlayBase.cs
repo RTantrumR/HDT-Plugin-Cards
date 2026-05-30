@@ -31,18 +31,29 @@ namespace HsbgCardLookup.Ui
             // ours is open — accepted trade-off.
             ShowActivated = true;
             SourceInitialized += (s, e) => ApplyToolWindow();
-            // Dismiss on lost activation, unless a popup (dropdown / notification panel) stole it.
-            Deactivated += (s, e) => { if (_popupGuard == 0) Hide(); };
+            // Dismiss on lost activation, unless a popup stole it (_popupGuard) or we're still in the
+            // open transition (_activating) — the foreground-grab briefly deactivates us, and without
+            // this guard that spurious deactivation hid the window, forcing a second F3 to reopen.
+            Deactivated += (s, e) => { if (_popupGuard == 0 && !_activating) Hide(); };
         }
 
-        // Take foreground + keyboard focus. AttachThreadInput to the current foreground thread lifts
-        // Windows' foreground lock so SetForegroundWindow succeeds from our background process.
+        private bool _activating;
+
+        // Take foreground + keyboard focus from our background process. Two reinforcing tricks beat
+        // Windows' foreground lock (which otherwise makes SetForegroundWindow intermittently no-op):
+        // (1) temporarily zero SPI_SETFOREGROUNDLOCKTIMEOUT; (2) AttachThreadInput to the current
+        // foreground thread for the call.
         private void ForceForegroundAndFocus()
         {
             try
             {
                 var hwnd = new WindowInteropHelper(this).Handle;
                 if (hwnd == IntPtr.Zero) return;
+
+                IntPtr savedTimeout = IntPtr.Zero;
+                bool gotTimeout = SystemParametersInfo(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ref savedTimeout, 0);
+                if (gotTimeout) SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, IntPtr.Zero, SPIF_SENDCHANGE);
+
                 IntPtr fore = GetForegroundWindow();
                 uint foreThread = fore == IntPtr.Zero ? 0u : GetWindowThreadProcessId(fore, out _);
                 uint ourThread = GetCurrentThreadId();
@@ -51,9 +62,14 @@ namespace HsbgCardLookup.Ui
                 try
                 {
                     SetForegroundWindow(hwnd);
+                    BringWindowToTop(hwnd);
                     SetFocus(hwnd);
                 }
-                finally { if (attached) AttachThreadInput(foreThread, ourThread, false); }
+                finally
+                {
+                    if (attached) AttachThreadInput(foreThread, ourThread, false);
+                    if (gotTimeout) SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, savedTimeout, SPIF_SENDCHANGE);
+                }
                 Activate();
             }
             catch { }
@@ -106,7 +122,16 @@ namespace HsbgCardLookup.Ui
         public void Toggle()
         {
             if (IsVisible) Hide();
-            else { Show(); ForceForegroundAndFocus(); }
+            else
+            {
+                // Guard the open transition: ignore the spurious Deactivated the foreground-grab
+                // causes. Cleared once the activation messages have been processed.
+                _activating = true;
+                Show();
+                ForceForegroundAndFocus();
+                Dispatcher.BeginInvoke(new Action(() => _activating = false),
+                    System.Windows.Threading.DispatcherPriority.Input);
+            }
         }
 
         public void HideIfOpen()
@@ -116,10 +141,26 @@ namespace HsbgCardLookup.Ui
 
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TOOLWINDOW = 0x00000080;
+        private const uint SPI_GETFOREGROUNDLOCKTIMEOUT = 0x2000;
+        private const uint SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001;
+        private const uint SPIF_SENDCHANGE = 0x02;
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool BringWindowToTop(IntPtr hWnd);
+
+        // GET overload (out the current timeout via a ref IntPtr) and SET overload (pass the value as pvParam).
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref IntPtr pvParam, uint fWinIni);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern int GetWindowLong(IntPtr hWnd, int nIndex);

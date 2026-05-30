@@ -4,10 +4,18 @@ An in-game search overlay for **Hearthstone Battlegrounds** cards. Press a hotke
 pops over the game, type to find any card (smart filters for tier, tribe, keywords, stats), browse
 art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 
+![Search overlay over a Battlegrounds game](assets/overlay.png)
+
 - 🔎 Fast fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools)
 - 🖼 Full card art, golden variants, related cards (buddies / tokens / hero powers)
 - 🔔 In-app patch-notes notifications
 - ♻️ Card data and art self-update from hsbg.cards; the plugin auto-updates via GitHub Releases
+
+<p align="center">
+  <img src="assets/search.png" width="32%" alt="Tier-7 browse" />
+  <img src="assets/filters.png" width="32%" alt="Type + tier filters, alongside HDT's tribe panel" />
+  <img src="assets/golden.png" width="32%" alt="Golden variant" />
+</p>
 
 > Windows only — it's a Hearthstone Deck Tracker plugin. (Mac players: use the website.)
 
