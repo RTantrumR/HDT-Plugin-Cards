@@ -24,3 +24,6 @@ docs/
 CLAUDE.md
 hdt-plugin-plan.md
 hdt-game-state.md
+
+# JetBrains IDE config
+.idea/
