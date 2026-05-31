@@ -19,7 +19,7 @@ art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
   <img src="assets/golden.png" width="32%" alt="Golden variant" />
 </p>
 
-> Windows only — it's a Hearthstone Deck Tracker plugin. (Mac players: use the website.)
+> Windows only — it's a Hearthstone Deck Tracker plugin. (Mac players: use the website for now, the release might be presented later.)
 
 ## Install
 
