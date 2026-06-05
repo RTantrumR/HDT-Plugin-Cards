@@ -120,6 +120,9 @@ namespace HsbgCardLookup.Search
             if (parsed.Tier.HasValue)
                 result = result.Where(c => c.Tier == parsed.Tier);
 
+            if (parsed.ManaCost.HasValue)
+                result = result.Where(c => c.ManaCost == parsed.ManaCost);
+
             foreach (var keyword in parsed.Keywords)
             {
                 string kw = keyword.ToLowerInvariant();

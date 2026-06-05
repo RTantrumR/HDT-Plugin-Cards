@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
@@ -10,6 +11,7 @@ namespace HsbgCardLookup.Search
         public int? StatsHealth;
         public bool HasStats => StatsAttack.HasValue && StatsHealth.HasValue;
         public int? Tier;
+        public int? ManaCost;
         public List<string> Keywords = new List<string>();
         public List<AliasEntry> TextKeywords = new List<AliasEntry>();
         public List<string> Tribes = new List<string>();
@@ -27,12 +29,26 @@ namespace HsbgCardLookup.Search
         private static readonly Regex NumberRe = new Regex(@"^\d{1,2}$", RegexOptions.Compiled);
         private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
 
+        // Mana cost filter. The data field is manaCost; we trigger only on "cost" (+ UA aliases).
+        // "gold"/"mana" are intentionally NOT triggers: "gold" collides with the many cards whose
+        // text references gold ("gain N gold", golden cards), and "mana" is dev-only naming the BG
+        // UI never shows. Combined forms ("cost2", "2cost") are caught in pass 1; separated forms
+        // ("cost 2", "2 cost") in a dedicated pass.
+        private const string CostStems = @"cost|кост|вартість";
+        private static readonly Regex CostCombined = new Regex(
+            @"^(?:" + CostStems + @")(\d{1,2})$|^(\d{1,2})(?:" + CostStems + @")$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly HashSet<string> CostWords = new HashSet<string>(
+            new[] { "cost", "кост", "вартість" },
+            StringComparer.OrdinalIgnoreCase);
+
         public static ParsedQuery Parse(string raw)
         {
             var tokens = new List<string>(Whitespace.Split(raw.Trim()));
 
             int? statsA = null, statsH = null;
             int? tier = null;
+            int? manaCost = null;
             var keywords = new List<string>();
             var textKeywords = new List<AliasEntry>();
             var tribes = new List<string>();
@@ -41,7 +57,7 @@ namespace HsbgCardLookup.Search
             var trinketTiers = new List<string>();
             var remaining = new List<string>();
 
-            // Pass 1: slash-stats (5/6) and tier markers (t3 / т3)
+            // Pass 1: slash-stats (5/6), tier markers (t3 / т3), combined cost tokens (cost2 / 2cost)
             foreach (var token in tokens)
             {
                 var slash = SlashStats.Match(token);
@@ -57,7 +73,36 @@ namespace HsbgCardLookup.Search
                     tier = int.Parse(tm.Groups[1].Value);
                     continue;
                 }
+                var cc = CostCombined.Match(token);
+                if (cc.Success && !manaCost.HasValue)
+                {
+                    manaCost = int.Parse(cc.Groups[1].Success ? cc.Groups[1].Value : cc.Groups[2].Value);
+                    continue;
+                }
                 remaining.Add(token);
+            }
+
+            // Pass 1.5: separated cost ("cost 2" / "2 cost"). Runs before the two-number stats pass
+            // so the cost number isn't mistaken for a stat. Consumes the cost word + its adjacent
+            // number; a lone "cost" with no neighboring number falls through to the name query.
+            if (!manaCost.HasValue)
+            {
+                for (int i = 0; i < remaining.Count; i++)
+                {
+                    if (!CostWords.Contains(remaining[i])) continue;
+                    if (i + 1 < remaining.Count && NumberRe.IsMatch(remaining[i + 1]))
+                    {
+                        manaCost = int.Parse(remaining[i + 1]);
+                        remaining.RemoveRange(i, 2);
+                        break;
+                    }
+                    if (i - 1 >= 0 && NumberRe.IsMatch(remaining[i - 1]))
+                    {
+                        manaCost = int.Parse(remaining[i - 1]);
+                        remaining.RemoveRange(i - 1, 2);
+                        break;
+                    }
+                }
             }
 
             // Pass 2: if no slash-stats, two consecutive numbers
@@ -160,7 +205,7 @@ namespace HsbgCardLookup.Search
             }
 
             bool isStructured =
-                statsA.HasValue || tier.HasValue || keywords.Count > 0 ||
+                statsA.HasValue || tier.HasValue || manaCost.HasValue || keywords.Count > 0 ||
                 textKeywords.Count > 0 || tribes.Count > 0 || cardTypes.Count > 0 ||
                 categories.Count > 0 || trinketTiers.Count > 0;
 
@@ -169,6 +214,7 @@ namespace HsbgCardLookup.Search
                 StatsAttack = statsA,
                 StatsHealth = statsH,
                 Tier = tier,
+                ManaCost = manaCost,
                 Keywords = keywords,
                 TextKeywords = textKeywords,
                 Tribes = tribes,
