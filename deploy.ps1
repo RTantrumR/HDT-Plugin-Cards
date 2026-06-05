@@ -8,7 +8,8 @@
   Restart HDT after running this for it to pick up changes.
 #>
 param(
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [switch]$NoRestart            # skip the auto-restart of HDT (otherwise it's the final step)
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,4 +44,10 @@ if (Test-Path $srcData) {
 
 Write-Host "Deployed to: $dest" -ForegroundColor Green
 Get-ChildItem $dest | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
-Write-Host "Restart HDT to load the new build." -ForegroundColor Yellow
+
+# Final step: auto-restart HDT so it reloads the freshly-deployed plugin (it only scans at startup).
+if ($NoRestart) {
+    Write-Host "Restart HDT to load the new build (auto-restart skipped: -NoRestart)." -ForegroundColor Yellow
+} else {
+    & "$root\restartHDT.ps1"
+}

@@ -143,7 +143,10 @@ namespace HsbgCardLookup.Ui
                 Foreground = TextMuted,
                 FontSize = fontSize,
                 IsHitTestVisible = false,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                // Nudge the placeholder slightly right of the TextBox's caret origin so the blinking
+                // caret sits just *before* the first letter instead of overlapping it.
+                Margin = new Thickness(4, 0, 0, 0)
             };
             var theBox = box;
             box.TextChanged += (s, e) =>

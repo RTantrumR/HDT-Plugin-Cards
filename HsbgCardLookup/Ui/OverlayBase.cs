@@ -34,7 +34,21 @@ namespace HsbgCardLookup.Ui
             // Dismiss on lost activation, unless a popup stole it (_popupGuard) or we're still in the
             // open transition (_activating) — the foreground-grab briefly deactivates us, and without
             // this guard that spurious deactivation hid the window, forcing a second F3 to reopen.
-            Deactivated += (s, e) => { if (_popupGuard == 0 && !_activating) Hide(); };
+            // Also stay open when we're STILL the foreground window: clicking a floating card (a
+            // no-activate window) only swaps the thread's active window — it can't take foreground —
+            // so we keep foreground and must not treat that as a dismiss. A real dismiss (clicking the
+            // game / another app) moves foreground away from us.
+            Deactivated += (s, e) => { if (_popupGuard == 0 && !_activating && !IsForeground()) Hide(); };
+        }
+
+        private bool IsForeground()
+        {
+            try
+            {
+                var our = new WindowInteropHelper(this).Handle;
+                return our != IntPtr.Zero && GetForegroundWindow() == our;
+            }
+            catch { return false; }
         }
 
         private bool _activating;

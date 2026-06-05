@@ -10,11 +10,19 @@ art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 
 - 🔎 Fast fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools)
 - 🖼 Full card art, golden variants, related cards (buddies / tokens / hero powers)
+- 🃏 **Drag any card out** of the overlay as a free-floating, resizable card — handy for explaining
+  cards to viewers on stream or while making a video, or just parking a few in a corner for reference
+- 🎲 **Live trinkets & anomaly HUD** — your current lesser/greater trinkets and the lobby anomaly shown
+  right on screen during a match, so neither you nor your viewers have to hover over each one. Great for
+  streaming or solo play, and especially for **phone viewers** who can't open HDT's Twitch extension to
+  see which anomaly is active or which trinkets the streamer has
 - 🔔 In-app patch-notes notifications
 - ♻️ Card data and art self-update from hsbg.cards; the plugin auto-updates via GitHub Releases
 
 <p align="center">
   <img src="assets/search.png" width="32%" alt="Tier-7 browse" />
+  <img src="assets/screen-trinkets_anomalies.png" width="32%" alt="Live trinkets & anomaly HUD shown over a Battlegrounds match" />
+  <img src="assets/screen-cards-drag.png" width="32%" alt="Cards dragged out of the overlay as free-floating, resizable cards" />
   <img src="assets/filters.png" width="32%" alt="Type + tier filters, alongside HDT's tribe panel" />
   <img src="assets/golden.png" width="32%" alt="Golden variant" />
 </p>
@@ -43,7 +51,11 @@ loads instantly and only fetches changed cards.
 | `S` | re-focus the search box |
 | click art | open that card on hsbg.cards |
 
-Keys are rebindable via the plugin's **Settings** button in HDT.
+Keys are rebindable via the plugin's **Settings** button in HDT. The same dialog toggles the
+**card drag-out** (from the detail art and/or the results grid) and the **trinkets / anomaly HUD**
+(opt-in). Drag a floating card by its body to move it, drag its top-right corner to resize, right-click
+to dismiss; HUD cards remember their place and size per slot and only show while Hearthstone/HDT is
+focused.
 
 ## Requirements
 

@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Windows.Shapes;
 using HsbgCardLookup.Config;
@@ -29,6 +30,20 @@ namespace HsbgCardLookup.Ui
         private readonly CardStore _store;
         private readonly PluginConfig _config;
         private readonly HotkeyManager _hotkey;
+        private readonly FloatingCardManager _floating;
+
+        // Drag-out state for the detail art (distinguishes a click → website from a drag → floating card).
+        private Point _artDown;
+        private bool _artDragging;
+        private FloatingCard _dragCard;
+
+        // Drag-out state for the results grid (distinguishes a click → select from a drag → floating card).
+        private Point _gridDown;
+        private bool _gridDragging;
+        private BgCard _gridDownCard;
+        private BitmapSource _gridDownArt;
+        private double _gridDownWidth;
+        private FloatingCard _gridDragCard;
 
         private readonly TextBox _search;
         private ListBox _grid;
@@ -63,11 +78,12 @@ namespace HsbgCardLookup.Ui
         private TextBlock _relatedHeader;
         private UniformGrid _relatedPanel;
 
-        public OverlayLarge(CardStore store, PluginConfig config, HotkeyManager hotkey) : base(880, 800)
+        public OverlayLarge(CardStore store, PluginConfig config, HotkeyManager hotkey, FloatingCardManager floating) : base(880, 800)
         {
             _store = store;
             _config = config;
             _hotkey = hotkey;
+            _floating = floating;
 
             try { Resources[typeof(ScrollBar)] = UiKit.ThinScrollBarStyle(); } catch { }
 
@@ -113,6 +129,11 @@ namespace HsbgCardLookup.Ui
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(312) });
 
             _grid = UiKit.CreateCardGrid(GridColumns, 256, OnCardClicked);   // decode 256 for crisp downscale
+            // Optional drag-out from grid cells (off by default). Preview handlers so we can start a
+            // drag before the cell's Click selects; capture suppresses the select when a drag happens.
+            _grid.PreviewMouseLeftButtonDown += Grid_Down;
+            _grid.PreviewMouseMove += Grid_Move;
+            _grid.PreviewMouseLeftButtonUp += Grid_Up;
             _hint = new TextBlock
             {
                 Foreground = UiKit.TextMuted, FontSize = 14, TextWrapping = TextWrapping.Wrap,
@@ -158,6 +179,7 @@ namespace HsbgCardLookup.Ui
             {
                 if (IsVisible) { FocusSearch(); SetInputActive(true); }
                 else SetInputActive(false);
+                _floating?.OnAppVisibilityChanged(IsVisible);   // hide/restore floating cards with the app
             };
             PreviewKeyDown += OnKey;
 
@@ -217,10 +239,13 @@ namespace HsbgCardLookup.Ui
                 MaxHeight = 350,   // a bit shorter so a minion's Golden button + first related row fit without scroll
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Cursor = Cursors.Hand,
-                ToolTip = "Open this card on hsbg.cards"
+                ToolTip = "Click to open on hsbg.cards · drag out for a floating card"
             };
-            // Detail portrait only (not grid, not related) deep-links to the website.
-            _art.MouseLeftButtonUp += (s, e) => OpenOnWebsite(_selected);
+            // Detail portrait: a click deep-links to the website; a past-threshold drag pulls the card
+            // out as a free-floating raw card (FloatingCard) that follows the cursor until mouse-up.
+            _art.MouseLeftButtonDown += Art_Down;
+            _art.MouseMove += Art_Move;
+            _art.MouseLeftButtonUp += Art_Up;
             stack.Children.Add(_art);
 
             _goldenLabel = new TextBlock { Text = "☆ Golden", FontSize = 15, Foreground = UiKit.TextSecondary, VerticalAlignment = VerticalAlignment.Center };
@@ -626,6 +651,136 @@ namespace HsbgCardLookup.Ui
                     + "?utm_source=hdt&utm_medium=plugin&utm_campaign=clickDetail&utm_content=" + slug);
             }
             catch { /* launching the default browser is best-effort */ }
+        }
+
+        // ── Detail-art drag-out → floating card ──────────────────────────────────────────────────
+        // Capture on mouse-down; if the pointer moves past the system drag threshold we spawn a
+        // FloatingCard and keep it under the cursor (the captured MouseMove keeps firing past the
+        // window edge) until mouse-up. A press with no drag falls through to OpenOnWebsite.
+
+        private void Art_Down(object sender, MouseButtonEventArgs e)
+        {
+            _artDown = e.GetPosition(this);
+            _artDragging = false;
+            _dragCard = null;
+            _art.CaptureMouse();
+        }
+
+        private void Art_Move(object sender, MouseEventArgs e)
+        {
+            if (!_art.IsMouseCaptured) return;
+            if (!_config.DragFromDetail) return;   // detail drag-out disabled → a press stays a click
+            if (!_artDragging)
+            {
+                var p = e.GetPosition(this);
+                if (Math.Abs(p.X - _artDown.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                    Math.Abs(p.Y - _artDown.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+                _artDragging = true;
+                // Spawn at the detail-pane's on-screen size so it doesn't appear blown up.
+                _dragCard = _floating?.Spawn(_art.Source as BitmapSource, _art.ActualWidth);
+            }
+            _dragCard?.CenterOnCursor();
+        }
+
+        private void Art_Up(object sender, MouseButtonEventArgs e)
+        {
+            bool dragged = _artDragging;
+            if (_art.IsMouseCaptured) _art.ReleaseMouseCapture();
+            _artDragging = false;
+            _dragCard = null;
+            if (!dragged) OpenOnWebsite(_selected);   // plain click → website (unchanged)
+        }
+
+        // ── Results-grid drag-out → floating card (opt-in) ───────────────────────────────────────
+        // We don't handle the down (so a plain click still selects via the cell's Click). On a
+        // past-threshold move we capture the grid — which suppresses the pending cell click — spawn a
+        // FloatingCard from the card under the cursor, and follow until mouse-up. Spawns from the cell's
+        // visible (~256px) thumb for instant feedback, then upgrades to native-res art (UpgradeToNative).
+
+        private void Grid_Down(object sender, MouseButtonEventArgs e)
+        {
+            _gridDragging = false;
+            _gridDragCard = null;
+            _gridDownCard = null;
+            _gridDownArt = null;
+            if (!_config.DragFromGrid) return;
+
+            var img = FindCellImage(e.OriginalSource as DependencyObject);
+            if (img == null) return;
+            _gridDownCard = ArtImage.GetCard(img);
+            // Prefer native art if it's already cached; else the visible thumb (upgraded to native
+            // asynchronously once it loads — see Grid_Move).
+            _gridDownArt = CardArt.GetSync(_gridDownCard, false, 0) ?? (img.Source as BitmapSource);
+            _gridDownWidth = img.ActualWidth;
+            _gridDown = e.GetPosition(this);
+        }
+
+        private void Grid_Move(object sender, MouseEventArgs e)
+        {
+            if (!_config.DragFromGrid) return;
+            if (!_gridDragging)
+            {
+                if (_gridDownCard == null || _gridDownArt == null || e.LeftButton != MouseButtonState.Pressed) return;
+                var p = e.GetPosition(this);
+                if (Math.Abs(p.X - _gridDown.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                    Math.Abs(p.Y - _gridDown.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+                _gridDragging = true;
+                _grid.CaptureMouse();   // suppresses the cell's Click so a drag doesn't also select
+                _gridDragCard = _floating?.Spawn(_gridDownArt, _gridDownWidth);
+                UpgradeToNative(_gridDragCard, _gridDownCard);
+            }
+            _gridDragCard?.CenterOnCursor();
+        }
+
+        private void Grid_Up(object sender, MouseButtonEventArgs e)
+        {
+            bool dragged = _gridDragging;
+            if (_grid.IsMouseCaptured) _grid.ReleaseMouseCapture();
+            _gridDragging = false;
+            _gridDragCard = null;
+            _gridDownCard = null;
+            _gridDownArt = null;
+            if (dragged) e.Handled = true;   // we consumed this gesture as a drag, not a select
+        }
+
+        // Grid cells render a downscaled (~256px) thumb; once the full-res art loads, swap it into the
+        // floating card so a scaled-up card stays crisp (the detail-pane drag already starts native).
+        private static void UpgradeToNative(FloatingCard card, BgCard data)
+        {
+            if (card == null || data == null) return;
+            CardArt.LoadAsync(data, false, 0).ContinueWith(t =>
+            {
+                var bmp = t.Result;
+                if (bmp == null) return;
+                card.Dispatcher.BeginInvoke(new Action(() => card.SetArt(bmp)));
+            }, System.Threading.Tasks.TaskContinuationOptions.OnlyOnRanToCompletion);
+        }
+
+        // Walk up from the hit element to the cell's Button, then find its card Image (the one carrying
+        // the ArtImage.Card attached property). Returns null when the press wasn't on a card cell.
+        private static Image FindCellImage(DependencyObject hit)
+        {
+            var btn = FindAncestor<System.Windows.Controls.Primitives.ButtonBase>(hit);
+            return btn == null ? null : FindDescendantImage(btn);
+        }
+
+        private static T FindAncestor<T>(DependencyObject d) where T : DependencyObject
+        {
+            while (d != null && !(d is T))
+                d = (d is Visual || d is System.Windows.Media.Media3D.Visual3D) ? VisualTreeHelper.GetParent(d) : null;
+            return d as T;
+        }
+
+        private static Image FindDescendantImage(DependencyObject root)
+        {
+            if (root is Image im && ArtImage.GetCard(im) != null) return im;
+            int n = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < n; i++)
+            {
+                var found = FindDescendantImage(VisualTreeHelper.GetChild(root, i));
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private void ToggleSmart() { _smart = !_smart; UpdateBulb(); Refresh(); }

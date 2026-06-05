@@ -93,6 +93,7 @@
     <Compile Include="Config\PluginConfig.cs" />
     <Compile Include="Data\CardStore.cs" />
     <Compile Include="Game\GameStateProbe.cs" />
+    <Compile Include="Game\BgHud.cs" />
     <Compile Include="Hotkey\HotkeyManager.cs" />
     <Compile Include="Net\AssetClient.cs" />
     <Compile Include="Net\PluginNotice.cs" />
@@ -112,6 +113,8 @@
     <Compile Include="Ui\Dropdown.cs" />
     <Compile Include="Ui\OverlayBase.cs" />
     <Compile Include="Ui\OverlayLarge.cs" />
+    <Compile Include="Ui\FloatingCard.cs" />
+    <Compile Include="Ui\FloatingCardManager.cs" />
     <Compile Include="Ui\SettingsWindow.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

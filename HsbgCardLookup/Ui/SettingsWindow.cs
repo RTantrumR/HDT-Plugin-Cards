@@ -38,7 +38,7 @@ namespace HsbgCardLookup.Ui
             WindowStyle = WindowStyle.SingleBorderWindow;
             ResizeMode = ResizeMode.NoResize;
             Width = 470;
-            Height = 430;
+            SizeToContent = SizeToContent.Height;   // auto-fit the height to whatever rows exist
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Topmost = true;
             ShowInTaskbar = false;
@@ -72,6 +72,53 @@ namespace HsbgCardLookup.Ui
             {
                 _config.ShowDuos = v;
                 _status.Text = v ? "Duos cards shown." : "Duos cards hidden.";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("Drag cards from detail view", _config.DragFromDetail, v =>
+            {
+                _config.DragFromDetail = v;
+                _status.Text = v
+                    ? "Drag the detail portrait to pull out a floating card."
+                    : "Detail portrait drag-out off (click still opens the website).";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("Drag cards from results grid", _config.DragFromGrid, v =>
+            {
+                _config.DragFromGrid = v;
+                _status.Text = v
+                    ? "Drag a grid card to pull out a floating card."
+                    : "Grid drag-out off (a grid click just selects).";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("Hide dragged cards with app", _config.HideDraggedWithApp, v =>
+            {
+                _config.HideDraggedWithApp = v;
+                _status.Text = v
+                    ? "Dragged cards hide with the overlay."
+                    : "Dragged cards stay on screen when the overlay closes.";
+                _onChanged();
+            }));
+
+            stack.Children.Add(new Border { Height = 1, Background = UiKit.StrokeBrush, Margin = new Thickness(0, 6, 0, 12) });
+
+            stack.Children.Add(ToggleRow("Show my trinkets (in match)", _config.ShowTrinkets, v =>
+            {
+                _config.ShowTrinkets = v;
+                _status.Text = v
+                    ? "Your lesser/greater trinkets show on screen during a match."
+                    : "Trinket HUD off.";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("Show lobby anomaly (in match)", _config.ShowAnomaly, v =>
+            {
+                _config.ShowAnomaly = v;
+                _status.Text = v
+                    ? "The lobby anomaly shows on screen during a match."
+                    : "Anomaly HUD off.";
                 _onChanged();
             }));
 

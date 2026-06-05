@@ -29,6 +29,8 @@ namespace HsbgCardLookup
         private CardStore _store;
         private Dispatcher _ui;                                  // HDT's UI dispatcher
         private OverlayLarge _overlayLarge;
+        private FloatingCardManager _floating;
+        private Game.BgHud _bgHud;                               // always-on trinkets/anomaly HUD
         private SettingsWindow _settings;
 #if DEBUG
         private Game.GameStateProbe _probe;                     // read-only BG state logger (Debug-only diagnostics)
@@ -70,7 +72,9 @@ namespace HsbgCardLookup
             _hotkey = new HotkeyManager();
             _hotkey.HotkeyPressed += OnHotkeyPressed;
 
-            _overlayLarge = new OverlayLarge(_store, _config, _hotkey);
+            _floating = new FloatingCardManager(_config);
+            _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating);
+            _bgHud = new Game.BgHud(_store, _config, _ui);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
 
@@ -249,6 +253,8 @@ namespace HsbgCardLookup
             _config.Save();
             RewireHotkeys();
             _overlayLarge?.RefreshPool();   // pick up a Show-Duos change live
+            _floating?.OnSettingChanged();  // reconcile floating-card visibility (Hide-with-app toggle)
+            _bgHud?.OnSettingsChanged();    // show/hide the trinkets/anomaly HUD per its toggles
         }
 
         public void OnUnload()
@@ -258,6 +264,8 @@ namespace HsbgCardLookup
             _ui?.Invoke(() =>
             {
                 _settings?.Close(); _settings = null;
+                _floating?.CloseAll();
+                _bgHud?.CloseAll();
                 _overlayLarge?.Close();
                 _overlays = null;
             });
@@ -303,6 +311,7 @@ namespace HsbgCardLookup
 #if DEBUG
             _probe?.Poll();
 #endif
+            _bgHud?.Poll();   // throttled read of trinkets/anomaly → always-on HUD
         }
 
         private static readonly string LogDir = Path.Combine(
