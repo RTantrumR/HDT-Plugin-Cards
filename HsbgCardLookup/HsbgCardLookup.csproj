@@ -41,6 +41,8 @@
     <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
+    <!-- Folder picker for the art-cache-dir setting (framework assembly; not redistributed). -->
+    <Reference Include="System.Windows.Forms" />
     <!-- WPF: needed now because IPlugin.MenuItem is System.Windows.Controls.MenuItem -->
     <Reference Include="System.Xaml" />
     <Reference Include="PresentationCore" />

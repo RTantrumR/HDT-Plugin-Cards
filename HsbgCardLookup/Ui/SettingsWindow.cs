@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -27,6 +30,8 @@ namespace HsbgCardLookup.Ui
         private readonly Dictionary<string, TextBlock> _labels = new Dictionary<string, TextBlock>();
         private readonly TextBlock _status;
         private string _capturing;   // kind being rebound, or null
+        private TextBlock _artFolderLabel;   // shows the current art-cache folder
+        private Border _artChangeBtn;        // disabled while a move is in progress
 
         public SettingsWindow(PluginConfig config, HotkeyManager hotkey, Action onChanged)
         {
@@ -122,6 +127,9 @@ namespace HsbgCardLookup.Ui
                 _onChanged();
             }));
 
+            stack.Children.Add(new Border { Height = 1, Background = UiKit.StrokeBrush, Margin = new Thickness(0, 6, 0, 12) });
+            stack.Children.Add(ArtFolderRow());
+
             var closeLabel = new TextBlock { Text = "Close", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
             var close = new Border
             {
@@ -201,6 +209,121 @@ namespace HsbgCardLookup.Ui
                 VerticalAlignment = VerticalAlignment.Center
             });
             return dock;
+        }
+
+        // ── Art-cache folder (relocate the ~200MB off the system drive) ────────────────────────
+
+        private UIElement ArtFolderRow()
+        {
+            var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
+
+            var btnLabel = new TextBlock { Text = "Change…", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            _artChangeBtn = new Border
+            {
+                Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7), Padding = new Thickness(0, 6, 0, 6), Cursor = Cursors.Hand,
+                Width = 118, Child = btnLabel, VerticalAlignment = VerticalAlignment.Center
+            };
+            _artChangeBtn.MouseLeftButtonUp += (s, e) => ChangeArtFolder();
+            DockPanel.SetDock(_artChangeBtn, Dock.Right);
+            dock.Children.Add(_artChangeBtn);
+
+            var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            left.Children.Add(new TextBlock { Text = "Card art folder", Foreground = UiKit.TextPrimary, FontSize = 15 });
+            _artFolderLabel = new TextBlock
+            {
+                Foreground = UiKit.TextMuted, FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 300
+            };
+            left.Children.Add(_artFolderLabel);
+            dock.Children.Add(left);
+
+            UpdateArtFolderLabel();
+            return dock;
+        }
+
+        private void UpdateArtFolderLabel()
+        {
+            if (_artFolderLabel == null) return;
+            _artFolderLabel.Text = CardArt.CacheDir;
+            _artFolderLabel.ToolTip = CardArt.CacheDir;
+        }
+
+        private void ChangeArtFolder()
+        {
+            string picked;
+            using (var dlg = new System.Windows.Forms.FolderBrowserDialog())
+            {
+                dlg.Description = "Choose a folder for the card-art cache (~200 MB). A 'HsbgCardLookup-art' subfolder is created there.";
+                dlg.ShowNewFolderButton = true;
+                if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK || string.IsNullOrEmpty(dlg.SelectedPath)) return;
+                picked = dlg.SelectedPath;
+            }
+
+            string oldDir = CardArt.CacheDir;
+            string newDir = Path.Combine(picked, "HsbgCardLookup-art");
+            if (PathsEqual(oldDir, newDir)) { _status.Text = "Card art is already there."; return; }
+
+            _artChangeBtn.IsEnabled = false;
+            _artChangeBtn.Opacity = 0.5;
+            _status.Text = "Moving card art… (may take a moment across drives)";
+
+            Task.Run(() =>
+            {
+                bool ok = MoveArt(oldDir, newDir, out string err);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _artChangeBtn.IsEnabled = true;
+                    _artChangeBtn.Opacity = 1.0;
+                    if (ok)
+                    {
+                        CardArt.CacheDir = newDir;
+                        _config.ArtCacheDir = newDir;
+                        _config.Save();
+                        UpdateArtFolderLabel();
+                        _status.Text = "Card art folder changed.";
+                    }
+                    else
+                    {
+                        _status.Text = "Couldn't move card art: " + err + " — kept current folder.";
+                    }
+                }));
+            });
+        }
+
+        // Move the flat art-cache files (webp + any stray zip) into the new folder. Same-drive moves are
+        // instant; cross-drive File.Move copies then deletes. Best-effort: a failure leaves the old
+        // folder intact so nothing is lost (the caller then keeps the current folder).
+        private static bool MoveArt(string oldDir, string newDir, out string err)
+        {
+            err = null;
+            try
+            {
+                Directory.CreateDirectory(newDir);
+                if (Directory.Exists(oldDir) && !PathsEqual(oldDir, newDir))
+                {
+                    foreach (var f in Directory.GetFiles(oldDir))
+                    {
+                        var dest = Path.Combine(newDir, Path.GetFileName(f));
+                        if (File.Exists(dest)) File.Delete(dest);
+                        File.Move(f, dest);
+                    }
+                    try { if (!Directory.EnumerateFileSystemEntries(oldDir).Any()) Directory.Delete(oldDir); } catch { }
+                }
+                return true;
+            }
+            catch (Exception ex) { err = ex.Message; return false; }
+        }
+
+        private static bool PathsEqual(string a, string b)
+        {
+            try
+            {
+                return string.Equals(
+                    Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
         }
 
         // ── Capture ───────────────────────────────────────────────────────────────────────────
