@@ -48,7 +48,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 2, 0);
+        public Version Version => new Version(0, 2, 1);
 
         public MenuItem MenuItem => null;
 
@@ -73,7 +73,7 @@ namespace HsbgCardLookup
             _hotkey.HotkeyPressed += OnHotkeyPressed;
 
             _floating = new FloatingCardManager(_config);
-            _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating);
+            _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating, OpenSettings, Version.ToString());
             _bgHud = new Game.BgHud(_store, _config, _ui);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
@@ -296,13 +296,17 @@ namespace HsbgCardLookup
         public void OnButtonPress()
         {
             Log("OnButtonPress (settings)");
-            _ui?.BeginInvoke(new Action(() =>
-            {
-                if (_settings != null) { _settings.Activate(); return; }
-                _settings = new SettingsWindow(_config, _hotkey, ApplySettings);
-                _settings.Closed += (s, e) => _settings = null;
-                _settings.Show();
-            }));
+            _ui?.BeginInvoke(new Action(OpenSettings));
+        }
+
+        // Open (or focus) the settings window. Called from HDT's plugin button AND the overlay's gear
+        // icon — both on the UI thread.
+        private void OpenSettings()
+        {
+            if (_settings != null) { _settings.Activate(); return; }
+            _settings = new SettingsWindow(_config, _hotkey, ApplySettings);
+            _settings.Closed += (s, e) => _settings = null;
+            _settings.Show();
         }
 
         // Fires ~every 100 ms. Drives the read-only BG state probe (self-throttled to ~1.5s).

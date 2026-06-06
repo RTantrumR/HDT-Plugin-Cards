@@ -90,8 +90,8 @@ Copy-Item "$src\Newtonsoft.Json.dll" .\libs\
 формату `{ patch, cardCount, cards: [...] }` (плагін усе одно оновлює його з API під час роботи).
 
 ```powershell
-.\deploy.ps1                 # збірка Release + копія в теку Plugins HDT (перезапустіть HDT)
-.\package.ps1 -Version x.y.z # збірка + dist\HsbgCardLookup-v<ver>.zip для релізу
+.\deploy.ps1                 # збірка Release + копія в теку Plugins HDT (автоперезапуск HDT)
+.\package.ps1                 # збірка + dist\HsbgCardLookup-v<ver>.zip (версія читається з Plugin.cs; -Version перевизначає)
 ```
 
 AnyCPU у x86-процесі HDT → попередження `MSB3270` про невідповідність архітектури очікуване й безпечне.

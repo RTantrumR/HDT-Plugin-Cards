@@ -31,6 +31,8 @@ namespace HsbgCardLookup.Ui
         private readonly PluginConfig _config;
         private readonly HotkeyManager _hotkey;
         private readonly FloatingCardManager _floating;
+        private readonly Action _openSettings;   // opens the SettingsWindow (from the corner link)
+        private readonly string _version;        // shown small in the footer corner
 
         // Drag-out state for the detail art (distinguishes a click → website from a drag → floating card).
         private Point _artDown;
@@ -77,13 +79,18 @@ namespace HsbgCardLookup.Ui
         private TextBlock _goldenLabel;
         private TextBlock _relatedHeader;
         private UniformGrid _relatedPanel;
+        private Popup _helpPopup;       // keybinds & tips, anchored to the detail toolbar's "?"
+        private Border _helpAnchor;
 
-        public OverlayLarge(CardStore store, PluginConfig config, HotkeyManager hotkey, FloatingCardManager floating) : base(880, 800)
+        public OverlayLarge(CardStore store, PluginConfig config, HotkeyManager hotkey, FloatingCardManager floating,
+                            Action openSettings, string version) : base(880, 800)
         {
             _store = store;
             _config = config;
             _hotkey = hotkey;
             _floating = floating;
+            _openSettings = openSettings;
+            _version = version;
 
             try { Resources[typeof(ScrollBar)] = UiKit.ThinScrollBarStyle(); } catch { }
 
@@ -281,8 +288,171 @@ namespace HsbgCardLookup.Ui
                 Margin = new Thickness(0, 0, 0, 0)
             };
             sv.Resources[typeof(ScrollBar)] = UiKit.ThinScrollBarStyle(5);   // extra-thin here
-            return sv;
+
+            // Detail column = scrollable card content + a small fixed toolbar pinned at the bottom
+            // (settings gear · help · version), so it stays put regardless of scroll.
+            var col = new DockPanel { LastChildFill = true };
+            var toolbar = BuildDetailToolbar();
+            DockPanel.SetDock(toolbar, Dock.Bottom);
+            col.Children.Add(toolbar);
+            col.Children.Add(sv);
+            return col;
         }
+
+        // Bottom toolbar of the detail pane: version (left), then a help "?" and a settings gear (right).
+        private UIElement BuildDetailToolbar()
+        {
+            var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(2, 8, 2, 0) };
+
+            var version = new TextBlock
+            {
+                Text = "v" + (_version ?? "?"),
+                Foreground = UiKit.TextMuted, FontSize = 11.5,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            DockPanel.SetDock(version, Dock.Left);
+            bar.Children.Add(version);
+
+            // Right side: gear (far right) then help (left of it).
+            var gear = IconButton("⚙", "Settings", () => _openSettings?.Invoke());   // ⚙
+            DockPanel.SetDock(gear, Dock.Right);
+            bar.Children.Add(gear);
+
+            _helpAnchor = HelpButton();
+            DockPanel.SetDock(_helpAnchor, Dock.Right);
+            bar.Children.Add(_helpAnchor);
+
+            return bar;
+        }
+
+        // A muted icon glyph that brightens on hover and runs an action on click.
+        private static Border IconButton(string glyph, string tip, Action onClick)
+        {
+            var tb = new TextBlock
+            {
+                Text = glyph, FontSize = 16, Foreground = UiKit.TextMuted,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            };
+            var b = new Border
+            {
+                Background = Brushes.Transparent, Cursor = Cursors.Hand,
+                Padding = new Thickness(5, 1, 5, 1), Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center, Child = tb, ToolTip = tip
+            };
+            b.MouseEnter += (s, e) => tb.Foreground = UiKit.AccentBrush;
+            b.MouseLeave += (s, e) => tb.Foreground = UiKit.TextMuted;
+            b.MouseLeftButtonUp += (s, e) => onClick();
+            return b;
+        }
+
+        // Circular "?" help button (toggles the keybinds/tips popup).
+        private Border HelpButton()
+        {
+            var q = new TextBlock
+            {
+                Text = "?", FontSize = 11.5, FontWeight = FontWeights.Bold, Foreground = UiKit.TextMuted,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            };
+            var circle = new Border
+            {
+                Width = 18, Height = 18, CornerRadius = new CornerRadius(9),
+                BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                Background = Brushes.Transparent, Cursor = Cursors.Hand,
+                Margin = new Thickness(6, 0, 0, 0), Child = q, ToolTip = "Keybinds & tips"
+            };
+            circle.MouseEnter += (s, e) => { q.Foreground = UiKit.AccentBrush; circle.BorderBrush = UiKit.AccentBrush; };
+            circle.MouseLeave += (s, e) => { if (_helpPopup == null || !_helpPopup.IsOpen) { q.Foreground = UiKit.TextMuted; circle.BorderBrush = UiKit.StrokeBrush; } };
+            circle.MouseLeftButtonUp += (s, e) => ToggleHelpPopup();
+            return circle;
+        }
+
+        private void ToggleHelpPopup()
+        {
+            if (_helpPopup == null)
+            {
+                _helpPopup = new Popup
+                {
+                    PlacementTarget = _helpAnchor,
+                    Placement = PlacementMode.Top,
+                    StaysOpen = false,
+                    AllowsTransparency = true,
+                    PopupAnimation = PopupAnimation.Fade,
+                    VerticalOffset = -6
+                };
+                _helpPopup.Closed += (s, e) => EndPopup();   // release the overlay's focus-loss guard
+            }
+            if (_helpPopup.IsOpen) { _helpPopup.IsOpen = false; return; }
+            _helpPopup.Child = BuildHelpContent();
+            BeginPopup();
+            _helpPopup.IsOpen = true;
+        }
+
+        private FrameworkElement BuildHelpContent()
+        {
+            var list = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+
+            list.Children.Add(HelpHeader("KEYBINDS"));
+            list.Children.Add(HelpRow("Open / close overlay", _config.BrowserKey));
+            list.Children.Add(HelpRow("Smart search on / off", "Tab"));
+            list.Children.Add(HelpRow("Open first result", "Enter"));
+            list.Children.Add(HelpRow("Close", "Esc"));
+            list.Children.Add(HelpRow("Toggle golden", _config.GoldenKey));
+            list.Children.Add(HelpRow("Focus search box", _config.FocusKey));
+            list.Children.Add(HelpRow("Open card on hsbg.cards", "click art"));
+
+            list.Children.Add(HelpHeader("TIPS"));
+            list.Children.Add(HelpNote("Smart search: try t3 · 5/5 · a tribe or keyword · cost 2"));
+            list.Children.Add(HelpNote("Drag a card out of the art to pin it on screen — drag its top-right corner to resize, right-click to dismiss."));
+            list.Children.Add(HelpNote("Trinkets/anomaly HUD and grid drag-out are toggled in Settings (⚙)."));
+
+            return new Border
+            {
+                Background = new LinearGradientBrush(UiKit.PanelBg2, UiKit.PanelBg, 90),
+                BorderBrush = UiKit.AccentBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Width = 300,
+                Child = new ScrollViewer
+                {
+                    MaxHeight = 440,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = list
+                }
+            };
+        }
+
+        private static TextBlock HelpHeader(string t) => new TextBlock
+        {
+            Text = t, Foreground = UiKit.AccentBrush, FontSize = 11, FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(14, 11, 14, 6)
+        };
+
+        private static UIElement HelpRow(string label, string key)
+        {
+            var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(14, 2, 14, 2) };
+            var chip = new Border
+            {
+                Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1, 6, 1), Margin = new Thickness(8, 0, 0, 0),
+                Child = new TextBlock { Text = KeyDisplay(key), Foreground = UiKit.TextPrimary, FontSize = 11.5 }
+            };
+            DockPanel.SetDock(chip, Dock.Right);
+            dock.Children.Add(chip);
+            dock.Children.Add(new TextBlock
+            {
+                Text = label, Foreground = UiKit.TextSecondary, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center
+            });
+            return dock;
+        }
+
+        private static TextBlock HelpNote(string t) => new TextBlock
+        {
+            Text = t, Foreground = UiKit.TextMuted, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(14, 3, 14, 3)
+        };
+
+        private static string KeyDisplay(string ks) =>
+            string.IsNullOrEmpty(ks) || ks == "None" ? "—" : ks;
 
         // Window-level key handling. The search box holds real keyboard focus, so it natively consumes
         // character keys (any language). Esc/Tab/Enter always act here; the letter-bound Golden and

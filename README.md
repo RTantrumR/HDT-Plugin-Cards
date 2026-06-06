@@ -92,8 +92,8 @@ The bundled card snapshot `HsbgCardLookup\data\cards.json` is also gitignored â€
 anyway).
 
 ```powershell
-.\deploy.ps1                 # build Release + copy into HDT's Plugins folder (restart HDT to load)
-.\package.ps1 -Version x.y.z # build + produce dist\HsbgCardLookup-v<ver>.zip for release
+.\deploy.ps1                 # build Release + copy into HDT's Plugins folder (auto-restarts HDT)
+.\package.ps1                 # build + dist\HsbgCardLookup-v<ver>.zip (version auto-read from Plugin.cs; -Version overrides)
 ```
 
 AnyCPU loaded into HDT's x86 process â†’ the `MSB3270` arch-mismatch warning is expected and harmless.

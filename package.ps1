@@ -12,10 +12,21 @@
   %APPDATA%\HearthstoneDeckTracker\Plugins\ manually). Release excludes the dev-only
   GameStateProbe (it's #if DEBUG).
 #>
-param([string]$Version = "0.1.0")
+param([string]$Version)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
+
+# Default the version to whatever Plugin.cs reports (the `Version` property the GitHub updater compares
+# against the release tag), so the zip name can never drift from the shipped build. Pass -Version only
+# to override.
+if (-not $Version) {
+    $pluginCs = Join-Path $root "HsbgCardLookup\Plugin.cs"
+    $m = [regex]::Match((Get-Content -Raw $pluginCs), 'Version\s*=>\s*new\s+Version\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)')
+    if (-not $m.Success) { throw "Could not read plugin Version from $pluginCs" }
+    $Version = "{0}.{1}.{2}" -f $m.Groups[1].Value, $m.Groups[2].Value, $m.Groups[3].Value
+    Write-Host "Version (from Plugin.cs): $Version" -ForegroundColor Cyan
+}
 $msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
 if (-not (Test-Path $msbuild)) { throw "MSBuild not found at $msbuild" }
 
