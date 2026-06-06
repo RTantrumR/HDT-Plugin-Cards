@@ -48,7 +48,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 2, 1);
+        public Version Version => new Version(0, 2, 2);
 
         public MenuItem MenuItem => null;
 
@@ -67,6 +67,7 @@ namespace HsbgCardLookup
             Log("CardStore: " + _store.LoadInfo);
 
             Ui.CardArt.UseLocalArt = _config.UseLocalDevArt;   // dev-only local-PNG shortcut, off by default
+            if (!string.IsNullOrWhiteSpace(_config.ArtCacheDir)) Ui.CardArt.CacheDir = _config.ArtCacheDir;  // user-relocated art cache
             Ui.WebpDecoder.Log = Log;
 
             _hotkey = new HotkeyManager();

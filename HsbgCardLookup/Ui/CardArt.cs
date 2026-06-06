@@ -27,7 +27,10 @@ namespace HsbgCardLookup.Ui
         // Cap concurrent downloads (matches the website's zip export).
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(6);
 
-        internal static readonly string CacheDir = Path.Combine(PluginConfig.DataDir, "art-cache");
+        // Card-art cache dir. Settable (Plugin.OnLoad applies PluginConfig.ArtCacheDir) so users can
+        // relocate the ~200MB off the system drive. Default = DataDir\art-cache.
+        internal static readonly string DefaultCacheDir = Path.Combine(PluginConfig.DataDir, "art-cache");
+        internal static string CacheDir = DefaultCacheDir;
 
         // Dev-only opt-in: use local public/ PNGs instead of pack/CDN WebP. Off by default.
         internal static bool UseLocalArt = false;

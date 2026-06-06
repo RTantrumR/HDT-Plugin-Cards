@@ -32,6 +32,9 @@ namespace HsbgCardLookup.Config
         public double FloatingCardWidth { get; set; } = 0;
         // Dev shortcut: use local public/ PNGs instead of the pack/CDN WebP. Off by default.
         public bool UseLocalDevArt { get; set; } = false;
+        // Custom folder for the (large ~200MB) card-art cache. Empty = default (DataDir\art-cache).
+        // Lets users move the art off the system drive. Other small files stay in DataDir.
+        public string ArtCacheDir { get; set; } = "";
 
         // Always-on HUD: read the player's current trinkets / lobby anomaly from HDT's live state and
         // show each as a floating card. Off by default (opt-in). Each slot's placement+size persists.
