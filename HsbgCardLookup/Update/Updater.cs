@@ -125,29 +125,94 @@ namespace HsbgCardLookup.Update
             return hit ?? direct;
         }
 
-        /// <summary>Copy the extracted files over the plugin folder. Copies the main DLL first so a
-        /// file lock (HDT not shadow-copying after all) is detected before touching anything else.</summary>
+        /// <summary>Copy the extracted files over the plugin folder. The running plugin DLL and our
+        /// bundled deps (loaded via AssemblyResolve.LoadFrom) are LOCKED while HDT runs, so a plain
+        /// in-place overwrite fails — <see cref="CopyOne"/> renames a locked file aside (.old, allowed
+        /// even while loaded) and writes the new one, which loads on the next restart. Files already
+        /// identical (unchanged deps) are skipped.</summary>
         private static bool TryApply(string pluginDir)
         {
             try
             {
+                CleanupOldFiles(pluginDir);   // remove *.old left by a previous update (now unlocked)
+
                 var extractDir = Path.Combine(StagingDir, "files");
                 var dll = ResolveExtractedDll(extractDir);
                 if (!File.Exists(dll)) return false;
                 var srcRoot = Path.GetDirectoryName(dll);
 
-                File.Copy(dll, Path.Combine(pluginDir, "HsbgCardLookup.dll"), true);   // lock probe
+                if (!CopyOne(dll, Path.Combine(pluginDir, "HsbgCardLookup.dll"))) return false;
                 foreach (var src in Directory.GetFiles(srcRoot, "*", SearchOption.AllDirectories))
                 {
                     var rel = src.Substring(srcRoot.Length).TrimStart(Path.DirectorySeparatorChar);
                     if (rel.Equals("HsbgCardLookup.dll", StringComparison.OrdinalIgnoreCase)) continue;
                     var dest = Path.Combine(pluginDir, rel);
                     Directory.CreateDirectory(Path.GetDirectoryName(dest));
-                    File.Copy(src, dest, true);
+                    if (!CopyOne(src, dest)) return false;
                 }
                 return true;
             }
             catch { return false; }
+        }
+
+        // Copy src→dest, tolerating a locked destination (the loaded plugin DLL / bundled deps): if the
+        // existing file is already identical, skip it; otherwise rename the locked file aside (.old —
+        // Windows permits renaming an in-use module) and write the new one, which takes effect on the
+        // next HDT restart. Returns false only if even the rename+copy fails.
+        private static bool CopyOne(string src, string dest)
+        {
+            try { File.Copy(src, dest, true); return true; }
+            catch
+            {
+                try
+                {
+                    if (File.Exists(dest) && SameFile(src, dest)) return true;   // unchanged, just locked
+                    var aside = dest + ".old";
+                    try { if (File.Exists(aside)) File.Delete(aside); } catch { }
+                    File.Move(dest, aside);
+                    File.Copy(src, dest, true);
+                    return true;
+                }
+                catch { return false; }
+            }
+        }
+
+        private static bool SameFile(string a, string b)
+        {
+            try
+            {
+                var fa = new FileInfo(a); var fb = new FileInfo(b);
+                if (!fa.Exists || !fb.Exists || fa.Length != fb.Length) return false;
+                const int N = 65536;
+                using (var sa = File.OpenRead(a))
+                using (var sb = File.OpenRead(b))
+                {
+                    var ba = new byte[N]; var bb = new byte[N];
+                    int ra;
+                    while ((ra = sa.Read(ba, 0, N)) > 0)
+                    {
+                        int off = 0, n;
+                        while (off < ra && (n = sb.Read(bb, off, ra - off)) > 0) off += n;
+                        if (off != ra) return false;
+                        for (int i = 0; i < ra; i++) if (ba[i] != bb[i]) return false;
+                    }
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+
+        // Delete *.old left behind by a prior update (the old locked modules; freed after the restart).
+        private static void CleanupOldFiles(string pluginDir)
+        {
+            try
+            {
+                foreach (var f in Directory.GetFiles(pluginDir, "*.old", SearchOption.AllDirectories))
+                {
+                    try { File.Delete(f); } catch { }
+                }
+            }
+            catch { }
         }
 
         private static Version ParseVersion(string tag)

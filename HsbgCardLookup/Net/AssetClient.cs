@@ -39,7 +39,10 @@ namespace HsbgCardLookup.Net
                 using (var resp = await Http.GetAsync(url).ConfigureAwait(false))
                 {
                     if (!resp.IsSuccessStatusCode) return null;
-                    return await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    // Decode as UTF-8 explicitly rather than trusting the response charset header — a
+                    // missing/wrong charset otherwise mangles non-ASCII (e.g. emoji in release notes).
+                    var bytes = await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    return System.Text.Encoding.UTF8.GetString(bytes);
                 }
             }
             catch { return null; }
