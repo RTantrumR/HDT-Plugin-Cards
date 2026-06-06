@@ -101,13 +101,69 @@ namespace HsbgCardLookup.Search
             return nameScore + textScore + (nameScore > 0 ? tierBonus : 0);
         }
 
-        private static List<BgCard> SortByRelevance(IEnumerable<BgCard> cards, string query) =>
-            cards.OrderByDescending(c => ScoreCard(c, query)).ToList();
+        private static List<BgCard> SortByRelevance(IEnumerable<BgCard> cards, string query, bool demoteSecondary) =>
+            cards.OrderBy(c => SecondaryKey(c, demoteSecondary))
+                 .ThenByDescending(c => ScoreCard(c, query))
+                 .ToList();
 
-        private static List<BgCard> SortTierThenName(IEnumerable<BgCard> cards) =>
-            cards.OrderBy(c => c.Tier ?? 99)
+        private static List<BgCard> SortTierThenName(IEnumerable<BgCard> cards, bool demoteSecondary) =>
+            cards.OrderBy(c => SecondaryKey(c, demoteSecondary))
+                 .ThenBy(c => c.Tier ?? 99)
                  .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
                  .ToList();
+
+        // Sort key: 0 = primary card (top). Demoted cards get 1+rank so they sit below all primaries
+        // AND are ordered among themselves by how likely they are to be searched — timewarped first,
+        // battlecruiser/spellcraft last (see SecondaryOrder). Applies when no alias is typed.
+        private static int SecondaryKey(BgCard c, bool demoteSecondary)
+        {
+            if (!demoteSecondary || !IsSecondary(c)) return 0;
+            return 1 + SecondaryRank(c);
+        }
+
+        // Within the demoted group, lower = shown first. Tune this order freely.
+        private static readonly string[] SecondaryOrder =
+            { "timewarped", "buddy", "token", "heroPower", "darkmoon", "spellcraft", "battlecruiser" };
+
+        private static int SecondaryRank(BgCard c)
+        {
+            var cats = c.Categories;
+            int best = SecondaryOrder.Length;   // uncategorized secondary (tierless "other" spells) → last
+            if (cats != null)
+                foreach (var x in cats)
+                    for (int i = 0; i < SecondaryOrder.Length; i++)
+                        if (i < best && string.Equals(x, SecondaryOrder[i], StringComparison.OrdinalIgnoreCase))
+                            best = i;
+            return best;
+        }
+
+        // "Secondary" = derived/special cards that flood searches: tokens, hero-power & buddy minions,
+        // spellcraft / timewarped / battlecruiser / darkmoon cards, plus tierless "other" spells. They
+        // sort to the bottom of results unless the query directly asks for them (QueryWantsSecondary).
+        // Category-driven (any card type), so a special card is caught regardless of its tier/type.
+        private static readonly HashSet<string> SecondaryCategories = new HashSet<string>(
+            new[] { "token", "heroPower", "buddy", "spellcraft", "timewarped", "battlecruiser", "darkmoon" },
+            StringComparer.OrdinalIgnoreCase);
+
+        private static bool IsSecondary(BgCard c)
+        {
+            var cats = c.Categories;
+            if (cats != null)
+                foreach (var x in cats)
+                    if (SecondaryCategories.Contains(x)) return true;
+            return c.CardType == "spell" && !c.Tier.HasValue;   // tierless "other" spells with no telling category
+        }
+
+        // Don't demote when the query names a derived category (so "beast buddy" / "token" / "spellcraft"
+        // surface those at the top as before). Substring match catches plurals (buddy/buddies, token/tokens).
+        private static readonly string[] SecondaryAliasWords =
+            { "buddy", "token", "spellcraft", "timewarped", "battlecruiser", "darkmoon" };
+
+        private static bool QueryWantsSecondary(string query)
+        {
+            string q = (query ?? "").ToLowerInvariant();
+            return SecondaryAliasWords.Any(w => q.IndexOf(w, StringComparison.Ordinal) >= 0);
+        }
 
         public static SearchResult Smart(IList<BgCard> cards, string query)
         {
@@ -249,12 +305,14 @@ namespace HsbgCardLookup.Search
                 }
             }
 
-            return new SearchResult { Cards = SortTierThenName(res), Parsed = parsed, IsFuzzy = isFuzzy };
+            bool demote = !QueryWantsSecondary(query);
+            return new SearchResult { Cards = SortTierThenName(res, demote), Parsed = parsed, IsFuzzy = isFuzzy };
         }
 
         public static SearchResult Simple(IList<BgCard> cards, string query)
         {
             var queryWords = Words2(query.ToLowerInvariant());
+            bool demote = !QueryWantsSecondary(query);
 
             var substring = cards.Where(c =>
             {
@@ -264,7 +322,7 @@ namespace HsbgCardLookup.Search
             });
             var subList = substring.ToList();
             if (subList.Count > 0)
-                return new SearchResult { Cards = SortByRelevance(subList, query), IsFuzzy = false };
+                return new SearchResult { Cards = SortByRelevance(subList, query, demote), IsFuzzy = false };
 
             var fuzzy = cards.Where(c =>
             {
@@ -283,7 +341,7 @@ namespace HsbgCardLookup.Search
             }).ToList();
 
             if (fuzzy.Count > 0)
-                return new SearchResult { Cards = SortByRelevance(fuzzy, query), IsFuzzy = true };
+                return new SearchResult { Cards = SortByRelevance(fuzzy, query, demote), IsFuzzy = true };
 
             return new SearchResult();
         }
