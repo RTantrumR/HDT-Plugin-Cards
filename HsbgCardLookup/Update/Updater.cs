@@ -16,7 +16,8 @@ namespace HsbgCardLookup.Update
     {
         public string Message;
         public bool IsError;
-        public string Url;     // non-null => show a clickable link (manual install fallback)
+        public string Url;          // non-null => show a clickable link (manual install fallback)
+        public bool RestartReady;   // true => an update is staged; restarting HDT applies it
         public UpdateNotice(string message, bool isError = false, string url = null)
         { Message = message; IsError = isError; Url = url; }
     }
@@ -39,7 +40,10 @@ namespace HsbgCardLookup.Update
         private static string ReleasesUrl => "https://github.com/" + GitHubRepo + "/releases/latest";
         private static string ApiLatest => "https://api.github.com/repos/" + GitHubRepo + "/releases/latest";
 
-        public static async Task<UpdateNotice> RunAsync(Version current, string pluginDir, PluginConfig config)
+        /// <param name="manual">User-triggered ("Check for updates" button): skip the 6h throttle and
+        /// always return a notice — including "you're up to date" / "couldn't check" — so the UI can
+        /// give feedback. The background check (manual=false) stays silent in those cases (returns null).</param>
+        public static async Task<UpdateNotice> RunAsync(Version current, string pluginDir, PluginConfig config, bool manual = false)
         {
             try
             {
@@ -58,13 +62,13 @@ namespace HsbgCardLookup.Update
                     // Staged but not yet running — try to apply again, then ask for a restart.
                     bool applied = TryApply(pluginDir);
                     return applied
-                        ? new UpdateNotice($"Update v{pending.Version} ready — restart HDT to finish.")
+                        ? new UpdateNotice($"Update v{pending.Version} ready — restart HDT to finish.") { RestartReady = true }
                         : new UpdateNotice($"Update v{pending.Version} couldn't be applied automatically. "
                             + "Please install it manually:", true, pending.Url ?? ReleasesUrl);
                 }
 
-                // 2. Throttle, then check the latest release.
-                if (DateTime.TryParse(config.LastUpdateCheckUtc, null,
+                // 2. Throttle (background only), then check the latest release.
+                if (!manual && DateTime.TryParse(config.LastUpdateCheckUtc, null,
                         System.Globalization.DateTimeStyles.RoundtripKind, out var last)
                     && DateTime.UtcNow - last.ToUniversalTime() < CheckInterval)
                     return null;
@@ -72,10 +76,17 @@ namespace HsbgCardLookup.Update
                 var rel = await AssetClient.GetJsonAsync<GhRelease>(ApiLatest).ConfigureAwait(false);
                 config.LastUpdateCheckUtc = DateTime.UtcNow.ToString("o");
                 config.Save();
-                if (rel == null) return null;
+                if (rel == null)
+                    return manual
+                        ? new UpdateNotice("Couldn't check for updates — you may be offline, or no release "
+                            + "has been published yet. You can check manually:", true, ReleasesUrl)
+                        : null;
 
                 var v = ParseVersion(rel.TagName);
-                if (v == null || v <= current) return null;
+                if (v == null)
+                    return manual ? new UpdateNotice("Couldn't read the latest release info.", true, ReleasesUrl) : null;
+                if (v <= current)
+                    return manual ? new UpdateNotice($"You're on the latest version (v{current}).") : null;
 
                 var asset = rel.Assets?.FirstOrDefault(
                     a => a.Name != null && a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
@@ -89,7 +100,7 @@ namespace HsbgCardLookup.Update
                 WriteMarker(new Pending { Version = v.ToString(), Changelog = rel.Body, Url = ReleasesUrl });
                 bool ok = TryApply(pluginDir);
                 return ok
-                    ? new UpdateNotice($"Update v{v} downloaded — restart HDT to apply.")
+                    ? new UpdateNotice($"Update v{v} downloaded — restart HDT to apply.") { RestartReady = true }
                     : new UpdateNotice($"Update v{v} downloaded but couldn't be applied automatically. "
                         + "Install it manually:", true, ReleasesUrl);
             }

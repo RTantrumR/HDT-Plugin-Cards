@@ -50,6 +50,14 @@ namespace HsbgCardLookup.Ui
         private double _dpiScale = 1.0;             // device px per DIP (set once the HWND exists)
         private HwndSource _src;
 
+        // Arrange-mode ("unlock overlay") chrome: a dashed outline + a slot-name chip, built collapsed
+        // and toggled by SetEditChrome/ClearEditChrome. While editing, the resize handle is pinned
+        // visible so the box can be positioned/sized even with no card present.
+        private Rectangle _editOutline;
+        private Border _editLabel;
+        private TextBlock _editLabelText;
+        private bool _editing;
+
         public FloatingCard(IFloatingCardHost owner, BitmapSource art, double initialWidth, bool closable = true)
         {
             _owner = owner;
@@ -109,9 +117,13 @@ namespace HsbgCardLookup.Ui
                 Child = arrow
             };
 
+            BuildEditChrome();
+
             var root = new Grid();
             root.Children.Add(_img);
-            root.Children.Add(_handle);
+            root.Children.Add(_editOutline);
+            root.Children.Add(_editLabel);
+            root.Children.Add(_handle);   // handle draws on top
             Content = root;
 
             SizeChanged += (s, e) => UpdateHandle();   // keep the handle proportional as the card resizes
@@ -189,6 +201,65 @@ namespace HsbgCardLookup.Ui
             try { Close(); } catch { }
         }
 
+        // ── Arrange-mode chrome ──────────────────────────────────────────────────────────────────
+
+        // Built once (collapsed); both children are non-hit-testable so they never interfere with the
+        // system move/resize done in WndProc. The outline stretches with the card; the chip anchors
+        // top-left (both inset by Pad so they hug the art, not the transparent grab ring).
+        private void BuildEditChrome()
+        {
+            _editOutline = new Rectangle
+            {
+                Stroke = UiKit.AccentBrush,
+                StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection { 4, 3 },
+                Fill = Brushes.Transparent,
+                RadiusX = 6, RadiusY = 6,
+                Margin = new Thickness(Pad),
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed
+            };
+
+            _editLabelText = new TextBlock
+            {
+                Foreground = new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E)),  // dark text on the accent chip
+                FontSize = 12, FontWeight = FontWeights.SemiBold
+            };
+            _editLabel = new Border
+            {
+                Background = UiKit.AccentBrush,
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(Pad + 4, Pad + 4, 0, 0),
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed,
+                Child = _editLabelText
+            };
+        }
+
+        /// <summary>Show arrange-mode chrome (dashed outline + slot label) and pin the resize handle
+        /// visible, so a placeholder box can be positioned/sized even with no card present.</summary>
+        public void SetEditChrome(string label)
+        {
+            if (_editOutline == null) return;
+            _editLabelText.Text = label ?? "";
+            _editOutline.Visibility = Visibility.Visible;
+            _editLabel.Visibility = Visibility.Visible;
+            _editing = true;
+            _handle.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>Hide arrange-mode chrome and return the resize handle to hover-only behavior.</summary>
+        public void ClearEditChrome()
+        {
+            _editing = false;
+            if (_editOutline != null) _editOutline.Visibility = Visibility.Collapsed;
+            if (_editLabel != null) _editLabel.Visibility = Visibility.Collapsed;
+            _handle.Visibility = Visibility.Collapsed;
+        }
+
         // ── Win32 plumbing ───────────────────────────────────────────────────────────────────────
 
         private void OnSourceInitialized(object sender, EventArgs e)
@@ -249,7 +320,7 @@ namespace HsbgCardLookup.Ui
                     break;
 
                 case WM_NCMOUSELEAVE:
-                    _handle.Visibility = Visibility.Collapsed;
+                    if (!_editing) _handle.Visibility = Visibility.Collapsed;   // arrange mode keeps it pinned
                     break;
 
                 case WM_SIZING:

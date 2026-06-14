@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -48,9 +49,37 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 2, 2);
+        public Version Version => new Version(0, 2, 3);
 
-        public MenuItem MenuItem => null;
+        // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
+        // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the
+        // UI thread (HDT reads this getter when it constructs the menu).
+        private MenuItem _menuItem;
+        public MenuItem MenuItem => _menuItem ?? (_menuItem = BuildMenuItem());
+
+        private MenuItem BuildMenuItem()
+        {
+            var root = new MenuItem { Header = Name };
+
+            var open = new MenuItem { Header = "Open overlay" };
+            open.Click += (s, e) => _ui?.BeginInvoke(new Action(() =>
+            {
+                if (_overlays != null)
+                    foreach (var w in _overlays.Values) { if (!ReferenceEquals(w, _overlayLarge)) w.HideIfOpen(); }
+                _overlayLarge?.Toggle();
+            }));
+
+            var settings = new MenuItem { Header = "Settings" };
+            settings.Click += (s, e) => _ui?.BeginInvoke(new Action(OpenSettings));
+
+            var update = new MenuItem { Header = "Check for updates" };
+            update.Click += (s, e) => _ui?.BeginInvoke(new Action(CheckForUpdatesInteractive));
+
+            root.Items.Add(open);
+            root.Items.Add(settings);
+            root.Items.Add(update);
+            return root;
+        }
 
         public void OnLoad()
         {
@@ -74,7 +103,7 @@ namespace HsbgCardLookup
             _hotkey.HotkeyPressed += OnHotkeyPressed;
 
             _floating = new FloatingCardManager(_config);
-            _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating, OpenSettings, Version.ToString());
+            _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating, OpenSettings, CheckForUpdatesInteractive, Version.ToString());
             _bgHud = new Game.BgHud(_store, _config, _ui);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
@@ -196,6 +225,97 @@ namespace HsbgCardLookup
             catch (Exception ex) { Log("CheckForUpdateAsync error: " + ex.Message); }
         }
 
+        // User-triggered "Check for updates" — wired to the HDT plugins-menu item and the overlay
+        // toolbar's ⟳ icon. Bypasses the 6h throttle and always gives feedback (incl. "up to date" /
+        // "couldn't check"); prompts a restart when an update is staged. Runs off the UI thread.
+        internal void CheckForUpdatesInteractive()
+        {
+            if (_overlayLarge?.IsVisible == true)
+                _overlayLarge.SetUpdateNotice("Checking for updates…", false, null);
+            Task.Run(async () =>
+            {
+                Update.UpdateNotice notice = null;
+                try { notice = await Update.Updater.RunAsync(Version, PluginDir(), _config, manual: true); }
+                catch (Exception ex) { Log("CheckForUpdatesInteractive error: " + ex.Message); }
+                _ui?.BeginInvoke(new Action(() => HandleManualNotice(notice)));
+            });
+        }
+
+        // Show the manual-check result. Banner if the overlay is open; otherwise (triggered from HDT's
+        // plugins menu with the overlay closed) a MessageBox. A staged update always prompts a restart.
+        private void HandleManualNotice(Update.UpdateNotice notice)
+        {
+            if (notice == null)
+                notice = new Update.UpdateNotice("Couldn't check for updates right now — please try again later.", true);
+
+            bool overlayOpen = _overlayLarge?.IsVisible == true;
+
+            if (notice.RestartReady)
+            {
+                if (overlayOpen) _overlayLarge.SetUpdateNotice(notice.Message, false, null);
+                var ans = MessageBox.Show(notice.Message + "\n\nRestart HDT now to finish installing?",
+                    "HSBG Card Lookup — Update ready", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (ans == MessageBoxResult.Yes) RestartHost();
+                return;
+            }
+
+            if (overlayOpen)
+            {
+                _overlayLarge.SetUpdateNotice(notice.Message, notice.IsError, notice.Url);
+                return;
+            }
+
+            // Overlay closed: surface via MessageBox; offer the releases link when there is one.
+            if (!string.IsNullOrEmpty(notice.Url))
+            {
+                var ans = MessageBox.Show(notice.Message + "\n\nOpen the releases page in your browser?",
+                    "HSBG Card Lookup — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (ans == MessageBoxResult.Yes)
+                    try { System.Diagnostics.Process.Start(notice.Url); } catch { }
+            }
+            else
+            {
+                MessageBox.Show(notice.Message, "HSBG Card Lookup — Updates",
+                    MessageBoxButton.OK, notice.IsError ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            }
+        }
+
+        // Relaunch HDT to apply a staged update. HDT scans plugins only at startup, so finishing an
+        // install needs a restart. We spawn a detached helper that waits for every HDT process to exit
+        // then starts the Squirrel shim, then ask HDT to shut down (runs OnUnload). Mirrors restartHDT.ps1.
+        private void RestartHost()
+        {
+            try
+            {
+                var root = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "HearthstoneDeckTracker");
+                var shim = Path.Combine(root, "HearthstoneDeckTracker.exe");
+                if (!File.Exists(shim))   // fall back to the newest app-<ver> exe
+                {
+                    var newest = Directory.Exists(root)
+                        ? Directory.GetDirectories(root, "app-*").OrderByDescending(d => d).FirstOrDefault()
+                        : null;
+                    if (newest != null) shim = Path.Combine(newest, "HearthstoneDeckTracker.exe");
+                }
+                if (!File.Exists(shim)) { Log("RestartHost: HDT exe not found"); return; }
+
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = "-NoProfile -WindowStyle Hidden -Command "
+                        + "\"while(Get-Process -Name HearthstoneDeckTracker -ErrorAction SilentlyContinue)"
+                        + "{Start-Sleep -Milliseconds 300}; Start-Process '" + shim + "'\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                System.Diagnostics.Process.Start(psi);
+                Log("RestartHost: relauncher spawned, shutting down HDT");
+                _ui?.BeginInvoke(new Action(() => Application.Current?.Shutdown()));
+            }
+            catch (Exception ex) { Log("RestartHost error: " + ex.Message); }
+        }
+
         // Refresh card data from the API when its content hash changes (patch-independent, since the
         // site edits data between patches); persist to cache and reload the overlay.
         private async Task RefreshDataAsync()
@@ -305,7 +425,7 @@ namespace HsbgCardLookup
         private void OpenSettings()
         {
             if (_settings != null) { _settings.Activate(); return; }
-            _settings = new SettingsWindow(_config, _hotkey, ApplySettings);
+            _settings = new SettingsWindow(_config, _hotkey, ApplySettings, on => _bgHud?.SetEditMode(on));
             _settings.Closed += (s, e) => _settings = null;
             _settings.Show();
         }

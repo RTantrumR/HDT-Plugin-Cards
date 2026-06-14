@@ -27,17 +27,22 @@ namespace HsbgCardLookup.Ui
         private readonly PluginConfig _config;
         private readonly HotkeyManager _hotkey;
         private readonly Action _onChanged;
+        private readonly Action<bool> _onHudEditMode;   // enter/exit the HUD arrange ("unlock") mode
         private readonly Dictionary<string, TextBlock> _labels = new Dictionary<string, TextBlock>();
         private readonly TextBlock _status;
         private string _capturing;   // kind being rebound, or null
         private TextBlock _artFolderLabel;   // shows the current art-cache folder
         private Border _artChangeBtn;        // disabled while a move is in progress
+        private bool _arranging;             // HUD arrange mode is active
+        private Border _arrangeBtn;          // the Arrange/Done toggle button
+        private TextBlock _arrangeBtnLabel;
 
-        public SettingsWindow(PluginConfig config, HotkeyManager hotkey, Action onChanged)
+        public SettingsWindow(PluginConfig config, HotkeyManager hotkey, Action onChanged, Action<bool> onHudEditMode)
         {
             _config = config;
             _hotkey = hotkey;
             _onChanged = onChanged;
+            _onHudEditMode = onHudEditMode;
 
             Title = "HSBG Card Lookup - Settings";
             WindowStyle = WindowStyle.SingleBorderWindow;
@@ -116,6 +121,16 @@ namespace HsbgCardLookup.Ui
                     ? "Your lesser/greater trinkets show on screen during a match."
                     : "Trinket HUD off.";
                 _onChanged();
+                UpdateArrangeRow();
+            }));
+
+            stack.Children.Add(ToggleRow("Show extra trinket boxes (3rd/4th)", _config.ShowExtraTrinkets, v =>
+            {
+                _config.ShowExtraTrinkets = v;
+                _status.Text = v
+                    ? "Extra trinket boxes show when an anomaly grants more than two."
+                    : "Extra trinket boxes off (just lesser + greater).";
+                _onChanged();
             }));
 
             stack.Children.Add(ToggleRow("Show lobby anomaly (in match)", _config.ShowAnomaly, v =>
@@ -125,7 +140,10 @@ namespace HsbgCardLookup.Ui
                     ? "The lobby anomaly shows on screen during a match."
                     : "Anomaly HUD off.";
                 _onChanged();
+                UpdateArrangeRow();
             }));
+
+            stack.Children.Add(ArrangeHudRow());
 
             stack.Children.Add(new Border { Height = 1, Background = UiKit.StrokeBrush, Margin = new Thickness(0, 6, 0, 12) });
             stack.Children.Add(ArtFolderRow());
@@ -147,7 +165,15 @@ namespace HsbgCardLookup.Ui
             _hotkey.KeyCaptured += OnKeyCaptured;
             Activated += (s, e) => _hotkey.BeginCapture();
             Deactivated += (s, e) => _hotkey.EndCapture();
-            Closed += (s, e) => { _hotkey.EndCapture(); _hotkey.KeyCaptured -= OnKeyCaptured; };
+            // Closing the window leaves arrange mode so placeholder boxes never strand. (We do NOT exit
+            // on Deactivated — the boxes are topmost/no-activate, so you can alt-tab to the game and keep
+            // arranging them over it.)
+            Closed += (s, e) =>
+            {
+                _hotkey.EndCapture();
+                _hotkey.KeyCaptured -= OnKeyCaptured;
+                if (_arranging) { _arranging = false; try { _onHudEditMode?.Invoke(false); } catch { } }
+            };
         }
 
         // ── Rows ──────────────────────────────────────────────────────────────────────────────
@@ -209,6 +235,67 @@ namespace HsbgCardLookup.Ui
                 VerticalAlignment = VerticalAlignment.Center
             });
             return dock;
+        }
+
+        // ── HUD arrange ("unlock overlay") ──────────────────────────────────────────────────────
+
+        // Shows every enabled HUD box on screen as a draggable/resizable placeholder so the layout can
+        // be set up without being in a match. Enabled only when at least one HUD toggle is on.
+        private UIElement ArrangeHudRow()
+        {
+            var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 2, 0, 4) };
+
+            _arrangeBtnLabel = new TextBlock { Text = "Arrange…", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            _arrangeBtn = new Border
+            {
+                Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7), Padding = new Thickness(0, 6, 0, 6), Cursor = Cursors.Hand,
+                Width = 118, Child = _arrangeBtnLabel, VerticalAlignment = VerticalAlignment.Center
+            };
+            _arrangeBtn.MouseLeftButtonUp += (s, e) => ToggleArrange();
+            DockPanel.SetDock(_arrangeBtn, Dock.Right);
+            dock.Children.Add(_arrangeBtn);
+
+            var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            left.Children.Add(new TextBlock { Text = "Position HUD on screen", Foreground = UiKit.TextPrimary, FontSize = 15 });
+            left.Children.Add(new TextBlock
+            {
+                Text = "Drag a box to move it; drag its top-right corner to resize.",
+                Foreground = UiKit.TextMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap
+            });
+            dock.Children.Add(left);
+
+            UpdateArrangeRow();
+            return dock;
+        }
+
+        private void ToggleArrange()
+        {
+            if (_arrangeBtn == null || !_arrangeBtn.IsEnabled) return;
+            SetArrange(!_arranging);
+        }
+
+        private void SetArrange(bool on)
+        {
+            _arranging = on;
+            try { _onHudEditMode?.Invoke(on); } catch { }
+            _status.Text = on
+                ? "Arranging HUD — drag a box to move it, drag its top-right corner to resize. Click Done when finished."
+                : "HUD positions saved.";
+            UpdateArrangeRow();
+        }
+
+        // Enable only when a HUD is on; if every HUD is turned off mid-arrange, leave arrange mode.
+        private void UpdateArrangeRow()
+        {
+            if (_arrangeBtn == null) return;
+            bool any = _config.ShowTrinkets || _config.ShowAnomaly;
+            if (!any && _arranging) { SetArrange(false); return; }   // SetArrange re-enters here once locked
+            _arrangeBtn.IsEnabled = any;
+            _arrangeBtn.Opacity = any ? 1.0 : 0.5;
+            _arrangeBtnLabel.Text = _arranging ? "Done" : "Arrange…";
+            _arrangeBtnLabel.Foreground = _arranging ? UiKit.AccentBrush : UiKit.TextPrimary;
+            _arrangeBtn.BorderBrush = _arranging ? UiKit.AccentBrush : UiKit.StrokeBrush;
         }
 
         // ── Art-cache folder (relocate the ~200MB off the system drive) ────────────────────────

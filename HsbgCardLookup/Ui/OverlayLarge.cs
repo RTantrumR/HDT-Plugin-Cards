@@ -32,6 +32,7 @@ namespace HsbgCardLookup.Ui
         private readonly HotkeyManager _hotkey;
         private readonly FloatingCardManager _floating;
         private readonly Action _openSettings;   // opens the SettingsWindow (from the corner link)
+        private readonly Action _checkForUpdates; // runs a manual update check (toolbar ⟳ icon)
         private readonly string _version;        // shown small in the footer corner
 
         // Drag-out state for the detail art (distinguishes a click → website from a drag → floating card).
@@ -83,13 +84,14 @@ namespace HsbgCardLookup.Ui
         private Border _helpAnchor;
 
         public OverlayLarge(CardStore store, PluginConfig config, HotkeyManager hotkey, FloatingCardManager floating,
-                            Action openSettings, string version) : base(880, 800)
+                            Action openSettings, Action checkForUpdates, string version) : base(880, 800)
         {
             _store = store;
             _config = config;
             _hotkey = hotkey;
             _floating = floating;
             _openSettings = openSettings;
+            _checkForUpdates = checkForUpdates;
             _version = version;
 
             try { Resources[typeof(ScrollBar)] = UiKit.ThinScrollBarStyle(); } catch { }
@@ -313,10 +315,14 @@ namespace HsbgCardLookup.Ui
             DockPanel.SetDock(version, Dock.Left);
             bar.Children.Add(version);
 
-            // Right side: gear (far right) then help (left of it).
+            // Right side (docked far-right first, so visual order R→L is gear · ⟳ · help).
             var gear = IconButton("⚙", "Settings", () => _openSettings?.Invoke());   // ⚙
             DockPanel.SetDock(gear, Dock.Right);
             bar.Children.Add(gear);
+
+            var refresh = IconButton("⟳", "Check for updates", () => _checkForUpdates?.Invoke());   // ⟳
+            DockPanel.SetDock(refresh, Dock.Right);
+            bar.Children.Add(refresh);
 
             _helpAnchor = HelpButton();
             DockPanel.SetDock(_helpAnchor, Dock.Right);
