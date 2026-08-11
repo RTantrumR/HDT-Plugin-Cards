@@ -32,9 +32,13 @@ namespace HsbgCardLookup
         private OverlayLarge _overlayLarge;
         private FloatingCardManager _floating;
         private Game.BgHud _bgHud;                               // always-on trinkets/anomaly HUD
+        private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
+        private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
+        private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
         private SettingsWindow _settings;
 #if DEBUG
         private Game.GameStateProbe _probe;                     // read-only BG state logger (Debug-only diagnostics)
+        private Game.DarkGiftProbe _giftProbe;                  // Dark Gift / Dark Discovery capture (Debug-only)
 #endif
         private Dictionary<Key, OverlayBase> _overlays;         // hotkey -> overlay (rebuilt on rewire)
         private readonly Dictionary<Key, DateTime> _lastToggle = new Dictionary<Key, DateTime>();
@@ -49,7 +53,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 2, 4);
+        public Version Version => new Version(0, 3, 0);
 
         // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
         // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the
@@ -105,11 +109,15 @@ namespace HsbgCardLookup
             _floating = new FloatingCardManager(_config);
             _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating, OpenSettings, CheckForUpdatesInteractive, Version.ToString());
             _bgHud = new Game.BgHud(_store, _config, _ui);
+            _recorder = new Game.MatchRecorder(_store, _config, Log);
+            _bgMmr = new Game.BgMmr(_config, _ui, Log);
+            _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
 
 #if DEBUG
             _probe = new Game.GameStateProbe(_store);
+            _giftProbe = new Game.DarkGiftProbe(_store);
 #endif
 
             RewireHotkeys();
@@ -376,6 +384,8 @@ namespace HsbgCardLookup
             _overlayLarge?.RefreshPool();   // pick up a Show-Duos change live
             _floating?.OnSettingChanged();  // reconcile floating-card visibility (Hide-with-app toggle)
             _bgHud?.OnSettingsChanged();    // show/hide the trinkets/anomaly HUD per its toggles
+            _bgMmr?.OnSettingsChanged();    // opponent-MMR reader on/off
+            _darkGifts?.OnSettingsChanged(); // Dark Gift hover panel on/off
         }
 
         public void OnUnload()
@@ -387,6 +397,8 @@ namespace HsbgCardLookup
                 _settings?.Close(); _settings = null;
                 _floating?.CloseAll();
                 _bgHud?.CloseAll();
+                _bgMmr?.CloseAll();
+                _darkGifts?.CloseAll();
                 _overlayLarge?.Close();
                 _overlays = null;
             });
@@ -435,8 +447,12 @@ namespace HsbgCardLookup
         {
 #if DEBUG
             _probe?.Poll();
+            _giftProbe?.Poll();
 #endif
-            _bgHud?.Poll();   // throttled read of trinkets/anomaly → always-on HUD
+            _bgHud?.Poll();      // throttled read of trinkets/anomaly → always-on HUD
+            _recorder?.Poll();   // opt-in per-match board snapshots → CSV at match end
+            _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
+            _darkGifts?.Poll();  // opt-in Dark Gift list (shows while hovering the Dark Discovery button)
         }
 
         private static readonly string LogDir = Path.Combine(

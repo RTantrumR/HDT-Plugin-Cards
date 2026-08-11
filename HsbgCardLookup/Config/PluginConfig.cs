@@ -52,6 +52,25 @@ namespace HsbgCardLookup.Config
         public HudPlacement Trinket4Hud { get; set; } = new HudPlacement();
         public HudPlacement AnomalyHud { get; set; } = new HudPlacement();
 
+        // Opt-in: show opponents' Battlegrounds MMR (ladder rating) during a match as labels on the
+        // leaderboard portraits — read from the lobby roster (HearthMirror) and matched against the
+        // hsbg.cards leaderboard (only ~8000+ players are listed; others show 8000↓). Off by default.
+        public bool ShowOpponentMmr { get; set; } = false;
+
+        // Opt-in: the Dark Gift list panel, shown while hovering the in-game Dark Discovery button
+        // (hover detected via HearthMirror's big-card/tooltip state — no screen geometry). Gifts
+        // offerable this turn glow; future ones dim; expired ones hide. Off by default.
+        public bool ShowDarkGifts { get; set; } = false;
+        // Panel display mode: "Both" (gift list + minion pool), "Gifts" (list only), "Minions"
+        // (pool only — panel hidden entirely when no pool applies). Right-click the panel cycles;
+        // also settable in the Dark Gifts settings sub-menu.
+        public string DarkGiftMode { get; set; } = "Both";
+        public HudPlacement DarkGiftHud { get; set; } = new HudPlacement();
+
+        // Opt-in match recorder: capture the player's board + context at each combat boundary and write a
+        // CSV per match (no screenshots). Off by default. Output: DataDir\match-exports\.
+        public bool ExportMatchBoards { get; set; } = false;
+
         [XmlIgnore] public Key BrowserKeyParsed => Enum.TryParse(BrowserKey, out Key k) ? k : Key.F3;
         [XmlIgnore] public Key GoldenKeyParsed => Enum.TryParse(GoldenKey, out Key k) ? k : Key.G;
         [XmlIgnore] public Key FocusKeyParsed => Enum.TryParse(FocusKey, out Key k) ? k : Key.S;

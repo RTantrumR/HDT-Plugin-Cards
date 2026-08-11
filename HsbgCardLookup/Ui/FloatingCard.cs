@@ -42,6 +42,10 @@ namespace HsbgCardLookup.Ui
 
         private readonly IFloatingCardHost _owner;
         private readonly bool _closable;            // HUD cards are persistent (not user-closable)
+
+        /// <summary>Non-closable (HUD) cards route their right-click here instead of dismissing —
+        /// the HUD opens its small context menu. Fired on the window's (UI) thread.</summary>
+        public Action RightClicked;
         private int _nativeW;                       // art native pixel width (the blur ceiling reference)
         private double _aspect;                     // height / width of the art
 
@@ -311,7 +315,8 @@ namespace HsbgCardLookup.Ui
 
                 case WM_NCRBUTTONUP:
                     handled = true;
-                    if (_closable) CloseCard();   // HUD cards swallow it (persistent, no per-card dismiss)
+                    if (_closable) CloseCard();
+                    else RightClicked?.Invoke();   // HUD cards open their context menu instead
                     return IntPtr.Zero;
 
                 case WM_NCMOUSEMOVE:

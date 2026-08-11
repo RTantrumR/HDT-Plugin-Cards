@@ -316,7 +316,7 @@ namespace HsbgCardLookup.Ui
             bar.Children.Add(version);
 
             // Right side (docked far-right first, so visual order R→L is gear · ⟳ · help).
-            var gear = IconButton("⚙", "Settings", () => _openSettings?.Invoke());   // ⚙
+            var gear = GearButton("Settings", () => _openSettings?.Invoke());
             DockPanel.SetDock(gear, Dock.Right);
             bar.Children.Add(gear);
 
@@ -329,6 +329,59 @@ namespace HsbgCardLookup.Ui
             bar.Children.Add(_helpAnchor);
 
             return bar;
+        }
+
+        // The settings button: a real drawn gear (the ⚙ text glyph renders as flower petals in the
+        // fallback font) — same muted/hover-accent behavior as IconButton.
+        private static Border GearButton(string tip, Action onClick)
+        {
+            var path = new Path
+            {
+                Data = GearGeometry(), Fill = UiKit.TextMuted,
+                Width = 15, Height = 15, Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            };
+            var b = new Border
+            {
+                Background = Brushes.Transparent, Cursor = Cursors.Hand,
+                Padding = new Thickness(5, 2, 5, 2), Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center, Child = path, ToolTip = tip
+            };
+            b.MouseEnter += (s, e) => path.Fill = UiKit.AccentBrush;
+            b.MouseLeave += (s, e) => path.Fill = UiKit.TextMuted;
+            b.MouseLeftButtonUp += (s, e) => onClick();
+            return b;
+        }
+
+        // 8-tooth gear with a center hole (EvenOdd), built around center (8,8): teeth reach R=8,
+        // the ring between them R=5.9.
+        private static Geometry GearGeometry()
+        {
+            const double R = 8, ring = 5.9, hole = 2.7;
+            var g = new StreamGeometry { FillRule = FillRule.EvenOdd };
+            using (var ctx = g.Open())
+            {
+                Func<double, double, Point> at = (deg, rad) =>
+                {
+                    double a = deg * Math.PI / 180.0;
+                    return new Point(8 + rad * Math.Cos(a), 8 + rad * Math.Sin(a));
+                };
+                bool first = true;
+                for (int i = 0; i < 8; i++)
+                {
+                    double t = i * 45.0;
+                    foreach (var p in new[] { at(t - 13, ring), at(t - 8, R), at(t + 8, R), at(t + 13, ring) })
+                    {
+                        if (first) { ctx.BeginFigure(p, true, true); first = false; }
+                        else ctx.LineTo(p, true, true);
+                    }
+                }
+                ctx.BeginFigure(new Point(8 + hole, 8), true, true);
+                ctx.ArcTo(new Point(8 - hole, 8), new Size(hole, hole), 0, false, SweepDirection.Clockwise, true, true);
+                ctx.ArcTo(new Point(8 + hole, 8), new Size(hole, hole), 0, false, SweepDirection.Clockwise, true, true);
+            }
+            g.Freeze();
+            return g;
         }
 
         // A muted icon glyph that brightens on hover and runs an action on click.
@@ -409,7 +462,7 @@ namespace HsbgCardLookup.Ui
             list.Children.Add(HelpHeader("TIPS"));
             list.Children.Add(HelpNote("Smart search: try t3 · 5/5 · a tribe or keyword · cost 2"));
             list.Children.Add(HelpNote("Drag a card out of the art to pin it on screen — drag its top-right corner to resize, right-click to dismiss."));
-            list.Children.Add(HelpNote("Trinkets/anomaly HUD and grid drag-out are toggled in Settings (⚙)."));
+            list.Children.Add(HelpNote("Trinkets/anomaly HUD and grid drag-out are toggled in Settings (the gear below)."));
 
             return new Border
             {

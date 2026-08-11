@@ -63,6 +63,13 @@
       <HintPath>..\libs\Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <!-- HearthMirror ships with HDT and is loaded (+ IPC-client-started) in-process. We read the BG
+         lobby roster via Reflection.Client.GetBattlegroundsLobbyInfo(); reference HDT's copy, don't
+         redistribute (Private=False). Copied from app-1.53.4 (v32.4.2.0). -->
+    <Reference Include="HearthMirror">
+      <HintPath>..\libs\HearthMirror.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <!-- WebP decoder (pure-managed) + its dependency closure. These ARE redistributed (bundled in
          the plugin folder): HDT does not ship them, so Private=True copies them to our output.
          Repopulate libs\ on a fresh clone via the dotnet-resolve snippet in the README/CLAUDE.md. -->
@@ -95,7 +102,16 @@
     <Compile Include="Config\PluginConfig.cs" />
     <Compile Include="Data\CardStore.cs" />
     <Compile Include="Game\GameStateProbe.cs" />
+    <Compile Include="Game\DarkGiftProbe.cs" />
+    <Compile Include="Game\DarkGifts.cs" />
+    <Compile Include="Game\DarkGiftWatcher.cs" />
+    <Compile Include="Ui\DarkGiftPanel.cs" />
+    <Compile Include="Game\BgMmr.cs" />
+    <Compile Include="Ui\LeaderboardOverlay.cs" />
+    <Compile Include="Ui\HudContextMenu.cs" />
+    <Compile Include="Ui\HsGeometry.cs" />
     <Compile Include="Game\BgHud.cs" />
+    <Compile Include="Game\MatchRecorder.cs" />
     <Compile Include="Hotkey\HotkeyManager.cs" />
     <Compile Include="Net\AssetClient.cs" />
     <Compile Include="Net\PluginNotice.cs" />

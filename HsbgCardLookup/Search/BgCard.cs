@@ -35,12 +35,18 @@ namespace HsbgCardLookup.Search
         public bool IsHero { get; set; }
         public bool IsDuosOnly { get; set; }
         public bool IsSolosOnly { get; set; }
+        // Season-14 "Timewarped" variants exist only in their anomaly lobby — excluded from normal pools.
+        public bool IsTimewarped { get; set; }
         public int? CompanionId { get; set; }
         public List<int> ChildIds { get; set; } = new List<int>();
         public int? ParentId { get; set; }
         public bool Pool { get; set; }
         public int? VersionOf { get; set; }
         public string TrinketTier { get; set; }
+        // Dark Gifts (Season 14): the offering turn window, carried by the site data for cards with
+        // categories:["darkgift"]. Null max = no upper bound; both null = data predates the fields.
+        public int? DarkGiftMinTurn { get; set; }
+        public int? DarkGiftMaxTurn { get; set; }
 
         [JsonIgnore]
         public string PrimaryTribe =>

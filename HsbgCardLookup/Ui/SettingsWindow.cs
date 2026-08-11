@@ -13,11 +13,12 @@ using HsbgCardLookup.Hotkey;
 namespace HsbgCardLookup.Ui
 {
     /// <summary>
-    /// Settings dialog (opened from the plugin's "Settings" button in HDT options). Rebinds the
-    /// four keys (quick panel, full browser, toggle golden, focus search) and toggles "Show Duos
-    /// cards". While this window is active the hotkey hook is in CAPTURE mode: every key is
-    /// swallowed (so pressing F2 here doesn't summon the overlay) and routed to us. Rebinding to
-    /// an already-used key STEALS it — the previous owner is set to unbound, with a notice.
+    /// Settings dialog (opened from the plugin's "Settings" button in HDT options), organized as a
+    /// MAIN page of feature categories — each row carries its master On/Off pill and (when the
+    /// category has more settings) opens a SUB-PAGE — instead of the old single tall list. While this
+    /// window is active the hotkey hook is in CAPTURE mode: every key is swallowed (so pressing F3
+    /// here doesn't summon the overlay) and routed to us. Esc goes back / closes; rebinding to an
+    /// already-used key STEALS it — the previous owner is set to unbound, with a notice.
     /// </summary>
     public sealed class SettingsWindow : Window
     {
@@ -29,13 +30,15 @@ namespace HsbgCardLookup.Ui
         private readonly Action _onChanged;
         private readonly Action<bool> _onHudEditMode;   // enter/exit the HUD arrange ("unlock") mode
         private readonly Dictionary<string, TextBlock> _labels = new Dictionary<string, TextBlock>();
-        private readonly TextBlock _status;
+        private readonly TextBlock _status;             // single instance, re-parented onto every page
         private string _capturing;   // kind being rebound, or null
+        private bool _onSubPage;     // Esc: sub-page → back, main page → close
         private TextBlock _artFolderLabel;   // shows the current art-cache folder
         private Border _artChangeBtn;        // disabled while a move is in progress
         private bool _arranging;             // HUD arrange mode is active
-        private Border _arrangeBtn;          // the Arrange/Done toggle button
+        private Border _arrangeBtn;          // the Arrange/Done toggle button (on the current page, if any)
         private TextBlock _arrangeBtnLabel;
+        private readonly List<Action> _modeRefresh = new List<Action>();   // Dark-Gift mode row repaints
 
         public SettingsWindow(PluginConfig config, HotkeyManager hotkey, Action onChanged, Action<bool> onHudEditMode)
         {
@@ -54,29 +57,161 @@ namespace HsbgCardLookup.Ui
             ShowInTaskbar = false;
             Background = new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E));
 
+            // Notice line lives at the top of every page so feedback is immediately visible.
+            _status = new TextBlock
+            {
+                Foreground = UiKit.AccentBrush, FontSize = 13, MinHeight = 18,
+                Margin = new Thickness(0, 6, 0, 12), TextWrapping = TextWrapping.Wrap
+            };
+
+            BuildMain();
+
+            // Capture mode is on whenever this window is the active one (keys swallowed + routed
+            // to us); off the moment focus leaves, so global hotkeys work normally again.
+            _hotkey.KeyCaptured += OnKeyCaptured;
+            Activated += (s, e) => _hotkey.BeginCapture();
+            Deactivated += (s, e) => _hotkey.EndCapture();
+            // Closing the window leaves arrange mode so placeholder boxes never strand. (We do NOT exit
+            // on Deactivated — the boxes are topmost/no-activate, so you can alt-tab to the game and keep
+            // arranging them over it.)
+            Closed += (s, e) =>
+            {
+                _hotkey.EndCapture();
+                _hotkey.KeyCaptured -= OnKeyCaptured;
+                if (_arranging) { _arranging = false; try { _onHudEditMode?.Invoke(false); } catch { } }
+            };
+        }
+
+        // ── Pages ─────────────────────────────────────────────────────────────────────────────
+
+        // Fresh page skeleton: title (with a Back button on sub-pages) + the shared status line.
+        private StackPanel NewPage(string title, bool sub)
+        {
+            _capturing = null;            // navigating away cancels a pending key capture
+            _onSubPage = sub;
+            _arrangeBtn = null; _arrangeBtnLabel = null;   // page-local; rebuilt when its page shows
+            _modeRefresh.Clear();
+
             var stack = new StackPanel { Margin = new Thickness(22) };
-            stack.Children.Add(UiKit.Title("Settings", 22));
+            if (sub)
+            {
+                var head = new DockPanel { LastChildFill = true };
+                var backLbl = new TextBlock { Text = "‹ Back", Foreground = UiKit.AccentBrush, FontSize = 14, FontWeight = FontWeights.SemiBold };
+                var back = new Border
+                {
+                    Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(7), Padding = new Thickness(11, 5, 11, 5), Cursor = Cursors.Hand,
+                    VerticalAlignment = VerticalAlignment.Center, Child = backLbl
+                };
+                back.MouseLeftButtonUp += (s, e) => BuildMain();
+                DockPanel.SetDock(back, Dock.Left);
+                head.Children.Add(back);
+                head.Children.Add(new TextBlock
+                {
+                    Text = title, Foreground = UiKit.TextPrimary, FontSize = 20, FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0)
+                });
+                stack.Children.Add(head);
+            }
+            else stack.Children.Add(UiKit.Title(title, 22));
+
+            (_status.Parent as Panel)?.Children.Remove(_status);
+            stack.Children.Add(_status);
+            return stack;
+        }
+
+        private void BuildMain()
+        {
+            var stack = NewPage("Settings", sub: false);
+
+            stack.Children.Add(CategoryRow("Card search & floating cards",
+                "Hotkeys, Duos filter, drag-out cards, art folder.",
+                null, null, BuildCardSearch));
+
+            stack.Children.Add(CategoryRow("Trinket HUD",
+                "Your trinkets as floating cards during a match.",
+                () => _config.ShowTrinkets, v =>
+                {
+                    _config.ShowTrinkets = v;
+                    _status.Text = v ? "Trinket HUD on." : "Trinket HUD off.";
+                    _onChanged();
+                    UpdateArrangeRow();
+                }, BuildTrinkets));
+
+            stack.Children.Add(CategoryRow("Anomaly HUD",
+                "The lobby anomaly as a floating card during a match.",
+                () => _config.ShowAnomaly, v =>
+                {
+                    _config.ShowAnomaly = v;
+                    _status.Text = v ? "Anomaly HUD on." : "Anomaly HUD off.";
+                    _onChanged();
+                    UpdateArrangeRow();
+                }, BuildAnomaly));
+
+            stack.Children.Add(CategoryRow("Opponents' MMR",
+                "Name + rating + tavern tier on the leaderboard portraits.",
+                () => _config.ShowOpponentMmr, v =>
+                {
+                    _config.ShowOpponentMmr = v;
+                    _status.Text = v
+                        ? "Opponents' name + MMR + tavern tier label each leaderboard portrait (8000↓ below the cutoff)."
+                        : "Opponent MMR off.";
+                    _onChanged();
+                }, null));
+
+            stack.Children.Add(CategoryRow("Dark Gifts",
+                "Hover the Dark Discovery button for the gift list.",
+                () => _config.ShowDarkGifts, v =>
+                {
+                    _config.ShowDarkGifts = v;
+                    _status.Text = v
+                        ? "Hover the Dark Discovery button in a match to see which Dark Gifts are still obtainable."
+                        : "Dark Gift list off.";
+                    _onChanged();
+                }, BuildDarkGifts));
+
+            string exportDir = System.IO.Path.Combine(PluginConfig.DataDir, "match-exports");
+            stack.Children.Add(CategoryRow("Match export (CSV)",
+                "Record your board each round to a CSV in:\n" + exportDir,
+                () => _config.ExportMatchBoards, v =>
+                {
+                    _config.ExportMatchBoards = v;
+                    _status.Text = v
+                        ? "Recording your board each round; CSVs land in " + exportDir
+                        : "Match board export off.";
+                    _onChanged();
+                }, null));
+
+            var closeLabel = new TextBlock { Text = "Close", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            var close = new Border
+            {
+                Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8), Padding = new Thickness(18, 8, 18, 8), Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0), Child = closeLabel
+            };
+            close.MouseLeftButtonUp += (s, e) => Close();
+            stack.Children.Add(close);
+
+            Content = stack;
+        }
+
+        private void BuildCardSearch()
+        {
+            var stack = NewPage("Card search & floating cards", sub: true);
+
             stack.Children.Add(new TextBlock
             {
                 Text = "Click a binding, then press the key to assign. Esc cancels; Alt can't be bound. " +
                        "Reusing a key moves it here and unbinds its previous owner.",
-                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 6, 0, 12),
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 12),
                 TextWrapping = TextWrapping.Wrap
             });
-
-            // Notice line lives at the top so "saved / unbound" feedback is immediately visible.
-            _status = new TextBlock
-            {
-                Foreground = UiKit.AccentBrush, FontSize = 13, MinHeight = 18,
-                Margin = new Thickness(0, 0, 0, 14), TextWrapping = TextWrapping.Wrap
-            };
-            stack.Children.Add(_status);
 
             stack.Children.Add(KeyRow("browser", "Open overlay"));
             stack.Children.Add(KeyRow("golden", "Toggle golden"));
             stack.Children.Add(KeyRow("focus", "Focus search"));
 
-            stack.Children.Add(new Border { Height = 1, Background = UiKit.StrokeBrush, Margin = new Thickness(0, 6, 0, 12) });
+            stack.Children.Add(Separator());
 
             stack.Children.Add(ToggleRow("Show Duos cards", _config.ShowDuos, v =>
             {
@@ -112,17 +247,15 @@ namespace HsbgCardLookup.Ui
                 _onChanged();
             }));
 
-            stack.Children.Add(new Border { Height = 1, Background = UiKit.StrokeBrush, Margin = new Thickness(0, 6, 0, 12) });
+            stack.Children.Add(Separator());
+            stack.Children.Add(ArtFolderRow());
 
-            stack.Children.Add(ToggleRow("Show my trinkets (in match)", _config.ShowTrinkets, v =>
-            {
-                _config.ShowTrinkets = v;
-                _status.Text = v
-                    ? "Your lesser/greater trinkets show on screen during a match."
-                    : "Trinket HUD off.";
-                _onChanged();
-                UpdateArrangeRow();
-            }));
+            Content = stack;
+        }
+
+        private void BuildTrinkets()
+        {
+            var stack = NewPage("Trinket HUD", sub: true);
 
             stack.Children.Add(ToggleRow("Show extra trinket boxes (3rd/4th)", _config.ShowExtraTrinkets, v =>
             {
@@ -133,50 +266,128 @@ namespace HsbgCardLookup.Ui
                 _onChanged();
             }));
 
-            stack.Children.Add(ToggleRow("Show lobby anomaly (in match)", _config.ShowAnomaly, v =>
+            stack.Children.Add(ArrangeHudRow());
+
+            stack.Children.Add(new TextBlock
             {
-                _config.ShowAnomaly = v;
-                _status.Text = v
-                    ? "The lobby anomaly shows on screen during a match."
-                    : "Anomaly HUD off.";
-                _onChanged();
-                UpdateArrangeRow();
-            }));
+                Text = "In match: right-click a trinket card to close it until the match ends, or turn the HUD off.",
+                Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            Content = stack;
+        }
+
+        private void BuildAnomaly()
+        {
+            var stack = NewPage("Anomaly HUD", sub: true);
 
             stack.Children.Add(ArrangeHudRow());
 
-            stack.Children.Add(new Border { Height = 1, Background = UiKit.StrokeBrush, Margin = new Thickness(0, 6, 0, 12) });
-            stack.Children.Add(ArtFolderRow());
-
-            var closeLabel = new TextBlock { Text = "Close", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
-            var close = new Border
+            stack.Children.Add(new TextBlock
             {
-                Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8), Padding = new Thickness(18, 8, 18, 8), Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0), Child = closeLabel
-            };
-            close.MouseLeftButtonUp += (s, e) => Close();
-            stack.Children.Add(close);
+                Text = "In match: right-click the anomaly card to close it until the match ends, or turn the HUD off.",
+                Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
 
             Content = stack;
-
-            // Capture mode is on whenever this window is the active one (keys swallowed + routed
-            // to us); off the moment focus leaves, so global hotkeys work normally again.
-            _hotkey.KeyCaptured += OnKeyCaptured;
-            Activated += (s, e) => _hotkey.BeginCapture();
-            Deactivated += (s, e) => _hotkey.EndCapture();
-            // Closing the window leaves arrange mode so placeholder boxes never strand. (We do NOT exit
-            // on Deactivated — the boxes are topmost/no-activate, so you can alt-tab to the game and keep
-            // arranging them over it.)
-            Closed += (s, e) =>
-            {
-                _hotkey.EndCapture();
-                _hotkey.KeyCaptured -= OnKeyCaptured;
-                if (_arranging) { _arranging = false; try { _onHudEditMode?.Invoke(false); } catch { } }
-            };
         }
 
-        // ── Rows ──────────────────────────────────────────────────────────────────────────────
+        private void BuildDarkGifts()
+        {
+            var stack = NewPage("Dark Gifts", sub: true);
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "What the hover panel shows. Right-clicking the panel in game cycles these too.",
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            stack.Children.Add(ModeRow("Both", "Gift list + minion pool",
+                "The full panel — gifts, plus the guaranteed-type minions when they apply."));
+            stack.Children.Add(ModeRow("Gifts", "Gift list only",
+                "Never show the minion-art column."));
+            stack.Children.Add(ModeRow("Minions", "Minion pool only",
+                "Only the guaranteed-type minion arts; the panel stays hidden when no pool applies."));
+
+            Content = stack;
+        }
+
+        // ── Row builders ──────────────────────────────────────────────────────────────────────
+
+        private static Border Separator() =>
+            new Border { Height = 1, Background = UiKit.StrokeBrush, Margin = new Thickness(0, 6, 0, 12) };
+
+        // A main-page category: title + hint on the left; optional master On/Off pill; a chevron and
+        // click-to-open when the category has a sub-page.
+        private UIElement CategoryRow(string title, string hint, Func<bool> get, Action<bool> set, Action open)
+        {
+            var dock = new DockPanel { LastChildFill = true };
+
+            if (open != null)
+            {
+                var chev = new TextBlock
+                {
+                    Text = "›", FontSize = 22, Foreground = UiKit.TextMuted,
+                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 2, 2)
+                };
+                DockPanel.SetDock(chev, Dock.Right);
+                dock.Children.Add(chev);
+            }
+            if (get != null)
+            {
+                var pill = TogglePill(get(), set, width: 74);
+                pill.VerticalAlignment = VerticalAlignment.Center;
+                DockPanel.SetDock(pill, Dock.Right);
+                dock.Children.Add(pill);
+            }
+
+            var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+            left.Children.Add(new TextBlock { Text = title, Foreground = UiKit.TextPrimary, FontSize = 15 });
+            if (!string.IsNullOrEmpty(hint))
+                left.Children.Add(new TextBlock
+                {
+                    Text = hint, Foreground = UiKit.TextMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap
+                });
+            dock.Children.Add(left);
+
+            var row = new Border
+            {
+                Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 8, 10, 8),
+                Margin = new Thickness(0, 0, 0, 8), Child = dock
+            };
+            if (open != null)
+            {
+                row.Cursor = Cursors.Hand;
+                row.MouseLeftButtonUp += (s, e) => open();   // the pill marks its clicks Handled
+            }
+            return row;
+        }
+
+        // The On/Off pill by itself (marks its click Handled so a category row doesn't also open).
+        private Border TogglePill(bool initial, Action<bool> onToggle, double width)
+        {
+            bool state = initial;
+            var lbl = new TextBlock { FontSize = 14, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var pill = new Border
+            {
+                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7),
+                Padding = new Thickness(0, 5, 0, 5), Width = width, Cursor = Cursors.Hand, Child = lbl
+            };
+            Action apply = () =>
+            {
+                pill.Background = state ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
+                pill.BorderBrush = state ? UiKit.AccentBrush : UiKit.StrokeBrush;
+                lbl.Foreground = state ? UiKit.AccentBrush : UiKit.TextPrimary;
+                lbl.Text = state ? "On" : "Off";
+            };
+            apply();
+            pill.MouseLeftButtonUp += (s, e) => { e.Handled = true; state = !state; apply(); onToggle(state); };
+            return pill;
+        }
 
         private UIElement KeyRow(string kind, string label)
         {
@@ -210,22 +421,7 @@ namespace HsbgCardLookup.Ui
         {
             var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
 
-            bool state = initial;
-            var lbl = new TextBlock { FontSize = 15, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            var pill = new Border
-            {
-                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(7),
-                Padding = new Thickness(0, 6, 0, 6), Width = 118, Cursor = Cursors.Hand, Child = lbl
-            };
-            Action apply = () =>
-            {
-                pill.Background = state ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
-                pill.BorderBrush = state ? UiKit.AccentBrush : UiKit.StrokeBrush;
-                lbl.Foreground = state ? UiKit.AccentBrush : UiKit.TextPrimary;
-                lbl.Text = state ? "On" : "Off";
-            };
-            apply();
-            pill.MouseLeftButtonUp += (s, e) => { state = !state; apply(); onToggle(state); };
+            var pill = TogglePill(initial, onToggle, width: 118);
             DockPanel.SetDock(pill, Dock.Right);
             dock.Children.Add(pill);
 
@@ -237,10 +433,48 @@ namespace HsbgCardLookup.Ui
             return dock;
         }
 
+        // Dark-Gift panel display mode — radio-style row; the selected one gets the accent treatment.
+        private UIElement ModeRow(string value, string title, string desc)
+        {
+            var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            var titleTb = new TextBlock { Text = title, FontSize = 15 };
+            left.Children.Add(titleTb);
+            left.Children.Add(new TextBlock
+            {
+                Text = desc, Foreground = UiKit.TextMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap
+            });
+
+            var row = new Border
+            {
+                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 8, 12, 8), Margin = new Thickness(0, 0, 0, 8),
+                Cursor = Cursors.Hand, Child = left
+            };
+            Action repaint = () =>
+            {
+                bool sel = string.Equals(_config.DarkGiftMode, value, StringComparison.OrdinalIgnoreCase)
+                           || (value == "Both" && string.IsNullOrEmpty(_config.DarkGiftMode));
+                row.Background = sel ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
+                row.BorderBrush = sel ? UiKit.AccentBrush : UiKit.StrokeBrush;
+                titleTb.Foreground = sel ? UiKit.AccentBrush : UiKit.TextPrimary;
+            };
+            repaint();
+            _modeRefresh.Add(repaint);
+            row.MouseLeftButtonUp += (s, e) =>
+            {
+                _config.DarkGiftMode = value;
+                foreach (var r in _modeRefresh) r();
+                _status.Text = "Dark Gift panel: " + title.ToLowerInvariant() + ".";
+                _onChanged();
+            };
+            return row;
+        }
+
         // ── HUD arrange ("unlock overlay") ──────────────────────────────────────────────────────
 
         // Shows every enabled HUD box on screen as a draggable/resizable placeholder so the layout can
-        // be set up without being in a match. Enabled only when at least one HUD toggle is on.
+        // be set up without being in a match. Enabled only when at least one HUD toggle is on. Lives on
+        // the Trinket + Anomaly sub-pages (it arranges both HUDs at once).
         private UIElement ArrangeHudRow()
         {
             var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 2, 0, 4) };
@@ -260,7 +494,7 @@ namespace HsbgCardLookup.Ui
             left.Children.Add(new TextBlock { Text = "Position HUD on screen", Foreground = UiKit.TextPrimary, FontSize = 15 });
             left.Children.Add(new TextBlock
             {
-                Text = "Drag a box to move it; drag its top-right corner to resize.",
+                Text = "Drag a box to move it; drag its top-right corner to resize. Covers trinkets + anomaly.",
                 Foreground = UiKit.TextMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap
             });
             dock.Children.Add(left);
@@ -286,11 +520,12 @@ namespace HsbgCardLookup.Ui
         }
 
         // Enable only when a HUD is on; if every HUD is turned off mid-arrange, leave arrange mode.
+        // (Null-safe: the arrange button only exists on the Trinket/Anomaly sub-pages.)
         private void UpdateArrangeRow()
         {
-            if (_arrangeBtn == null) return;
             bool any = _config.ShowTrinkets || _config.ShowAnomaly;
             if (!any && _arranging) { SetArrange(false); return; }   // SetArrange re-enters here once locked
+            if (_arrangeBtn == null) return;
             _arrangeBtn.IsEnabled = any;
             _arrangeBtn.Opacity = any ? 1.0 : 0.5;
             _arrangeBtnLabel.Text = _arranging ? "Done" : "Arrange…";
@@ -359,8 +594,7 @@ namespace HsbgCardLookup.Ui
                 bool ok = MoveArt(oldDir, newDir, out string err);
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    _artChangeBtn.IsEnabled = true;
-                    _artChangeBtn.Opacity = 1.0;
+                    if (_artChangeBtn != null) { _artChangeBtn.IsEnabled = true; _artChangeBtn.Opacity = 1.0; }
                     if (ok)
                     {
                         CardArt.CacheDir = newDir;
@@ -432,7 +666,11 @@ namespace HsbgCardLookup.Ui
         {
             if (_capturing == null)
             {
-                if (key == Key.Escape) Close();   // window active, nothing being rebound
+                if (key == Key.Escape)
+                {
+                    if (_onSubPage) BuildMain();   // Esc steps back before it closes
+                    else Close();
+                }
                 return;
             }
 
@@ -470,7 +708,8 @@ namespace HsbgCardLookup.Ui
             _capturing = null;
 
             // Refresh every row's display (a stolen one just became unbound).
-            foreach (var k in Kinds) _labels[k].Text = Display(GetKey(k));
+            foreach (var k in Kinds)
+                if (_labels.TryGetValue(k, out var l)) l.Text = Display(GetKey(k));
 
             _status.Text = stolen.Count == 0
                 ? $"Saved. \"{Label(bound)}\" bound to {ks}."

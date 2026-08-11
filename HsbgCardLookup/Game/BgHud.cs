@@ -71,12 +71,12 @@ namespace HsbgCardLookup.Game
             HookGameEvents();
             _trinkets = new[]
             {
-                new HudSlot(config, () => config.LesserTrinketHud,  0, false),
-                new HudSlot(config, () => config.GreaterTrinketHud, 1, false),
-                new HudSlot(config, () => config.Trinket3Hud,       2, false),
-                new HudSlot(config, () => config.Trinket4Hud,       3, false),
+                new HudSlot(config, () => config.LesserTrinketHud,  0, false, OnSlotRightClick),
+                new HudSlot(config, () => config.GreaterTrinketHud, 1, false, OnSlotRightClick),
+                new HudSlot(config, () => config.Trinket3Hud,       2, false, OnSlotRightClick),
+                new HudSlot(config, () => config.Trinket4Hud,       3, false, OnSlotRightClick),
             };
-            _anomaly = new HudSlot(config, () => config.AnomalyHud, 0, true);
+            _anomaly = new HudSlot(config, () => config.AnomalyHud, 0, true, OnSlotRightClick);
         }
 
         // ── Poll (OnUpdate thread) ───────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ namespace HsbgCardLookup.Game
                 // Raw match transition (every tick): a fresh match (false→true) clears the end latch.
                 bool isBg = false;
                 try { var gg = Core.Game; isBg = gg != null && gg.IsBattlegroundsMatch; } catch { }
-                if (isBg && !_wasBgMatch) _ended = false;
+                if (isBg && !_wasBgMatch) { _ended = false; ClearSuppressions(); }
                 _wasBgMatch = isBg;
 
                 var now = DateTime.UtcNow;
@@ -105,7 +105,8 @@ namespace HsbgCardLookup.Game
                 bool show = focused && d.InMatch;
                 string sig = show
                     ? "1|" + _config.ShowTrinkets + "|" + _config.ShowExtraTrinkets + "|" + _config.ShowAnomaly + "|"
-                        + string.Join(",", d.Trinkets.Select(c => c?.ExternalId)) + "|" + d.Anomaly?.ExternalId
+                        + string.Join(",", d.Trinkets.Select(c => c?.ExternalId)) + "|" + d.Anomaly?.ExternalId + "|"
+                        + string.Concat(_trinkets.Select(s => s.Suppressed ? '1' : '0')) + (_anomaly.Suppressed ? '1' : '0')
                     : "0";
                 if (sig == _lastSig) return;        // nothing changed → no UI work
                 _lastSig = sig;
@@ -274,6 +275,7 @@ namespace HsbgCardLookup.Game
             _ended = true;
             _desired = new Desired();
             _lastSig = null;
+            ClearSuppressions();   // "close until end of match" ends here
         }
 
         // ── Read live state (defensive snapshots; HDT mutates these on its own threads) ───────────
@@ -336,8 +338,41 @@ namespace HsbgCardLookup.Game
             if (_editing) return;   // arrange mode owns the windows; poll updates wait until it exits
             bool inMatch = d.InMatch && focused;   // not focused → treat as nothing to show (hide all)
             for (int i = 0; i < _trinkets.Length; i++)
-                ReconcileSlot(_trinkets[i], TrinketSlotEnabled(i) && inMatch ? d.Trinkets[i] : null);
-            ReconcileSlot(_anomaly, _config.ShowAnomaly && inMatch ? d.Anomaly : null);
+                ReconcileSlot(_trinkets[i], TrinketSlotEnabled(i) && inMatch && !_trinkets[i].Suppressed ? d.Trinkets[i] : null);
+            ReconcileSlot(_anomaly, _config.ShowAnomaly && inMatch && !_anomaly.Suppressed ? d.Anomaly : null);
+        }
+
+        // ── HUD right-click menu (UI thread — the window's WndProc routes here) ──────────────────
+        private void OnSlotRightClick(HudSlot slot)
+        {
+            if (_editing) return;   // arrange mode: right-click does nothing (boxes are placeholders)
+            try
+            {
+                string feature = slot.IsAnomaly ? "anomaly display" : "trinket display";
+                HudContextMenu.ShowMenu(new[]
+                {
+                    new KeyValuePair<string, Action>("Close until end of match", () =>
+                    {
+                        slot.Suppressed = true;
+                        slot.Hide();
+                        _lastSig = null;
+                    }),
+                    new KeyValuePair<string, Action>("Turn off " + feature, () =>
+                    {
+                        if (slot.IsAnomaly) _config.ShowAnomaly = false;
+                        else _config.ShowTrinkets = false;
+                        try { _config.Save(); } catch { }
+                        OnSettingsChanged();
+                    }),
+                });
+            }
+            catch { }
+        }
+
+        private void ClearSuppressions()
+        {
+            foreach (var s in _trinkets) s.Suppressed = false;
+            _anomaly.Suppressed = false;
         }
 
         private void ReconcileSlot(HudSlot slot, BgCard target)
@@ -409,13 +444,17 @@ namespace HsbgCardLookup.Game
             private readonly Func<HudPlacement> _slot;
             private readonly int _index;
             private readonly bool _isAnomaly;
+            private readonly Action<HudSlot> _onRightClick;
 
             private FloatingCard _win;
             private string _shownId;
             public string PendingId;
+            public bool Suppressed;   // "close until end of match" — cleared on match end / new match
+            public bool IsAnomaly => _isAnomaly;
 
-            public HudSlot(PluginConfig config, Func<HudPlacement> slot, int index, bool isAnomaly)
-            { _config = config; _slot = slot; _index = index; _isAnomaly = isAnomaly; }
+            public HudSlot(PluginConfig config, Func<HudPlacement> slot, int index, bool isAnomaly,
+                Action<HudSlot> onRightClick)
+            { _config = config; _slot = slot; _index = index; _isAnomaly = isAnomaly; _onRightClick = onRightClick; }
 
             public bool IsShowing(BgCard card) =>
                 _win != null && _win.IsVisible && _shownId == card.ExternalId;
@@ -453,6 +492,7 @@ namespace HsbgCardLookup.Game
                 var p = _slot();
                 double w = p.Set && p.W > 0 ? p.W : DefaultWidthDip;
                 _win = new FloatingCard(this, bmp, w, closable: false);
+                _win.RightClicked = () => _onRightClick?.Invoke(this);
                 _win.Show();
                 var pos = p.Set ? new Point(p.X, p.Y) : DefaultPos(_index, _isAnomaly);
                 _win.Place(pos.X, pos.Y);

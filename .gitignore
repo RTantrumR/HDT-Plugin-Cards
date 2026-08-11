@@ -27,3 +27,6 @@ hdt-game-state.md
 
 # JetBrains IDE config
 .idea/
+
+# Secrets — never commit
+.env
