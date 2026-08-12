@@ -52,13 +52,33 @@ namespace HsbgCardLookup.Config
         public HudPlacement Trinket4Hud { get; set; } = new HudPlacement();
         public HudPlacement AnomalyHud { get; set; } = new HudPlacement();
 
-        // Opt-in: show opponents' Battlegrounds MMR (ladder rating) during a match as labels on the
-        // leaderboard portraits — read from the lobby roster (HearthMirror) and matched against the
-        // hsbg.cards leaderboard (only ~8000+ players are listed; others show 8000↓). Off by default.
+        // Opt-in master toggle: opponents' Battlegrounds MMR / tiers during a match — read from the
+        // lobby roster (HearthMirror) and matched against the hsbg.cards leaderboard (only ~8000+
+        // players are listed; others show 8000↓). Off by default. The feature is ULTRA-CONFIGURABLE:
+        // two independent display surfaces (labels over the leaderboard portraits, and/or a separate
+        // draggable list panel) crossed with per-part content toggles below — any combination goes
+        // (e.g. tavern tiers only, names-only panel, rating without names, …).
         public bool ShowOpponentMmr { get; set; } = false;
-        // Whether those labels also carry the player's name. Off by default — the label then shows just
-        // the rating (streamers often don't want opponent names on screen).
+        // Surface: labels stuck to the leaderboard portraits (the original display).
+        public bool ShowMmrLabels { get; set; } = true;
+        // Surface: a separate draggable/resizable standings panel on the overlay (like a HUD card).
+        public bool ShowMmrPanel { get; set; } = false;
+        // Content: player names. Off by default — streamers often don't want opponent names on screen.
         public bool ShowOpponentNames { get; set; } = false;
+        // Content: the MMR rating itself (turn off for e.g. a names-only or tiers-only setup).
+        public bool ShowMmrRating { get; set; } = true;
+        // Content: today's ▲/▼ rating change next to the rating.
+        public bool ShowMmrDeltas { get; set; } = true;
+        // Where tavern-tier icons show: "Off", "Portraits" (right of each leaderboard portrait),
+        // "Panel" (inside the separate list only), "Both" (default). Its own location axis so e.g.
+        // a panel-only setup doesn't force icons onto the portraits.
+        public string TavernTierMode { get; set; } = "Both";
+        // Content: the ⚔ marker on the previously-fought opponent.
+        public bool ShowLastOpponent { get; set; } = true;
+        // Content: gray out players who are already dead.
+        public bool DimDeadPlayers { get; set; } = true;
+        // The standings panel's placement (canvas fractions, like the trinket boxes).
+        public HudPlacement MmrPanelHud { get; set; } = new HudPlacement();
 
         // Opt-in: the Dark Gift list panel, shown while hovering the in-game Dark Discovery button
         // (hover detected via HearthMirror's big-card/tooltip state — no screen geometry). Gifts
@@ -122,14 +142,21 @@ namespace HsbgCardLookup.Config
         }
     }
 
-    /// <summary>Persisted screen placement + size for one always-on HUD card (a trinket or the anomaly).
+    /// <summary>Persisted placement + size for one always-on HUD card (a trinket or the anomaly).
     /// <see cref="Set"/> = the user has moved/sized it at least once; until then a computed default
-    /// position is used. X/Y are the window's top-left in DIPs; W is the art width (excl. the grab ring).</summary>
+    /// position is used. Since the HUD moved onto HDT's overlay canvas (0.3.2), the authoritative
+    /// placement is the CANVAS FRACTIONS <see cref="XF"/>/<see cref="YF"/> (top-left) +
+    /// <see cref="WF"/> (art width), all relative to the canvas size — WF &gt; 0 marks them valid.
+    /// X/Y/W are the legacy screen-DIP window placement, kept so an old config converts once
+    /// (BgHud → HudCanvasCard.LegacyToFrac) on the first show with a live canvas.</summary>
     public class HudPlacement
     {
         public bool Set { get; set; }
         public double X { get; set; }
         public double Y { get; set; }
         public double W { get; set; }
+        public double XF { get; set; }
+        public double YF { get; set; }
+        public double WF { get; set; }
     }
 }

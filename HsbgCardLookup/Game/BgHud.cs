@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
-using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Hearthstone_Deck_Tracker;                       // Core
@@ -17,23 +14,24 @@ namespace HsbgCardLookup.Game
 {
     /// <summary>
     /// Always-on HUD: reads the player's current trinkets + the lobby anomaly from HDT's live state and
-    /// shows each as a persistent floating card, placed/sized per slot (saved across restarts). Joins
-    /// are pure <c>entity.CardId → our card</c> (CardStore.Lookup) — no HearthDb, no dbfId:
+    /// shows each as a card ON HDT'S OVERLAY CANVAS (see <see cref="HudCanvasCard"/> — drag/resize/
+    /// right-click without Hearthstone ever losing foreground; window tracking, foreground gating and
+    /// DPI come from HDT). Joins are pure <c>entity.CardId → our card</c> (CardStore.Lookup) — no
+    /// HearthDb, no dbfId:
     ///   • trinkets — <c>Player.Trinkets</c>, mapped to up to four boxes (lesser, greater, + 2 overflow,
     ///     since an anomaly can grant more than the usual pair);
     ///   • anomaly  — the one entity in <c>Game.Entities</c> whose CardId maps to a <c>CardType=="anomaly"</c>.
     /// Driven by IPlugin.OnUpdate (throttled). Pure read — never mutates the game. State is read on the
-    /// OnUpdate thread (defensively, collections mutate on HDT threads); all window work is marshalled
-    /// to the UI thread, and only when the resolved set actually changes.
+    /// OnUpdate thread (defensively, collections mutate on HDT threads); all canvas work is marshalled
+    /// to the overlay-canvas dispatcher, and only when the resolved set actually changes.
     ///
     /// An "arrange" mode (<see cref="SetEditMode"/>, the HDT-style "unlock overlay") shows every enabled
-    /// box as a draggable/resizable placeholder — with sample art + a dashed outline + a label — even out
-    /// of match with no card present, so the HUD can be laid out before anything is acquired.
+    /// box as a draggable/resizable placeholder — with sample art + a dashed outline + a label — so the
+    /// HUD can be laid out before anything is acquired. NB: the canvas only renders while Hearthstone is
+    /// up (and interacts while it's foreground), so arranging needs HS running.
     /// </summary>
     public sealed class BgHud
     {
-        private const double DefaultWidthDip = 170;   // starting art width for a HUD card (user can resize)
-
         private const int TrinketSlots = 4;           // lesser + greater + two overflow boxes
         private static readonly string[] TrinketLabels =
             { "Lesser Trinket", "Greater Trinket", "Trinket 3", "Trinket 4" };
@@ -48,7 +46,7 @@ namespace HsbgCardLookup.Game
         private DateTime _lastPoll = DateTime.MinValue;
         private volatile string _lastSig;
         private volatile Desired _desired = new Desired();   // last game-state read (refreshed every 750ms)
-        private bool _editing;                                // arrange mode owns the windows (UI thread only)
+        private bool _editing;                                // arrange mode owns the cards (canvas thread only)
 
         // Match-end latch: HDT keeps IsBattlegroundsMatch true through the post-game/placement (MMR)
         // screen, so we hide on the OnGameEnd event and stay hidden until a NEW match begins (a raw
@@ -58,16 +56,9 @@ namespace HsbgCardLookup.Game
         private static BgHud _current;     // OnGameEnd routes here (so reloads don't stack subscriptions)
         private static bool _hooked;
 
-        // Foreground gating: only show while HS or our own process (HDT) is foreground — so the HUD
-        // vanishes when the user alt-tabs to Chrome etc. Resolving the fg process name is cached per pid.
-        private readonly int _ownPid;
-        private uint _lastFgPid;
-        private bool _lastFgIsHs;
-
         public BgHud(CardStore store, PluginConfig config, Dispatcher ui)
         {
             _store = store; _config = config; _ui = ui;
-            try { _ownPid = Process.GetCurrentProcess().Id; } catch { _ownPid = -1; }
             HookGameEvents();
             _trinkets = new[]
             {
@@ -79,15 +70,17 @@ namespace HsbgCardLookup.Game
             _anomaly = new HudSlot(config, () => config.AnomalyHud, 0, true, OnSlotRightClick);
         }
 
+        // The cards live on HDT's overlay canvas, so their work belongs on that canvas' dispatcher.
+        private void Marshal(Action action)
+        {
+            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
+        }
+
         // ── Poll (OnUpdate thread) ───────────────────────────────────────────────────────────────
         public void Poll()
         {
             try
             {
-                // Foreground is checked EVERY tick (cheap) so the HUD hides ~instantly on alt-tab; the
-                // game-state read stays throttled (entity scan is the expensive part).
-                bool focused = IsForeground();
-
                 // Raw match transition (every tick): a fresh match (false→true) clears the end latch.
                 bool isBg = false;
                 try { var gg = Core.Game; isBg = gg != null && gg.IsBattlegroundsMatch; } catch { }
@@ -102,65 +95,76 @@ namespace HsbgCardLookup.Game
                 }
 
                 var d = _desired;
-                bool show = focused && d.InMatch;
-                string sig = show
+                string sig = d.InMatch
                     ? "1|" + _config.ShowTrinkets + "|" + _config.ShowExtraTrinkets + "|" + _config.ShowAnomaly + "|"
                         + string.Join(",", d.Trinkets.Select(c => c?.ExternalId)) + "|" + d.Anomaly?.ExternalId + "|"
                         + string.Concat(_trinkets.Select(s => s.Suppressed ? '1' : '0')) + (_anomaly.Suppressed ? '1' : '0')
                     : "0";
                 if (sig == _lastSig) return;        // nothing changed → no UI work
                 _lastSig = sig;
-                var dd = d; bool fg = focused;
-                _ui?.BeginInvoke(new Action(() => Apply(dd, fg)));
+                var dd = d;
+                Marshal(() => Apply(dd));
             }
             catch { /* OnUpdate must never throw */ }
         }
 
-        /// <summary>Re-apply immediately after a settings toggle (called on the UI thread).</summary>
+        /// <summary>Re-apply immediately after a settings toggle.</summary>
         public void OnSettingsChanged()
         {
             try
             {
-                if (_editing) { SetEditMode(true); return; }   // re-show placeholders for the new toggle state
-                _lastSig = null; Apply(ReadDesired(), IsForeground());
+                var d = ReadDesired();
+                Marshal(() =>
+                {
+                    if (_editing) { EnterEdit(); return; }   // re-show placeholders for the new toggle state
+                    _lastSig = null;
+                    Apply(d);
+                });
             }
             catch { }
         }
 
         // ── Arrange mode (the HDT-style "unlock overlay") ────────────────────────────────────────
 
-        /// <summary>Enter/exit arrange mode (UI thread). While on, every ENABLED box is shown as a
-        /// draggable/resizable placeholder (sample art + dashed outline + label) regardless of match or
-        /// foreground state, so the HUD can be laid out with nothing acquired. Geometry persists on each
-        /// move/resize via the normal <see cref="HudSlot.GeometryChanged"/> path.</summary>
+        /// <summary>Enter/exit arrange mode. While on, every ENABLED box is shown as a draggable/
+        /// resizable placeholder (sample art + dashed outline + label) regardless of match state, so
+        /// the HUD can be laid out with nothing acquired. Geometry persists per move/resize via the
+        /// normal <see cref="HudSlot"/> path. Needs Hearthstone running (the canvas renders over it).</summary>
         public void SetEditMode(bool on)
         {
             try
             {
-                _editing = on;
-                if (on)
+                var d = on ? ReadDesired() : null;
+                Marshal(() =>
                 {
-                    var d = ReadDesired();   // reuse any live cards for true-to-life sizing
-                    for (int i = 0; i < _trinkets.Length; i++)
+                    _editing = on;
+                    if (on) EnterEdit(d);
+                    else
                     {
-                        if (TrinketSlotEnabled(i))
-                            EnterEditSlot(_trinkets[i], d.InMatch ? d.Trinkets[i] : null,
-                                          RepresentativeTrinket(greater: i == 1), TrinketLabels[i]);
-                        else { _trinkets[i].ExitEdit(); _trinkets[i].Hide(); }
+                        foreach (var s in _trinkets) s.ExitEdit();
+                        _anomaly.ExitEdit();
+                        _lastSig = null;
+                        Apply(ReadDesired());   // restore live cards / hide empties
                     }
-                    if (_config.ShowAnomaly)
-                        EnterEditSlot(_anomaly, d.InMatch ? d.Anomaly : null, RepresentativeAnomaly(), "Anomaly");
-                    else { _anomaly.ExitEdit(); _anomaly.Hide(); }
-                }
-                else
-                {
-                    foreach (var s in _trinkets) s.ExitEdit();
-                    _anomaly.ExitEdit();
-                    _lastSig = null;
-                    Apply(ReadDesired(), IsForeground());   // restore live cards / hide empties
-                }
+                });
             }
             catch { }
+        }
+
+        // Show placeholders for every enabled slot (canvas thread).
+        private void EnterEdit(Desired d = null)
+        {
+            if (d == null) d = ReadDesired();
+            for (int i = 0; i < _trinkets.Length; i++)
+            {
+                if (TrinketSlotEnabled(i))
+                    EnterEditSlot(_trinkets[i], d.InMatch ? d.Trinkets[i] : null,
+                                  RepresentativeTrinket(greater: i == 1), TrinketLabels[i]);
+                else _trinkets[i].Hide();
+            }
+            if (_config.ShowAnomaly)
+                EnterEditSlot(_anomaly, d.InMatch ? d.Anomaly : null, RepresentativeAnomaly(), "Anomaly");
+            else _anomaly.Hide();
         }
 
         // Show one slot's placeholder: prefer a live card (real sizing); else a representative sample.
@@ -183,7 +187,7 @@ namespace HsbgCardLookup.Game
                 CardArt.LoadAsync(sample, false, 0).ContinueWith(t =>
                 {
                     var b = t.Result; if (b == null) return;
-                    _ui?.BeginInvoke(new Action(() => { if (_editing) slot.SetEditArt(b); }));
+                    Marshal(() => { if (_editing) slot.SetEditArt(b); });
                 }, System.Threading.Tasks.TaskContinuationOptions.OnlyOnRanToCompletion);
             }
             catch { }
@@ -207,11 +211,8 @@ namespace HsbgCardLookup.Game
         }
 
         // A translucent tile used as a placeholder before (or instead of) real sample art loads.
-        // CRITICAL: its pixel WIDTH must be >= real card art's (~256px) so it doesn't shrink a saved
-        // size. FloatingCard clamps its initial width to native_px * 1.5; with a tiny tile that ceiling
-        // would collapse a saved width (e.g. 300 → ~96) the moment a cold-cache placeholder is built,
-        // and the later SetArt keeps that shrunk width. Matching the real native px (256) keeps the
-        // saved size intact; real sample art re-derives the aspect on upgrade.
+        // Its pixel WIDTH matches real card art (~256px) so the native-px scale ceiling in
+        // HudCanvasCard can't collapse a saved size while the placeholder is up.
         private static BitmapSource _fallbackArt;
         private static BitmapSource FallbackArt()
         {
@@ -225,36 +226,19 @@ namespace HsbgCardLookup.Game
             return _fallbackArt;
         }
 
-        // True when the foreground window is Hearthstone OR our own process (HDT — which includes the
-        // F3 overlay, settings, and these HUD windows). Anything else (Chrome, etc.) → false → hide.
-        private bool IsForeground()
+        /// <summary>Remove all HUD cards from the canvas (plugin unload).</summary>
+        public void CloseAll()
         {
             try
             {
-                var fg = GetForegroundWindow();
-                if (fg == IntPtr.Zero) return false;
-                GetWindowThreadProcessId(fg, out uint pid);
-                if (pid == 0) return false;
-                if (pid == _ownPid) return true;             // HDT / our own windows
-                if (pid == _lastFgPid) return _lastFgIsHs;   // cached resolution for this fg process
-                _lastFgPid = pid;
-                try { using (var p = Process.GetProcessById((int)pid)) _lastFgIsHs = string.Equals(p.ProcessName, "Hearthstone", StringComparison.OrdinalIgnoreCase); }
-                catch { _lastFgIsHs = false; }
-                return _lastFgIsHs;
+                var t = _trinkets; var a = _anomaly;
+                (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() =>
+                {
+                    foreach (var s in t) s.Close();
+                    a.Close();
+                }));
             }
-            catch { return false; }
-        }
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-        /// <summary>Close all HUD windows (plugin unload, UI thread).</summary>
-        public void CloseAll()
-        {
-            try { foreach (var s in _trinkets) s.Close(); _anomaly.Close(); } catch { }
+            catch { }
         }
 
         // Subscribe to HDT's game-end once per process. ActionList has Add but no Remove, so route
@@ -332,17 +316,16 @@ namespace HsbgCardLookup.Game
         // opt-in ShowExtraTrinkets flag (off by default — some people only want the usual pair).
         private bool TrinketSlotEnabled(int i) => _config.ShowTrinkets && (i < 2 || _config.ShowExtraTrinkets);
 
-        // ── Apply to windows (UI thread) ─────────────────────────────────────────────────────────
-        private void Apply(Desired d, bool focused)
+        // ── Apply to canvas cards (canvas thread) ────────────────────────────────────────────────
+        private void Apply(Desired d)
         {
-            if (_editing) return;   // arrange mode owns the windows; poll updates wait until it exits
-            bool inMatch = d.InMatch && focused;   // not focused → treat as nothing to show (hide all)
+            if (_editing) return;   // arrange mode owns the cards; poll updates wait until it exits
             for (int i = 0; i < _trinkets.Length; i++)
-                ReconcileSlot(_trinkets[i], TrinketSlotEnabled(i) && inMatch && !_trinkets[i].Suppressed ? d.Trinkets[i] : null);
-            ReconcileSlot(_anomaly, _config.ShowAnomaly && inMatch && !_anomaly.Suppressed ? d.Anomaly : null);
+                ReconcileSlot(_trinkets[i], TrinketSlotEnabled(i) && d.InMatch && !_trinkets[i].Suppressed ? d.Trinkets[i] : null);
+            ReconcileSlot(_anomaly, _config.ShowAnomaly && d.InMatch && !_anomaly.Suppressed ? d.Anomaly : null);
         }
 
-        // ── HUD right-click menu (UI thread — the window's WndProc routes here) ──────────────────
+        // ── HUD right-click menu (canvas thread — the card's WPF event routes here) ──────────────
         private void OnSlotRightClick(HudSlot slot)
         {
             if (_editing) return;   // arrange mode: right-click does nothing (boxes are placeholders)
@@ -381,7 +364,7 @@ namespace HsbgCardLookup.Game
             if (slot.IsShowing(target)) return;             // already this card
             slot.PendingId = target.ExternalId;
 
-            // Art may not be cached (HUD cards appear mid-match, not from browsing) → spawn once it loads.
+            // Art may not be cached (HUD cards appear mid-match, not from browsing) → show once it loads.
             var bmp = CardArt.GetSync(target, false, 0);
             if (bmp != null) { slot.SetCard(target, bmp); return; }
 
@@ -389,10 +372,10 @@ namespace HsbgCardLookup.Game
             CardArt.LoadAsync(target, false, 0).ContinueWith(t =>
             {
                 var b = t.Result; if (b == null) return;
-                _ui?.BeginInvoke(new Action(() =>
+                Marshal(() =>
                 {
                     if (slot.PendingId == tgt.ExternalId) slot.SetCard(tgt, b);
-                }));
+                });
             }, System.Threading.Tasks.TaskContinuationOptions.OnlyOnRanToCompletion);
         }
 
@@ -410,25 +393,6 @@ namespace HsbgCardLookup.Game
             catch { return new List<Entity>(); }
         }
 
-        // Default starting spot. Trinkets stack down the right work-area edge, wrapping to a new column
-        // to the left when they'd run past the bottom (so all four fit). The anomaly defaults to the
-        // top-left, well clear of the trinket column. All of this is just a first guess — the user drags.
-        private static Point DefaultPos(int index, bool anomaly)
-        {
-            var wa = SystemParameters.WorkArea;
-            double w = DefaultWidthDip + 2 * 5;       // + grab ring
-            double h = w * 1.4;                         // rough card aspect
-            if (anomaly) return new Point(wa.Left + 24, wa.Top + 24);
-
-            double step = h + 14;
-            int perCol = Math.Max(1, (int)((wa.Height - 48) / step));
-            int col = index / perCol;
-            int row = index % perCol;
-            double x = wa.Right - w - 24 - col * (w + 14);
-            double y = wa.Top + 24 + row * step;
-            return new Point(x, y);
-        }
-
         private sealed class Desired
         {
             public bool InMatch;
@@ -436,9 +400,9 @@ namespace HsbgCardLookup.Game
             public BgCard Anomaly;
         }
 
-        /// <summary>One HUD slot: owns its window, remembers what card it's showing, and persists its
-        /// own placement+size (it is the window's <see cref="IFloatingCardHost"/>).</summary>
-        private sealed class HudSlot : IFloatingCardHost
+        /// <summary>One HUD slot: owns its canvas card, remembers what it's showing, and persists its
+        /// own placement (canvas fractions; a legacy screen-DIP placement converts once).</summary>
+        private sealed class HudSlot
         {
             private readonly PluginConfig _config;
             private readonly Func<HudPlacement> _slot;
@@ -446,7 +410,7 @@ namespace HsbgCardLookup.Game
             private readonly bool _isAnomaly;
             private readonly Action<HudSlot> _onRightClick;
 
-            private FloatingCard _win;
+            private HudCanvasCard _card;
             private string _shownId;
             public string PendingId;
             public bool Suppressed;   // "close until end of match" — cleared on match end / new match
@@ -457,15 +421,14 @@ namespace HsbgCardLookup.Game
             { _config = config; _slot = slot; _index = index; _isAnomaly = isAnomaly; _onRightClick = onRightClick; }
 
             public bool IsShowing(BgCard card) =>
-                _win != null && _win.IsVisible && _shownId == card.ExternalId;
+                _card != null && _card.IsVisible && _shownId == card.ExternalId;
 
             public void SetCard(BgCard card, BitmapSource bmp)
             {
-                EnsureWindow(bmp);
-                if (_win == null) return;
-                _win.SetArt(bmp);
-                _win.ClearEditChrome();   // a real card is never a placeholder
-                _win.Show();
+                EnsureCard();
+                _card.SetArt(bmp);
+                _card.ClearEditChrome();   // a real card is never a placeholder
+                ShowSaved();
                 _shownId = card.ExternalId;
             }
 
@@ -473,53 +436,56 @@ namespace HsbgCardLookup.Game
             // placement, with no real card bound (so exiting arrange mode reconciles it cleanly).
             public void EnterEdit(BitmapSource bmp, string label)
             {
-                EnsureWindow(bmp);
-                if (_win == null) return;
-                _win.SetArt(bmp);
-                _win.Show();
-                _win.SetEditChrome(label);
+                EnsureCard();
+                _card.SetArt(bmp);
+                ShowSaved();
+                _card.SetEditChrome(label);
                 _shownId = null; PendingId = null;
             }
 
-            public void SetEditArt(BitmapSource bmp) { try { _win?.SetArt(bmp); } catch { } }
+            public void SetEditArt(BitmapSource bmp) { try { _card?.SetArt(bmp); } catch { } }
 
-            public void ExitEdit() { try { _win?.ClearEditChrome(); } catch { } }
+            public void ExitEdit() { try { _card?.ClearEditChrome(); } catch { } }
 
-            // Create the window at the saved-or-default placement if it doesn't exist yet.
-            private void EnsureWindow(BitmapSource bmp)
+            private void EnsureCard()
             {
-                if (_win != null || bmp == null) return;
+                if (_card != null) return;
+                _card = new HudCanvasCard(_index, _isAnomaly);
+                _card.RightClicked = () => _onRightClick?.Invoke(this);
+                _card.GeometryChanged = (xf, yf, wf) =>
+                {
+                    var p = _slot();
+                    p.Set = true; p.XF = xf; p.YF = yf; p.WF = wf;
+                    _config.Save();
+                };
+            }
+
+            // Show at the saved fractions; a pre-canvas config (screen-DIP X/Y/W, no fractions yet)
+            // converts once against the live canvas and is written back.
+            private void ShowSaved()
+            {
                 var p = _slot();
-                double w = p.Set && p.W > 0 ? p.W : DefaultWidthDip;
-                _win = new FloatingCard(this, bmp, w, closable: false);
-                _win.RightClicked = () => _onRightClick?.Invoke(this);
-                _win.Show();
-                var pos = p.Set ? new Point(p.X, p.Y) : DefaultPos(_index, _isAnomaly);
-                _win.Place(pos.X, pos.Y);
+                if (p.WF <= 0 && p.Set && p.W > 0
+                    && HudCanvasCard.LegacyToFrac(p.X, p.Y, p.W, out double xf, out double yf, out double wf))
+                {
+                    p.XF = xf; p.YF = yf; p.WF = wf;
+                    try { _config.Save(); } catch { }
+                }
+                _card.ShowAt(p.XF, p.YF, p.WF);
             }
 
             public void Hide()
             {
                 PendingId = null;
                 _shownId = null;
-                try { _win?.ClearEditChrome(); } catch { }
-                try { _win?.Hide(); } catch { }   // keep the window for reuse next match (place/size persist)
+                try { _card?.ClearEditChrome(); } catch { }
+                try { _card?.Hide(); } catch { }   // stays attached for reuse next match
             }
 
             public void Close()
             {
-                try { _win?.Close(); } catch { }
-                _win = null; _shownId = null; PendingId = null;
-            }
-
-            // IFloatingCardHost
-            public void Remove(FloatingCard card) { /* HUD cards aren't user-closable */ }
-
-            public void GeometryChanged(FloatingCard card)
-            {
-                var p = _slot();
-                p.Set = true; p.X = card.Left; p.Y = card.Top; p.W = card.DisplayWidth;
-                _config.Save();
+                try { _card?.Close(); } catch { }
+                _card = null; _shownId = null; PendingId = null;
             }
         }
     }

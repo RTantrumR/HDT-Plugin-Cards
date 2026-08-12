@@ -31,6 +31,8 @@ namespace HsbgCardLookup.Game
         private DateTime _lastPoll = DateTime.MinValue;
         private volatile string _lastSig;
         private LeaderboardOverlay _overlay;
+        private MmrSidePanel _panel;
+        private bool _editing;   // arrange mode owns the panel (canvas thread only)
 
         private volatile bool _ended;
         private volatile bool _startFlag;
@@ -94,9 +96,13 @@ namespace HsbgCardLookup.Game
                 }
 
                 bool show = rows != null && rows.Count > 0;
-                bool names = _config.ShowOpponentNames;
+                // Every per-part toggle folds into the signature so a settings change re-renders.
+                string flags = (_config.ShowMmrLabels ? "L" : "") + (_config.ShowMmrPanel ? "P" : "")
+                    + (_config.ShowOpponentNames ? "n" : "") + (_config.ShowMmrRating ? "r" : "")
+                    + (_config.ShowMmrDeltas ? "a" : "") + "t" + _config.TavernTierMode
+                    + (_config.ShowLastOpponent ? "o" : "") + (_config.DimDeadPlayers ? "d" : "");
                 string sig = show
-                    ? (names ? "n|" : "|") + string.Join(",", rows.Select(r =>
+                    ? flags + "|" + string.Join(",", rows.Select(r =>
                         r.Name + "=" + r.Rating + "/" + r.Delta + "/" + r.TavernTier +
                         (r.IsDead ? "d" : "") + (r.IsLastOpponent ? "l" : "") + (r.IsCurrentOpponent ? "c" : "")))
                     : "0";
@@ -104,15 +110,45 @@ namespace HsbgCardLookup.Game
                 _lastSig = sig;
 
                 var rr = show ? rows : null;
-                Marshal(() => ApplyUi(rr, names));
+                Marshal(() => ApplyUi(rr));
             }
             catch { /* OnUpdate must never throw */ }
         }
 
         public void OnSettingsChanged()
         {
-            _lastSig = null;   // name toggle / re-enable → rebuild the labels on the next poll
-            if (!_config.ShowOpponentMmr) Marshal(() => _overlay?.HideAll());
+            _lastSig = null;   // any toggle change → rebuild both surfaces on the next poll
+            bool master = _config.ShowOpponentMmr;
+            bool portraitAny = master && (_config.ShowMmrLabels || TiersOnPortraits || _config.ShowLastOpponent);
+            bool panel = master && _config.ShowMmrPanel;
+            Marshal(() =>
+            {
+                if (!portraitAny) _overlay?.HideAll();
+                if (!panel && !_editing) _panel?.Hide();
+            });
+        }
+
+        /// <summary>Arrange mode (shared with the HUD's "Arrange…" button): show the standings panel
+        /// with sample data so it can be placed/resized out of a match. Needs Hearthstone running.</summary>
+        public void SetEditMode(bool on)
+        {
+            Marshal(() =>
+            {
+                _editing = on;
+                bool enabled = _config.ShowOpponentMmr && _config.ShowMmrPanel;
+                if (on && !enabled) return;              // panel surface off → nothing to arrange
+                if (on)
+                {
+                    EnsurePanel();
+                    SyncPanelFlags();
+                    _panel.SetEditMode(true);
+                }
+                else if (_panel != null)
+                {
+                    _panel.SetEditMode(false);
+                    _lastSig = null;                     // next poll restores live standings if any
+                }
+            });
         }
 
         // ── Live standings: PLAYER_LEADERBOARD_PLACE order → name/rating/tier/flags ─────────────────
@@ -239,31 +275,115 @@ namespace HsbgCardLookup.Game
             catch { }
         }
 
-        // ── Overlay (canvas/UI thread) ──────────────────────────────────────────────────────────────
-        private void ApplyUi(List<LeaderboardOverlay.Row> rows, bool showNames)
+        // ── Overlay + panel (canvas thread) ─────────────────────────────────────────────────────────
+        private void ApplyUi(List<LeaderboardOverlay.Row> rows)
         {
             try
             {
                 if (_overlay == null) _overlay = new LeaderboardOverlay();
-                if (rows == null || rows.Count == 0) { _overlay.HideAll(); return; }
-                _overlay.ShowNames = showNames;
-                _overlay.SetStandings(rows);
+                bool any = rows != null && rows.Count > 0;
+
+                // Surface 1: the portrait-anchored parts — the MMR/name label box (gated by
+                // ShowMmrLabels), the tavern-tier icons (their own location axis: TavernTierMode
+                // Portraits/Panel/Both/Off) and the ⚔ marker are all INDEPENDENT, so e.g. tiers can
+                // sit by the portraits with the label box entirely off ("tiers only") — or live only
+                // in the panel with nothing at the portraits at all.
+                bool portraitAny = _config.ShowMmrLabels || TiersOnPortraits || _config.ShowLastOpponent;
+                if (any && portraitAny)
+                {
+                    _overlay.ShowNames = _config.ShowMmrLabels && _config.ShowOpponentNames;
+                    _overlay.ShowRating = _config.ShowMmrLabels && _config.ShowMmrRating;
+                    _overlay.ShowDeltas = _config.ShowMmrLabels && _config.ShowMmrDeltas;
+                    _overlay.ShowTiers = TiersOnPortraits;
+                    _overlay.ShowLastOpp = _config.ShowLastOpponent;
+                    _overlay.DimDead = _config.DimDeadPlayers;
+                    _overlay.SetStandings(rows);
+                }
+                else _overlay.HideAll();
+
+                // Surface 2: the separate draggable standings panel (skipped while arrange mode owns it).
+                if (_editing) return;
+                if (any && _config.ShowMmrPanel)
+                {
+                    EnsurePanel();
+                    SyncPanelFlags();
+                    _panel.SetStandings(rows);
+                }
+                else _panel?.Hide();
             }
             catch { }
         }
 
+        private void EnsurePanel()
+        {
+            if (_panel != null) return;
+            _panel = new MmrSidePanel();
+            var p = _config.MmrPanelHud;
+            if (p.WF > 0) _panel.Place(p.XF, p.YF, p.WF);
+            _panel.GeometryChanged = (xf, yf, wf) =>
+            {
+                var pl = _config.MmrPanelHud;
+                pl.Set = true; pl.XF = xf; pl.YF = yf; pl.WF = wf;
+                try { _config.Save(); } catch { }
+            };
+        }
+
+        private void SyncPanelFlags()
+        {
+            _panel.ShowNames = _config.ShowOpponentNames;
+            _panel.ShowRating = _config.ShowMmrRating;
+            _panel.ShowDeltas = _config.ShowMmrDeltas;
+            _panel.ShowTiers = TiersInPanel;
+            _panel.ShowLastOpp = _config.ShowLastOpponent;
+            _panel.DimDead = _config.DimDeadPlayers;
+        }
+
+        // TavernTierMode ("Off"/"Portraits"/"Panel"/"Both"; unknown/empty = Both) → per-surface bools.
+        private bool TiersOnPortraits
+        {
+            get
+            {
+                var m = _config.TavernTierMode;
+                return string.IsNullOrEmpty(m)
+                    || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(m, "Portraits", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        private bool TiersInPanel
+        {
+            get
+            {
+                var m = _config.TavernTierMode;
+                return string.IsNullOrEmpty(m)
+                    || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
         private void HideIfShown()
         {
-            if (_overlay != null) { _lastSig = null; Marshal(() => _overlay?.HideAll()); }
+            if (_overlay == null && _panel == null) return;
+            _lastSig = null;
+            Marshal(() =>
+            {
+                _overlay?.HideAll();
+                if (!_editing) _panel?.Hide();
+            });
         }
 
         public void CloseAll()
         {
             try
             {
-                var o = _overlay;
-                _overlay = null;
-                if (o != null) (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() => o.Detach()));
+                var o = _overlay; var p = _panel;
+                _overlay = null; _panel = null;
+                if (o != null || p != null)
+                    (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() =>
+                    {
+                        o?.Detach();
+                        p?.Close();
+                    }));
             }
             catch { }
         }

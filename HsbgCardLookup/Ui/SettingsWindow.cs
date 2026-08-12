@@ -129,7 +129,7 @@ namespace HsbgCardLookup.Ui
                 null, null, BuildCardSearch));
 
             stack.Children.Add(CategoryRow("Trinket HUD",
-                "Your trinkets as floating cards during a match.",
+                "Your trinkets shown on the in-game overlay during a match.",
                 () => _config.ShowTrinkets, v =>
                 {
                     _config.ShowTrinkets = v;
@@ -139,7 +139,7 @@ namespace HsbgCardLookup.Ui
                 }, BuildTrinkets));
 
             stack.Children.Add(CategoryRow("Anomaly HUD",
-                "The lobby anomaly as a floating card during a match.",
+                "The lobby anomaly shown on the in-game overlay during a match.",
                 () => _config.ShowAnomaly, v =>
                 {
                     _config.ShowAnomaly = v;
@@ -149,14 +149,15 @@ namespace HsbgCardLookup.Ui
                 }, BuildAnomaly));
 
             stack.Children.Add(CategoryRow("Opponents' MMR",
-                "Rating + tavern tier on the leaderboard portraits.",
+                "MMR, tiers, names — over the portraits and/or a movable panel.",
                 () => _config.ShowOpponentMmr, v =>
                 {
                     _config.ShowOpponentMmr = v;
                     _status.Text = v
-                        ? "Opponents' MMR + tavern tier label each leaderboard portrait (8000↓ below the cutoff)."
+                        ? "Opponents' MMR on — open the sub-page to pick where and what to show."
                         : "Opponent MMR off.";
                     _onChanged();
+                    UpdateArrangeRow();
                 }, BuildMmr));
 
             stack.Children.Add(CategoryRow("Dark Gifts",
@@ -298,23 +299,112 @@ namespace HsbgCardLookup.Ui
         {
             var stack = NewPage("Opponents' MMR", sub: true);
 
-            stack.Children.Add(ToggleRow("Show opponent names", _config.ShowOpponentNames, v =>
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Mix and match: pick where it shows, then which parts. Any combination works — " +
+                       "e.g. tavern tiers alone, a names-only side panel, rating without names…",
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            stack.Children.Add(ToggleRow("MMR labels on the portraits", _config.ShowMmrLabels, v =>
+            {
+                _config.ShowMmrLabels = v;
+                _status.Text = v
+                    ? "Rating/name labels on the leaderboard portraits."
+                    : "No rating/name labels on the portraits. Tavern tiers and the ⚔ marker are separate " +
+                      "toggles below — they can stay by the portraits on their own.";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("Separate movable panel", _config.ShowMmrPanel, v =>
+            {
+                _config.ShowMmrPanel = v;
+                _status.Text = v
+                    ? "Standings panel on — drag it anywhere over the game; drag its top-right corner to resize."
+                    : "Standings panel off.";
+                NormalizeTierMode();   // panel off → panel-involving tier modes snap to their fallback
+                _onChanged();
+                UpdateArrangeRow();
+                foreach (var r in _modeRefresh) r();   // the panel-involving tier options follow this
+            }));
+
+            stack.Children.Add(Separator());
+
+            stack.Children.Add(ToggleRow("Player names", _config.ShowOpponentNames, v =>
             {
                 _config.ShowOpponentNames = v;
-                _status.Text = v
-                    ? "Labels show the player's name above their rating."
-                    : "Labels show the rating only (no names on screen).";
+                _status.Text = v ? "Names shown." : "No names on screen (handy when streaming).";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("MMR rating", _config.ShowMmrRating, v =>
+            {
+                _config.ShowMmrRating = v;
+                _status.Text = v ? "Ratings shown (8000↓ below the leaderboard cutoff)." : "Ratings hidden.";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("Today's rating change (▲/▼)", _config.ShowMmrDeltas, v =>
+            {
+                _config.ShowMmrDeltas = v;
+                _status.Text = v ? "Daily ▲/▼ deltas shown next to the rating." : "Daily deltas hidden.";
                 _onChanged();
             }));
 
             stack.Children.Add(new TextBlock
             {
-                Text = "Off by default — handy when streaming, where opponent names on screen aren't always wanted.",
-                Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
-                TextWrapping = TextWrapping.Wrap
+                Text = "Tavern tiers",
+                Foreground = UiKit.TextPrimary, FontSize = 15, FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 4, 0, 6)
             });
+            NormalizeTierMode();   // e.g. a fresh config: panel off + mode "Both" → show as "Portraits"
+            Func<string> tierGet = () => _config.TavernTierMode;
+            Action<string> tierSet = v => _config.TavernTierMode = v;
+            stack.Children.Add(SelectRow(tierGet, tierSet, "Tavern tiers: ",
+                "Both", "By the portraits + in the panel", "Icons in both places.",
+                () => _config.ShowMmrPanel));
+            stack.Children.Add(SelectRow(tierGet, tierSet, "Tavern tiers: ",
+                "Portraits", "By the portraits only", "Icons right of each leaderboard portrait — works on its own, no labels needed.", null));
+            stack.Children.Add(SelectRow(tierGet, tierSet, "Tavern tiers: ",
+                "Panel", "In the panel only", "Icons inside the separate panel; nothing by the portraits.",
+                () => _config.ShowMmrPanel));
+            stack.Children.Add(SelectRow(tierGet, tierSet, "Tavern tiers: ",
+                "Off", "Off", "No tavern-tier icons anywhere.", null));
+
+            stack.Children.Add(ToggleRow("Mark last fought opponent (⚔)", _config.ShowLastOpponent, v =>
+            {
+                _config.ShowLastOpponent = v;
+                _status.Text = v
+                    ? "The previous combat's opponent gets a ⚔ marker by their portrait (and in the panel)."
+                    : "⚔ marker off.";
+                _onChanged();
+            }));
+
+            stack.Children.Add(ToggleRow("Dim dead players", _config.DimDeadPlayers, v =>
+            {
+                _config.DimDeadPlayers = v;
+                _status.Text = v ? "Knocked-out players gray out." : "Dead players keep full color.";
+                _onChanged();
+            }));
+
+            stack.Children.Add(Separator());
+            stack.Children.Add(ArrangeHudRow());
 
             Content = stack;
+        }
+
+        // With the panel surface off, the panel-involving tier modes make no sense — snap them to the
+        // equivalent panel-less choice ("Both"→"Portraits", "Panel"→"Off") so the selection always
+        // sits on an option that's actually selectable.
+        private void NormalizeTierMode()
+        {
+            if (_config.ShowMmrPanel) return;
+            var m = _config.TavernTierMode;
+            if (string.IsNullOrEmpty(m) || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase))
+                _config.TavernTierMode = "Portraits";
+            else if (string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase))
+                _config.TavernTierMode = "Off";
         }
 
         private void BuildDarkGifts()
@@ -457,7 +547,15 @@ namespace HsbgCardLookup.Ui
         }
 
         // Dark-Gift panel display mode — radio-style row; the selected one gets the accent treatment.
-        private UIElement ModeRow(string value, string title, string desc)
+        private UIElement ModeRow(string value, string title, string desc) =>
+            SelectRow(() => _config.DarkGiftMode, v => _config.DarkGiftMode = v,
+                "Dark Gift panel: ", value, title, desc, null);
+
+        // Radio-style single-select row (one per option; the group shares a config string value).
+        // `enabled` (optional) grays the row out and ignores clicks while false — repainted with the
+        // rest of the group, so e.g. a "panel only" option can follow the panel toggle live.
+        private UIElement SelectRow(Func<string> get, Action<string> set, string statusPrefix,
+            string value, string title, string desc, Func<bool> enabled)
         {
             var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             var titleTb = new TextBlock { Text = title, FontSize = 15 };
@@ -475,19 +573,23 @@ namespace HsbgCardLookup.Ui
             };
             Action repaint = () =>
             {
-                bool sel = string.Equals(_config.DarkGiftMode, value, StringComparison.OrdinalIgnoreCase)
-                           || (value == "Both" && string.IsNullOrEmpty(_config.DarkGiftMode));
+                bool on = enabled?.Invoke() ?? true;
+                bool sel = string.Equals(get(), value, StringComparison.OrdinalIgnoreCase)
+                           || (value == "Both" && string.IsNullOrEmpty(get()));
                 row.Background = sel ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
                 row.BorderBrush = sel ? UiKit.AccentBrush : UiKit.StrokeBrush;
                 titleTb.Foreground = sel ? UiKit.AccentBrush : UiKit.TextPrimary;
+                row.Opacity = on ? 1.0 : 0.45;
+                row.Cursor = on ? Cursors.Hand : Cursors.Arrow;
             };
             repaint();
             _modeRefresh.Add(repaint);
             row.MouseLeftButtonUp += (s, e) =>
             {
-                _config.DarkGiftMode = value;
+                if (!(enabled?.Invoke() ?? true)) return;
+                set(value);
                 foreach (var r in _modeRefresh) r();
-                _status.Text = "Dark Gift panel: " + title.ToLowerInvariant() + ".";
+                _status.Text = statusPrefix + title.ToLowerInvariant() + ".";
                 _onChanged();
             };
             return row;
@@ -517,7 +619,7 @@ namespace HsbgCardLookup.Ui
             left.Children.Add(new TextBlock { Text = "Position HUD on screen", Foreground = UiKit.TextPrimary, FontSize = 15 });
             left.Children.Add(new TextBlock
             {
-                Text = "Drag a box to move it; drag its top-right corner to resize. Covers trinkets + anomaly.",
+                Text = "Drag a box to move it; drag its top-right corner to resize. Covers trinkets, anomaly + the MMR panel. Needs Hearthstone running.",
                 Foreground = UiKit.TextMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap
             });
             dock.Children.Add(left);
@@ -546,7 +648,8 @@ namespace HsbgCardLookup.Ui
         // (Null-safe: the arrange button only exists on the Trinket/Anomaly sub-pages.)
         private void UpdateArrangeRow()
         {
-            bool any = _config.ShowTrinkets || _config.ShowAnomaly;
+            bool any = _config.ShowTrinkets || _config.ShowAnomaly
+                || (_config.ShowOpponentMmr && _config.ShowMmrPanel);
             if (!any && _arranging) { SetArrange(false); return; }   // SetArrange re-enters here once locked
             if (_arrangeBtn == null) return;
             _arrangeBtn.IsEnabled = any;

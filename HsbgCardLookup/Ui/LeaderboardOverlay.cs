@@ -54,9 +54,19 @@ namespace HsbgCardLookup.Ui
 
         private bool _attached;
 
-        /// <summary>Whether the labels carry the player names (config `ShowOpponentNames`, off by
-        /// default). Set before <see cref="SetStandings"/>; without names the label is one line tall.</summary>
+        /// <summary>Per-part content switches (set from config before <see cref="SetStandings"/>).
+        /// The label box renders only the enabled lines (and hides entirely when names, rating AND
+        /// deltas are all off — e.g. the "tavern tiers only" setup); a single-line label shrinks to
+        /// <see cref="RefLabelH1"/> and lifts <see cref="RefNoNameLift"/>.</summary>
         public bool ShowNames { get; set; }
+        public bool ShowRating { get; set; } = true;
+        public bool ShowDeltas { get; set; } = true;
+        public bool ShowTiers { get; set; } = true;
+        public bool ShowLastOpp { get; set; } = true;
+        public bool DimDead { get; set; } = true;
+
+        private bool TwoLines => ShowNames && (ShowRating || ShowDeltas);
+        private bool BoxVisible => ShowNames || ShowRating || ShowDeltas;
 
         private static readonly Brush LabelBg = Frozen(Color.FromArgb(0xDC, 0x0A, 0x0D, 0x14));
         private static readonly Brush Muted = Frozen(Color.FromRgb(0x9A, 0xA3, 0xB4));
@@ -155,12 +165,14 @@ namespace HsbgCardLookup.Ui
                 var r = rows[i];
                 _shifted[i] = r.IsCurrentOpponent;
 
+                bool dim = DimDead && r.IsDead;
                 _names[i].Text = r.Name;
-                _names[i].Foreground = r.IsDead ? Dead : Brushes.White;
+                _names[i].Foreground = dim ? Dead : Brushes.White;
                 _names[i].Visibility = ShowNames ? Visibility.Visible : Visibility.Collapsed;
                 _ratings[i].Text = r.Rating > 0 ? r.Rating.ToString() : "8000↓";
-                _ratings[i].Foreground = r.IsDead ? Dead : (r.Rating > 0 ? UiKit.AccentBrush : Muted);
-                if (r.Delta != 0 && !r.IsDead)
+                _ratings[i].Foreground = dim ? Dead : (r.Rating > 0 ? UiKit.AccentBrush : Muted);
+                _ratings[i].Visibility = ShowRating ? Visibility.Visible : Visibility.Collapsed;
+                if (ShowDeltas && r.Delta != 0 && !dim)
                 {
                     _arrows[i].Text = (r.Delta > 0 ? "▲" : "▼") + Math.Abs(r.Delta);
                     _arrows[i].Foreground = r.Delta > 0 ? Up : Down;
@@ -168,23 +180,23 @@ namespace HsbgCardLookup.Ui
                 }
                 else _arrows[i].Visibility = Visibility.Collapsed;
 
-                _labels[i].Opacity = r.IsDead ? 0.65 : 1.0;
-                _labels[i].Visibility = Visibility.Visible;
+                _labels[i].Opacity = dim ? 0.65 : 1.0;
+                _labels[i].Visibility = BoxVisible ? Visibility.Visible : Visibility.Collapsed;
 
-                if (r.TavernTier >= 1 && r.TavernTier <= 7)
+                if (ShowTiers && r.TavernTier >= 1 && r.TavernTier <= 7)
                 {
                     var icon = TierIcon(r.TavernTier);
                     if (icon != null)
                     {
                         _tiers[i].Source = icon;
-                        _tiers[i].Opacity = r.IsDead ? 0.65 : 1.0;
+                        _tiers[i].Opacity = dim ? 0.65 : 1.0;
                         _tiers[i].Visibility = Visibility.Visible;
                     }
                     else _tiers[i].Visibility = Visibility.Collapsed;
                 }
                 else _tiers[i].Visibility = Visibility.Collapsed;
 
-                _lastOpp[i].Visibility = r.IsLastOpponent ? Visibility.Visible : Visibility.Collapsed;
+                _lastOpp[i].Visibility = ShowLastOpp && r.IsLastOpponent ? Visibility.Visible : Visibility.Collapsed;
             }
             UpdateLayout();
         }
@@ -215,8 +227,8 @@ namespace HsbgCardLookup.Ui
             double contentTop = (ch - contentH) / 2.0;
             double scale = Math.Max(0.60, Math.Min(contentH / RefH, 2.00));
 
-            double refH = ShowNames ? RefLabelH : RefLabelH1;
-            double lift = ShowNames ? 0.0 : RefNoNameLift;
+            double refH = TwoLines ? RefLabelH : RefLabelH1;
+            double lift = TwoLines ? 0.0 : RefNoNameLift;
 
             for (int i = 0; i < MaxSlots; i++)
             {

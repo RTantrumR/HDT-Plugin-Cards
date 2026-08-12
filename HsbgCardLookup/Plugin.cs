@@ -53,7 +53,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 3, 1);
+        public Version Version => new Version(0, 3, 2);
 
         // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
         // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the
@@ -437,7 +437,11 @@ namespace HsbgCardLookup
         private void OpenSettings()
         {
             if (_settings != null) { _settings.Activate(); return; }
-            _settings = new SettingsWindow(_config, _hotkey, ApplySettings, on => _bgHud?.SetEditMode(on));
+            _settings = new SettingsWindow(_config, _hotkey, ApplySettings, on =>
+            {
+                _bgHud?.SetEditMode(on);
+                _bgMmr?.SetEditMode(on);   // the MMR standings panel arranges alongside the HUD boxes
+            });
             _settings.Closed += (s, e) => _settings = null;
             _settings.Show();
         }
