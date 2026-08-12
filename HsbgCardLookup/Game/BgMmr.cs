@@ -94,8 +94,9 @@ namespace HsbgCardLookup.Game
                 }
 
                 bool show = rows != null && rows.Count > 0;
+                bool names = _config.ShowOpponentNames;
                 string sig = show
-                    ? string.Join(",", rows.Select(r =>
+                    ? (names ? "n|" : "|") + string.Join(",", rows.Select(r =>
                         r.Name + "=" + r.Rating + "/" + r.Delta + "/" + r.TavernTier +
                         (r.IsDead ? "d" : "") + (r.IsLastOpponent ? "l" : "") + (r.IsCurrentOpponent ? "c" : "")))
                     : "0";
@@ -103,14 +104,15 @@ namespace HsbgCardLookup.Game
                 _lastSig = sig;
 
                 var rr = show ? rows : null;
-                Marshal(() => ApplyUi(rr));
+                Marshal(() => ApplyUi(rr, names));
             }
             catch { /* OnUpdate must never throw */ }
         }
 
         public void OnSettingsChanged()
         {
-            if (!_config.ShowOpponentMmr) { _lastSig = null; Marshal(() => _overlay?.HideAll()); }
+            _lastSig = null;   // name toggle / re-enable → rebuild the labels on the next poll
+            if (!_config.ShowOpponentMmr) Marshal(() => _overlay?.HideAll());
         }
 
         // ── Live standings: PLAYER_LEADERBOARD_PLACE order → name/rating/tier/flags ─────────────────
@@ -238,12 +240,13 @@ namespace HsbgCardLookup.Game
         }
 
         // ── Overlay (canvas/UI thread) ──────────────────────────────────────────────────────────────
-        private void ApplyUi(List<LeaderboardOverlay.Row> rows)
+        private void ApplyUi(List<LeaderboardOverlay.Row> rows, bool showNames)
         {
             try
             {
                 if (_overlay == null) _overlay = new LeaderboardOverlay();
                 if (rows == null || rows.Count == 0) { _overlay.HideAll(); return; }
+                _overlay.ShowNames = showNames;
                 _overlay.SetStandings(rows);
             }
             catch { }

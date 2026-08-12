@@ -149,15 +149,15 @@ namespace HsbgCardLookup.Ui
                 }, BuildAnomaly));
 
             stack.Children.Add(CategoryRow("Opponents' MMR",
-                "Name + rating + tavern tier on the leaderboard portraits.",
+                "Rating + tavern tier on the leaderboard portraits.",
                 () => _config.ShowOpponentMmr, v =>
                 {
                     _config.ShowOpponentMmr = v;
                     _status.Text = v
-                        ? "Opponents' name + MMR + tavern tier label each leaderboard portrait (8000↓ below the cutoff)."
+                        ? "Opponents' MMR + tavern tier label each leaderboard portrait (8000↓ below the cutoff)."
                         : "Opponent MMR off.";
                     _onChanged();
-                }, null));
+                }, BuildMmr));
 
             stack.Children.Add(CategoryRow("Dark Gifts",
                 "Hover the Dark Discovery button for the gift list.",
@@ -287,6 +287,29 @@ namespace HsbgCardLookup.Ui
             stack.Children.Add(new TextBlock
             {
                 Text = "In match: right-click the anomaly card to close it until the match ends, or turn the HUD off.",
+                Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            Content = stack;
+        }
+
+        private void BuildMmr()
+        {
+            var stack = NewPage("Opponents' MMR", sub: true);
+
+            stack.Children.Add(ToggleRow("Show opponent names", _config.ShowOpponentNames, v =>
+            {
+                _config.ShowOpponentNames = v;
+                _status.Text = v
+                    ? "Labels show the player's name above their rating."
+                    : "Labels show the rating only (no names on screen).";
+                _onChanged();
+            }));
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Off by default — handy when streaming, where opponent names on screen aren't always wanted.",
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });

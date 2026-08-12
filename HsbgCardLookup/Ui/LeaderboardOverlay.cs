@@ -34,8 +34,13 @@ namespace HsbgCardLookup.Ui
         private static readonly double[] RefSlotLeft = { 255.00, 252.14, 249.29, 246.43, 243.57, 240.71, 237.86, 235.00 };
         private static readonly double[] RefSlotTop = { 168.0, 260.0, 355.0, 445.0, 540.0, 633.0, 727.0, 822.0 };
         // Label grew 5px UPWARD from the original 28px (bottom edge stays put on the portrait) to fit
-        // a larger, readable font.
+        // a larger, readable font. Without names it's a single line, so it shrinks to RefLabelH1 —
+        // still bottom-anchored, so the rating sits where it always did.
         private const double RefLabelW = 90.0, RefLabelH = 33.0, RefLabelUp = 5.0;
+        private const double RefLabelH1 = 20.0;
+        // …and then sits 10px higher still (user-tuned) — a lone rating line reads better a touch
+        // above where the two-line label's bottom edge was.
+        private const double RefNoNameLift = 10.0;
         private const double RefOpponentShift = 30.0;
         private const double RefTierH = 35.0;
 
@@ -48,6 +53,10 @@ namespace HsbgCardLookup.Ui
         private readonly bool[] _shifted = new bool[MaxSlots];
 
         private bool _attached;
+
+        /// <summary>Whether the labels carry the player names (config `ShowOpponentNames`, off by
+        /// default). Set before <see cref="SetStandings"/>; without names the label is one line tall.</summary>
+        public bool ShowNames { get; set; }
 
         private static readonly Brush LabelBg = Frozen(Color.FromArgb(0xDC, 0x0A, 0x0D, 0x14));
         private static readonly Brush Muted = Frozen(Color.FromRgb(0x9A, 0xA3, 0xB4));
@@ -148,6 +157,7 @@ namespace HsbgCardLookup.Ui
 
                 _names[i].Text = r.Name;
                 _names[i].Foreground = r.IsDead ? Dead : Brushes.White;
+                _names[i].Visibility = ShowNames ? Visibility.Visible : Visibility.Collapsed;
                 _ratings[i].Text = r.Rating > 0 ? r.Rating.ToString() : "8000↓";
                 _ratings[i].Foreground = r.IsDead ? Dead : (r.Rating > 0 ? UiKit.AccentBrush : Muted);
                 if (r.Delta != 0 && !r.IsDead)
@@ -205,11 +215,14 @@ namespace HsbgCardLookup.Ui
             double contentTop = (ch - contentH) / 2.0;
             double scale = Math.Max(0.60, Math.Min(contentH / RefH, 2.00));
 
+            double refH = ShowNames ? RefLabelH : RefLabelH1;
+            double lift = ShowNames ? 0.0 : RefNoNameLift;
+
             for (int i = 0; i < MaxSlots; i++)
             {
                 var b = _labels[i];
                 b.Width = RefLabelW * scale;
-                b.Height = RefLabelH * scale;
+                b.Height = refH * scale;
                 b.CornerRadius = new CornerRadius(4.0 * scale);
                 b.Padding = new Thickness(2.0 * scale, 0, 2.0 * scale, 0);
                 _names[i].FontSize = 11.5 * scale;
@@ -218,20 +231,22 @@ namespace HsbgCardLookup.Ui
 
                 double refLeft = RefSlotLeft[i] + (_shifted[i] ? RefOpponentShift : 0.0);
                 double left = contentLeft + (refLeft / RefW) * contentW;
-                double top = contentTop + ((RefSlotTop[i] - RefLabelUp) / RefH) * contentH;
+                // Bottom-anchored: a shorter (name-less) label keeps the same bottom edge, then lifts.
+                double top = contentTop + ((RefSlotTop[i] - RefLabelUp + (RefLabelH - refH) - lift) / RefH) * contentH;
                 Canvas.SetLeft(b, left);
                 Canvas.SetTop(b, top);
 
                 var t = _tiers[i];
                 t.Height = RefTierH * scale;
                 double tierLeft = left + RefLabelW * scale;
+                double tierTop = top + (refH - RefTierH) * 0.5 * scale;
                 Canvas.SetLeft(t, tierLeft);
-                Canvas.SetTop(t, top + (RefLabelH - RefTierH) * 0.5 * scale);
+                Canvas.SetTop(t, tierTop);
 
                 var s = _lastOpp[i];
                 s.FontSize = 16.0 * scale;
                 Canvas.SetLeft(s, tierLeft + 4.0 * scale);
-                Canvas.SetTop(s, top + (RefLabelH - RefTierH) * 0.5 * scale + RefTierH * scale);
+                Canvas.SetTop(s, tierTop + RefTierH * scale);
             }
         }
 

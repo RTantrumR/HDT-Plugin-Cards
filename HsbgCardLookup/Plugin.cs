@@ -53,7 +53,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 3, 0);
+        public Version Version => new Version(0, 3, 1);
 
         // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
         // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the

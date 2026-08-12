@@ -56,6 +56,9 @@ namespace HsbgCardLookup.Config
         // leaderboard portraits — read from the lobby roster (HearthMirror) and matched against the
         // hsbg.cards leaderboard (only ~8000+ players are listed; others show 8000↓). Off by default.
         public bool ShowOpponentMmr { get; set; } = false;
+        // Whether those labels also carry the player's name. Off by default — the label then shows just
+        // the rating (streamers often don't want opponent names on screen).
+        public bool ShowOpponentNames { get; set; } = false;
 
         // Opt-in: the Dark Gift list panel, shown while hovering the in-game Dark Discovery button
         // (hover detected via HearthMirror's big-card/tooltip state — no screen geometry). Gifts

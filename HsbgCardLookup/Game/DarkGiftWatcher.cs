@@ -210,7 +210,7 @@ namespace HsbgCardLookup.Game
 #if DEBUG
                 _log?.Invoke("[DarkGifts] panel " + (rows == null ? "hide" : $"show ({rows.Count} rows, fresh={fresh}, \"{header}\")"));
 #endif
-                _ui?.BeginInvoke(new Action(() => ApplyUi(rows, header, poolCaption, minions, poolTotal, fresh)));
+                Marshal(() => ApplyUi(rows, header, poolCaption, minions, poolTotal, fresh));
             }
             catch { /* OnUpdate must never throw */ }
         }
@@ -585,13 +585,22 @@ namespace HsbgCardLookup.Game
         {
             _lastSig = null;
             _visibleNow = false;
-            if (_panel != null) { var p = _panel; _ui?.BeginInvoke(new Action(() => { try { p.Hide(); } catch { } })); }
+            if (_panel != null) { var p = _panel; Marshal(() => { try { p.Hide(); } catch { } }); }
         }
 
         public void CloseAll()
         {
-            try { _panel?.Close(); } catch { }
+            var p = _panel;
             _panel = null;
+            if (p == null) return;
+            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() => p.Close())); }
+            catch { }
+        }
+
+        // The panel lives on HDT's overlay canvas, so its work belongs on that canvas' dispatcher.
+        private void Marshal(Action action)
+        {
+            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
         }
 
         private void ResetMatch()

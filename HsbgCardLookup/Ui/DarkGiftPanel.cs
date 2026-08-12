@@ -5,19 +5,24 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
+using System.Windows.Threading;
+using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
+using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
 using HsbgCardLookup.Search;
 
 namespace HsbgCardLookup.Ui
 {
     /// <summary>
     /// The Dark Gift list panel — summoned while the player hovers the in-game Dark Discovery button /
-    /// Xavius hero power (see <see cref="Game.DarkGiftWatcher"/>). No-activate / topmost / tool window
-    /// (mirrors MmrPanel), anchored over the TAVERN/Bob (center-upper play area) — deliberately far
-    /// from the button, so the button stays clickable and the game's own tooltip stays readable.
+    /// Xavius hero power (see <see cref="Game.DarkGiftWatcher"/>). It is NOT a window: the whole panel
+    /// lives inside HDT's own overlay canvas (<c>Core.OverlayCanvas</c>), registered with
+    /// <c>OverlayExtensions.SetIsOverlayHitTestVisible</c> so HDT drops <c>WS_EX_TRANSPARENT</c> while
+    /// the cursor is on it — real wheel/right-click reach us while the overlay window stays
+    /// <c>WS_EX_NOACTIVATE</c>, so Hearthstone never loses foreground. Placement is cursor-anchored,
+    /// well left of the hovered button, so the button stays clickable and its tooltip readable.
     ///
     /// Rows per the design sketch: a rounded container per gift — name | separator line | effect text —
     /// stacked vertically, each sized to its text. Gifts offerable THIS turn glow (accent border + soft
@@ -30,14 +35,15 @@ namespace HsbgCardLookup.Ui
     /// hook is installed ONLY while visible, never swallows events, and defers to normal WPF wheel
     /// handling when the cursor is over the panel itself.
     /// </summary>
-    public sealed class DarkGiftPanel : Window
+    public sealed class DarkGiftPanel
     {
-        private const double ContentWidth = 450;   // gift-list column width (window width = this + art column)
+        private const double ContentWidth = 450;   // gift-list column width (panel width = this + art column)
         // Minion-art grid (left column): full card renders auto-fit into ≤4 columns — 200px wide for a
         // small pool, shrinking (never below ~110) as the pool grows so everything stays visible with
         // no scrolling. Card aspect ≈ the production full renders (404×558).
         private const double ArtMaxW = 200, ArtMinW = 110, ArtGap = 6, ArtMaxH = 560, ArtAspect = 558.0 / 404.0;
 
+        private readonly Border _root;             // the canvas child holding everything
         private readonly TextBlock _headerSub;
         private readonly StackPanel _rows;
         private readonly ScrollViewer _scroll;
@@ -46,12 +52,32 @@ namespace HsbgCardLookup.Ui
         private readonly TextBlock _artCaption;
         private readonly WrapPanel _artWrap;
         private readonly TextBlock _artMore;
-        private HwndSource _src;
-        private volatile bool _underMouse;
+        private bool _attached;
+
+        // The panel's on-screen box in DEVICE pixels, refreshed after every placement/layout. Read from
+        // the OnUpdate thread (IsUnderMouse) and the mouse hook, so it's swapped as one immutable object
+        // instead of maintained by MouseEnter/MouseLeave — those can't be trusted here, since HDT makes
+        // the overlay click-through again the moment the cursor leaves us (the leave event may never
+        // arrive, which would strand the panel visible forever).
+        private sealed class Box { public double L, T, R, B; }
+        private volatile Box _box;
 
         /// <summary>True while the cursor is over the panel (read cross-thread by the watcher so the
         /// panel survives the mouse travelling from the game button onto it).</summary>
-        public bool IsUnderMouse => _underMouse;
+        public bool IsUnderMouse
+        {
+            get
+            {
+                var b = _box;
+                if (b == null) return false;
+                try
+                {
+                    GetCursorPos(out POINT p);
+                    return p.X >= b.L && p.X <= b.R && p.Y >= b.T && p.Y <= b.B;
+                }
+                catch { return false; }
+            }
+        }
 
         /// <summary>Raised on a right-click anywhere on the panel — the watcher cycles the display
         /// mode (gifts+minions / gifts only / minions only). Fired on the UI thread.</summary>
@@ -69,22 +95,6 @@ namespace HsbgCardLookup.Ui
 
         public DarkGiftPanel()
         {
-            WindowStyle = WindowStyle.None;
-            AllowsTransparency = true;
-            Background = Brushes.Transparent;
-            Topmost = true;
-            ShowInTaskbar = false;
-            ShowActivated = false;               // never grab activation/foreground
-            ResizeMode = ResizeMode.NoResize;
-            SizeToContent = SizeToContent.Height;
-            // Height sizes to content, but the WIDTH must be pinned explicitly — with it unset,
-            // Windows hands the window an arbitrary default width and the panel background stretches
-            // far beyond the fixed-width content (the "two empty side panels" bug).
-            Width = ContentWidth + 22;                       // content + root padding/border
-            WindowStartupLocation = WindowStartupLocation.Manual;
-
-            try { Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = UiKit.ThinScrollBarStyle(); } catch { }
-
             var header = new DockPanel { LastChildFill = true, Margin = new Thickness(2, 0, 2, 7) };
             var title = new TextBlock
             {
@@ -142,64 +152,112 @@ namespace HsbgCardLookup.Ui
             outer.Children.Add(_artColumn);
             outer.Children.Add(_giftColumn);
 
-            var root = new Border
+            _root = new Border
             {
                 Background = PanelBg,
                 BorderBrush = UiKit.StrokeBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(9),
                 Padding = new Thickness(10, 8, 10, 9),
+                Width = ContentWidth + 22,          // content + padding/border; SetContent adjusts
+                Visibility = Visibility.Collapsed,
                 Child = outer
             };
-            Content = root;
+            try { _root.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = UiKit.ThinScrollBarStyle(); } catch { }
 
-            MouseEnter += (s, e) => _underMouse = true;
-            MouseLeave += (s, e) => _underMouse = false;
-            MouseRightButtonUp += (s, e) => { e.Handled = true; try { ModeCycleRequested?.Invoke(); } catch { } };
-            SourceInitialized += OnSourceInitialized;
-            IsVisibleChanged += (s, e) => { if ((bool)e.NewValue) InstallWheelHook(); else RemoveWheelHook(); };
-            Closed += (s, e) => RemoveWheelHook();
+            _root.MouseRightButtonUp += (s, e) => { e.Handled = true; try { ModeCycleRequested?.Invoke(); } catch { } };
 
-            // Realize the HWND now: applies the no-activate styles pre-show AND makes the px→DIP
-            // transform available before the first summon (cursor-anchored placement needs it).
-            new WindowInteropHelper(this).EnsureHandle();
+            // Ask HDT to treat this element as clickable: its 60Hz hover loop drops WS_EX_TRANSPARENT
+            // from the overlay window while the cursor is inside us, so wheel/right-click land here.
+            try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
         }
 
-        /// <summary>Summon placement. Horizontal: the CURSOR is the reference point (it sits on the
-        /// hovered button) — the panel's right edge lands ~350px left of it, scaled by the HS client
-        /// width (350 tuned at 1920×1080 → about-centered), so the button and the game's own tooltip
-        /// stay clear. No guessed in-game geometry. Vertical: centered in the work area (height isn't
-        /// known until layout → corrected right after the next layout pass). Fully clamped on-screen.</summary>
+        /// <summary>Show the panel (adding it to HDT's overlay canvas on first use). Canvas thread.</summary>
+        public void Show()
+        {
+            var canvas = Core.OverlayCanvas;
+            if (canvas == null) return;
+            if (!_attached)
+            {
+                canvas.Children.Add(_root);
+                _attached = true;
+            }
+            _root.Visibility = Visibility.Visible;
+            InstallWheelHook();
+            // Content changes resize the panel, so refresh the hover box after this layout pass too —
+            // not only on a fresh summon (a stale box would make the panel vanish under the cursor).
+            _root.Dispatcher.BeginInvoke(new Action(UpdateBox), DispatcherPriority.Loaded);
+        }
+
+        /// <summary>Hide the panel but keep it attached for the next summon. Canvas thread.</summary>
+        public void Hide()
+        {
+            _root.Visibility = Visibility.Collapsed;
+            _box = null;
+            RemoveWheelHook();
+        }
+
+        /// <summary>Remove the panel from HDT's canvas (plugin unload). Canvas thread.</summary>
+        public void Close()
+        {
+            RemoveWheelHook();
+            _box = null;
+            try { Core.OverlayCanvas?.Children.Remove(_root); } catch { /* HDT may be tearing down */ }
+            _attached = false;
+        }
+
+        /// <summary>Summon placement, in canvas coordinates. Horizontal: the CURSOR is the reference
+        /// point (it sits on the hovered button) — the panel's right edge lands ~350px left of it,
+        /// scaled by the canvas' 16:9 content width (350 tuned at 1920×1080 → about-centered), so the
+        /// button and the game's own tooltip stay clear. Vertical: centered (height isn't known until
+        /// layout → corrected right after the next layout pass). Fully clamped inside the canvas.</summary>
         public void PlaceForSummon()
         {
-            var wa = SystemParameters.WorkArea;
-            double w = double.IsNaN(Width) ? ContentWidth + 22 : Width;   // set by SetContent (art column varies)
+            var canvas = Core.OverlayCanvas;
+            if (canvas == null) return;
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            if (cw <= 0 || ch <= 0) return;
 
-            double offsetPx = 350;
-            if (HsGeometry.TryClientSize(out int hsw, out _) && hsw > 0)
-                offsetPx = 350.0 * hsw / 1920.0;
+            double contentW = Math.Min(cw, ch * (16.0 / 9.0));
+            double offset = 350.0 * contentW / 1920.0;
+            // Keep the list inside the game window on short canvases (the panel is centered vertically).
+            _scroll.MaxHeight = Math.Min(500, Math.Max(200, ch - 120));
 
-            GetCursorPos(out POINT c);
-            var dip = new Point(c.X - offsetPx, c.Y);
+            double w = double.IsNaN(_root.Width) ? ContentWidth + 22 : _root.Width;
+            var cursor = new Point(cw / 2, ch / 2);
             try
             {
-                var ct = PresentationSource.FromVisual(this)?.CompositionTarget;
-                if (ct != null) dip = ct.TransformFromDevice.Transform(dip);
+                GetCursorPos(out POINT c);
+                cursor = canvas.PointFromScreen(new Point(c.X, c.Y));
             }
             catch { }
 
-            Left = Clamp(dip.X - w, wa.Left, Math.Max(wa.Left, wa.Right - w));
-            Top = Clamp(wa.Top + (wa.Height - 380) / 2, wa.Top, Math.Max(wa.Top, wa.Bottom - 200));   // estimate; fixed below
+            Canvas.SetLeft(_root, Clamp(cursor.X - offset - w, 0, Math.Max(0, cw - w)));
+            Canvas.SetTop(_root, Clamp((ch - 380) / 2, 0, Math.Max(0, ch - 100)));   // estimate; fixed below
 
-            Dispatcher.BeginInvoke(new Action(() =>
+            canvas.Dispatcher.BeginInvoke(new Action(() =>
             {
                 try
                 {
-                    double h = ActualHeight;
-                    if (h > 0) Top = Clamp(wa.Top + (wa.Height - h) / 2, wa.Top, Math.Max(wa.Top, wa.Bottom - h));
+                    double h = _root.ActualHeight;
+                    if (h > 0) Canvas.SetTop(_root, Clamp((ch - h) / 2, 0, Math.Max(0, ch - h)));
+                    UpdateBox();
                 }
                 catch { }
-            }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }), DispatcherPriority.Loaded);
+        }
+
+        // Cache the panel's screen box (device px) for the cross-thread hover test + the wheel hook.
+        private void UpdateBox()
+        {
+            try
+            {
+                if (_root.Visibility != Visibility.Visible || _root.ActualWidth <= 0) { _box = null; return; }
+                var tl = _root.PointToScreen(new Point(0, 0));
+                var br = _root.PointToScreen(new Point(_root.ActualWidth, _root.ActualHeight));
+                _box = new Box { L = tl.X, T = tl.Y, R = br.X, B = br.Y };
+            }
+            catch { _box = null; }
         }
 
         private static double Clamp(double v, double lo, double hi) => v < lo ? lo : (v > hi ? hi : v);
@@ -217,7 +275,7 @@ namespace HsbgCardLookup.Ui
         /// <summary>Replace the content: contextual header line (may be empty → hidden), one container
         /// per still-obtainable gift, and optionally the guaranteed-tribe pool as card renders in the
         /// left column (auto-fit ≤4 columns; poolTotal &gt; shown count adds a "+N more" note). Sets
-        /// the window width — callers reposition AFTER calling this.</summary>
+        /// the panel width — callers reposition AFTER calling this.</summary>
         public void SetContent(string headerSub, IReadOnlyList<Row> rows, string poolCaption,
             IReadOnlyList<MinionArt> minions, int poolTotal)
         {
@@ -276,7 +334,7 @@ namespace HsbgCardLookup.Ui
             }
             else _artColumn.Visibility = Visibility.Collapsed;
 
-            Width = (giftsShown ? ContentWidth : 0) + 22 + artWidth;
+            _root.Width = (giftsShown ? ContentWidth : 0) + 22 + artWidth;
         }
 
         private static UIElement BuildRow(Row r)
@@ -405,14 +463,14 @@ namespace HsbgCardLookup.Ui
 
         private IntPtr WheelHookProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && wParam == (IntPtr)WM_MOUSEWHEEL && !_underMouse)
+            if (nCode >= 0 && wParam == (IntPtr)WM_MOUSEWHEEL && !IsUnderMouse)
             {
                 try
                 {
                     // MSLLHOOKSTRUCT: POINT pt (8 bytes) then DWORD mouseData — wheel delta in the high word.
                     int mouseData = Marshal.ReadInt32(lParam, 8);
                     int delta = (short)((mouseData >> 16) & 0xFFFF);
-                    Dispatcher.BeginInvoke(new Action(() =>
+                    _root.Dispatcher.BeginInvoke(new Action(() =>
                     {
                         try { _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - delta / 120.0 * 64.0); } catch { }
                     }));
@@ -422,70 +480,12 @@ namespace HsbgCardLookup.Ui
             return CallNextHookEx(_wheelHook, nCode, wParam, lParam);
         }
 
-        // ── Win32 plumbing (no-activate + header-strip drag; mirrors MmrPanel/FloatingCard) ─────────
-        private void OnSourceInitialized(object sender, EventArgs e)
-        {
-            try
-            {
-                _src = (HwndSource)PresentationSource.FromVisual(this);
-                if (_src != null)
-                {
-                    _src.AddHook(WndProc);
-                    int ex = GetWindowLong(_src.Handle, GWL_EXSTYLE);
-                    SetWindowLong(_src.Handle, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
-                }
-            }
-            catch { }
-        }
-
-        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-        {
-            switch (msg)
-            {
-                case WM_MOUSEACTIVATE:
-                    handled = true;
-                    return (IntPtr)MA_NOACTIVATE;      // a click never steals foreground
-
-                case WM_NCHITTEST:
-                    // The header strip still drags (fine-tuning a summon's position); below it the list
-                    // keeps normal hit-testing (scrollbar + wheel).
-                    try
-                    {
-                        var p = PointFromScreen(new Point((short)((long)lParam & 0xFFFF), (short)(((long)lParam >> 16) & 0xFFFF)));
-                        if (p.Y <= 30) { handled = true; return (IntPtr)HTCAPTION; }
-                    }
-                    catch { }
-                    break;
-
-                case WM_NCRBUTTONUP:
-                    // Right-click on the drag strip (non-client) — same mode cycle as the body.
-                    handled = true;
-                    try { ModeCycleRequested?.Invoke(); } catch { }
-                    return IntPtr.Zero;
-            }
-            return IntPtr.Zero;
-        }
-
         private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
         private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-        private const int GWL_EXSTYLE = -20;
-        private const int WS_EX_TOOLWINDOW = 0x00000080;
-        private const int WS_EX_NOACTIVATE = 0x08000000;
-        private const int WM_MOUSEACTIVATE = 0x0021;
-        private const int WM_NCHITTEST = 0x0084;
-        private const int WM_NCRBUTTONUP = 0x00A5;
-        private const int MA_NOACTIVATE = 3;
-        private const int HTCAPTION = 2;
         private const int WH_MOUSE_LL = 14;
         private const int WM_MOUSEWHEEL = 0x020A;
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
