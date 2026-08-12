@@ -6,7 +6,7 @@ An in-game search overlay for **Hearthstone Battlegrounds** cards. Press a hotke
 pops over the game, type to find any card (smart filters for tier, tribe, keywords, stats), browse
 art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 
-![Search overlay over a Battlegrounds game](assets/overlay.png)
+![Dark Gift panel — available gifts + the guaranteed-tribe minion pool over a Battlegrounds match](assets/Dark%20Gifts%20Showcase_both.png)
 
 - Fast fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools)
 - Full card art, golden variants, related cards (buddies / tokens / hero powers)
@@ -26,11 +26,16 @@ v0.3 Additions:
 - Other small QoL changes 
 
 <p align="center">
+  <img src="assets/overlay.png" width="32%" alt="Search overlay over a Battlegrounds game" />
   <img src="assets/search.png" width="32%" alt="Tier-7 browse" />
   <img src="assets/screen-trinkets_anomalies.png" width="32%" alt="Live trinkets & anomaly HUD shown over a Battlegrounds match" />
   <img src="assets/screen-cards-drag.png" width="32%" alt="Cards dragged out of the overlay as free-floating, resizable cards" />
   <img src="assets/filters.png" width="32%" alt="Type + tier filters, alongside HDT's tribe panel" />
   <img src="assets/golden.png" width="32%" alt="Golden variant" />
+  <img src="assets/MMR.png" width="32%" alt="Opponents' MMR + tavern tiers on the leaderboard portraits" />
+  <img src="assets/Dark%20Gifts%20Showcase_text_only.png" width="32%" alt="Dark Gift panel — gift list only mode" />
+  <img src="assets/Dark%20Gifts%20Showcase_minions.png" width="32%" alt="Dark Gift panel — minion pool only mode" />
+  <img src="assets/MMR%20Chart%20Showcase.png" width="32%" alt="Opponent MMR history chart (preview)" />
 </p>
 
 > Windows only — it's a Hearthstone Deck Tracker plugin. (Mac players: use the website for now, the release might be presented later.)

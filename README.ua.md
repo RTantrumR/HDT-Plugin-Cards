@@ -6,7 +6,7 @@
 з'явиться панель пошуку; введіть запит, знайдіть карту (розумні фільтри за тіром, тайпом, ключовими
 словами, статами), перегляньте арт, закрийте. Десктопний побратим [hsbg.cards](https://hsbg.cards).
 
-![Оверлей пошуку над грою Battlegrounds](assets/overlay.png)
+![Панель Dark Gifts — доступні гіфти + гарантований пул міньйонів над матчем Battlegrounds](assets/Dark%20Gifts%20Showcase_both.png)
 
 - Швидкий структурований пошук + по формулюванням (`t3`, `5/5`, трайби, ключові слова, школи заклять)
 - Повний арт карт, золоті версії, пов'язані карти (баді / токени / сили героя)
@@ -29,11 +29,16 @@
 - Інші дрібні QoL-покращення
 
 <p align="center">
+  <img src="assets/overlay.png" width="32%" alt="Оверлей пошуку над грою Battlegrounds" />
   <img src="assets/search.png" width="32%" alt="Перегляд 7-го тіра" />
   <img src="assets/screen-trinkets_anomalies.png" width="32%" alt="Лайв-HUD трінкетів та аномалій над матчем Battlegrounds" />
   <img src="assets/screen-cards-drag.png" width="32%" alt="Карти, витягнуті з оверлея як вільні плаваючі карти зі зміною розміру" />
   <img src="assets/filters.png" width="32%" alt="Фільтри типу + тіра поряд із панеллю тайпів HDT" />
   <img src="assets/golden.png" width="32%" alt="Золота версія" />
+  <img src="assets/MMR.png" width="32%" alt="MMR опонентів + тіри таверни на портретах лідерборда" />
+  <img src="assets/Dark%20Gifts%20Showcase_text_only.png" width="32%" alt="Панель Dark Gifts — режим лише списку гіфтів" />
+  <img src="assets/Dark%20Gifts%20Showcase_minions.png" width="32%" alt="Панель Dark Gifts — режим лише пулу міньйонів" />
+  <img src="assets/MMR%20Chart%20Showcase.png" width="32%" alt="Графік історії MMR опонента (прев'ю)" />
 </p>
 
 > Лише Windows — це плагін до Hearthstone Deck Tracker. (Гравцям на Mac: тимчасово користуйтеся вебсайтом.)
