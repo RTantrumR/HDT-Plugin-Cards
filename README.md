@@ -1,6 +1,6 @@
 # HSBG Card Lookup — Hearthstone Deck Tracker plugin
 
-**English** | [Українська](README.uk.md)
+**English** | [Українська](README.ua.md)
 
 An in-game search overlay for **Hearthstone Battlegrounds** cards. Press a hotkey, a search panel
 pops over the game, type to find any card (smart filters for tier, tribe, keywords, stats), browse
