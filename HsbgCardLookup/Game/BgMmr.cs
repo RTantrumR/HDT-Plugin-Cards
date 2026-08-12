@@ -19,7 +19,8 @@ namespace HsbgCardLookup.Game
     /// leaderboard (plus tavern tier, dead dimming, last-opponent marker). Rendering lives in
     /// <see cref="LeaderboardOverlay"/> on HDT's own overlay canvas; ratings/deltas come from the
     /// per-region blob <c>hsbg.cards/bgmmr/{REGION}.json</c> (fetched once per match, disk-cache
-    /// fallback). Solo only. See leaderboard-overlay-notes.md (repo root).
+    /// fallback). Solo only. Overlay geometry + opponent tracking adapted from HDT-BGMMRPlugin
+    /// (MIT) — see NOTICE (repo root).
     /// </summary>
     public sealed class BgMmr
     {

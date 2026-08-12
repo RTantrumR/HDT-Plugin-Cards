@@ -100,5 +100,9 @@ AnyCPU у x86-процесі HDT → попередження `MSB3270` про �
 
 [Apache License 2.0](LICENSE). Сторонні компоненти — див. [NOTICE](NOTICE).
 
+Функція MMR-міток опонентів на лідерборді натхненна плагіном
+[HDT-BGMMRPlugin](https://github.com/Reign-in-blood/HDT-BGMMRPlugin) (MIT), далі змінена й
+розширена додатковими можливостями та власним джерелом даних — деталі в NOTICE.
+
 Hearthstone — торговельна марка Blizzard Entertainment, Inc. Це неофіційний фанатський проєкт, не
 пов'язаний із Blizzard і не схвалений нею.

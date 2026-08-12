@@ -11,7 +11,8 @@ namespace HsbgCardLookup.Ui
 {
     /// <summary>
     /// Per-portrait MMR labels for the BG leaderboard, drawn inside HDT's own overlay canvas
-    /// (<c>Core.OverlayCanvas</c>). Solo layout only. See leaderboard-overlay-notes.md (repo root).
+    /// (<c>Core.OverlayCanvas</c>). Solo layout only. Reference geometry adapted from
+    /// HDT-BGMMRPlugin (MIT) — see NOTICE (repo root).
     /// </summary>
     public sealed class LeaderboardOverlay
     {
@@ -28,7 +29,7 @@ namespace HsbgCardLookup.Ui
 
         private const int MaxSlots = 8;
 
-        // Reference geometry at a 1920×1080 game area; see the notes file for provenance.
+        // Reference geometry at a 1920×1080 game area, from HDT-BGMMRPlugin (see NOTICE).
         private const double RefW = 1920.0, RefH = 1080.0;
         private static readonly double[] RefSlotLeft = { 255.00, 252.14, 249.29, 246.43, 243.57, 240.71, 237.86, 235.00 };
         private static readonly double[] RefSlotTop = { 168.0, 260.0, 355.0, 445.0, 540.0, 633.0, 727.0, 822.0 };
