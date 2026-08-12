@@ -32,7 +32,6 @@ v0.3 Additions:
   <img src="assets/screen-cards-drag.png" width="32%" alt="Cards dragged out of the overlay as free-floating, resizable cards" />
   <img src="assets/filters.png" width="32%" alt="Type + tier filters, alongside HDT's tribe panel" />
   <img src="assets/golden.png" width="32%" alt="Golden variant" />
-  <img src="assets/MMR.png" height="200" alt="Opponents' MMR + tavern tiers on the leaderboard portraits" />
   <img src="assets/Dark%20Gifts%20Showcase_text_only.png" width="32%" alt="Dark Gift panel — gift list only mode" />
   <img src="assets/Dark%20Gifts%20Showcase_minions.png" width="32%" alt="Dark Gift panel — minion pool only mode" />
   <img src="assets/MMR%20Chart%20Showcase.png" width="32%" alt="Opponent MMR history chart (preview)" />

@@ -35,7 +35,6 @@
   <img src="assets/screen-cards-drag.png" width="32%" alt="Карти, витягнуті з оверлея як вільні плаваючі карти зі зміною розміру" />
   <img src="assets/filters.png" width="32%" alt="Фільтри типу + тіра поряд із панеллю тайпів HDT" />
   <img src="assets/golden.png" width="32%" alt="Золота версія" />
-  <img src="assets/MMR.png" height="200" alt="MMR опонентів + тіри таверни на портретах лідерборда" />
   <img src="assets/Dark%20Gifts%20Showcase_text_only.png" width="32%" alt="Панель Dark Gifts — режим лише списку гіфтів" />
   <img src="assets/Dark%20Gifts%20Showcase_minions.png" width="32%" alt="Панель Dark Gifts — режим лише пулу міньйонів" />
   <img src="assets/MMR%20Chart%20Showcase.png" width="32%" alt="Графік історії MMR опонента (прев'ю)" />
