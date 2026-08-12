@@ -108,5 +108,9 @@ AnyCPU loaded into HDT's x86 process → the `MSB3270` arch-mismatch warning is 
 
 [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for bundled third-party components.
 
+The opponent-MMR leaderboard feature was inspired by
+[HDT-BGMMRPlugin](https://github.com/Reign-in-blood/HDT-BGMMRPlugin) (MIT), then modified and
+extended with additional features and this plugin's own data source — see NOTICE for details.
+
 Hearthstone is a trademark of Blizzard Entertainment, Inc. This is an unofficial fan project, not
 affiliated with or endorsed by Blizzard.
