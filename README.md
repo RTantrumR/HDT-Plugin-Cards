@@ -8,16 +8,22 @@ art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 
 ![Search overlay over a Battlegrounds game](assets/overlay.png)
 
-- 🔎 Fast fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools)
-- 🖼 Full card art, golden variants, related cards (buddies / tokens / hero powers)
-- 🃏 **Drag any card out** of the overlay as a free-floating, resizable card — handy for explaining
+- Fast fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools)
+- Full card art, golden variants, related cards (buddies / tokens / hero powers)
+- **Drag any card out** of the overlay as a free-floating, resizable card — handy for explaining
   cards to viewers on stream or while making a video, or just parking a few in a corner for reference
-- 🎲 **Live trinkets & anomaly HUD** — your current lesser/greater trinkets and the lobby anomaly shown
+- **Live trinkets & anomaly HUD** — your current lesser/greater trinkets and the lobby anomaly shown
   right on screen during a match, so neither you nor your viewers have to hover over each one. Great for
   streaming or solo play, and especially for **phone viewers** who can't open HDT's Twitch extension to
   see which anomaly is active or which trinkets the streamer has
-- 🔔 In-app patch-notes notifications
-- ♻️ Card data and art self-update from hsbg.cards; the plugin auto-updates via GitHub Releases
+- In-app patch-notes notifications
+- Card data and art self-update from hsbg.cards; the plugin auto-updates via GitHub Releases
+
+v0.3 Additions: 
+- MMR and Opponents Tiers display in-lobby
+- Dark Gifts support in 3 modes - show relevant minions after turn 6 ; show available dark gifts ; show both available dark gifts and relevant minions with unique gifts applicable to them
+- Save your match boards to a .csv file each round for a data analysis later
+- Other small QoL changes 
 
 <p align="center">
   <img src="assets/search.png" width="32%" alt="Tier-7 browse" />
