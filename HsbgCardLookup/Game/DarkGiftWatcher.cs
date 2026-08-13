@@ -467,8 +467,10 @@ namespace HsbgCardLookup.Game
                     if (!c.Tier.HasValue || c.Tier.Value < tierMin || c.Tier.Value > tierMax) continue;
                     if (_duos ? c.IsSolosOnly : c.IsDuosOnly) continue;
                     // Timewarped variants live only in their anomaly lobby (detecting that lobby is a
-                    // later refinement — normal pools must exclude them or every count doubles).
-                    if (c.IsTimewarped) continue;
+                    // later refinement — normal pools must exclude them or every count doubles). The
+                    // CATEGORY is authoritative; the isTimewarped flag is missing on some records (live
+                    // data 2026-08-13: Timewarped Leapfrogger leaked into Beast pools with flag=false).
+                    if (c.IsTimewarped || HasCategory(c, "timewarped")) continue;
 
                     bool tribeMatch = false, derived = false, magnetic = false;
                     if (c.MinionTypes != null)
@@ -544,6 +546,14 @@ namespace HsbgCardLookup.Game
             if (m.Keywords == null) return false;
             foreach (var k in m.Keywords)
                 if (string.Equals(k, kw, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static bool HasCategory(BgCard m, string cat)
+        {
+            if (m.Categories == null) return false;
+            foreach (var c in m.Categories)
+                if (string.Equals(c, cat, StringComparison.OrdinalIgnoreCase)) return true;
             return false;
         }
 
