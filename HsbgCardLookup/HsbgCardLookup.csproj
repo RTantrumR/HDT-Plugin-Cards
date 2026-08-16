@@ -133,6 +133,7 @@
     <Compile Include="Ui\Dropdown.cs" />
     <Compile Include="Ui\OverlayBase.cs" />
     <Compile Include="Ui\OverlayLarge.cs" />
+    <Compile Include="Ui\SearchButton.cs" />
     <Compile Include="Ui\FloatingCard.cs" />
     <Compile Include="Ui\FloatingCardManager.cs" />
     <Compile Include="Ui\SettingsWindow.cs" />

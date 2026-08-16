@@ -35,6 +35,7 @@ namespace HsbgCardLookup
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
         private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
+        private Ui.SearchButton _searchButton;                    // in-game 🔍 button by the card-list book
         private SettingsWindow _settings;
 #if DEBUG
         private Game.GameStateProbe _probe;                     // read-only BG state logger (Debug-only diagnostics)
@@ -112,6 +113,7 @@ namespace HsbgCardLookup
             _recorder = new Game.MatchRecorder(_store, _config, Log);
             _bgMmr = new Game.BgMmr(_config, _ui, Log);
             _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
+            _searchButton = new Ui.SearchButton(_config, ToggleOverlayFromButton);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
 
@@ -377,6 +379,18 @@ namespace HsbgCardLookup
             foreach (var k in _overlays.Keys) _hotkey.AddKey(k);
         }
 
+        // The in-game 🔍 button's click — same behavior as the summon hotkey. Fires on the canvas
+        // (HDT UI) thread; marshalled like every other overlay toggle for consistency.
+        private void ToggleOverlayFromButton()
+        {
+            _ui?.BeginInvoke(new Action(() =>
+            {
+                if (_overlays != null)
+                    foreach (var w in _overlays.Values) { if (!ReferenceEquals(w, _overlayLarge)) w.HideIfOpen(); }
+                _overlayLarge?.Toggle();
+            }));
+        }
+
         private void ApplySettings()
         {
             _config.Save();
@@ -386,6 +400,7 @@ namespace HsbgCardLookup
             _bgHud?.OnSettingsChanged();    // show/hide the trinkets/anomaly HUD per its toggles
             _bgMmr?.OnSettingsChanged();    // opponent-MMR reader on/off
             _darkGifts?.OnSettingsChanged(); // Dark Gift hover panel on/off
+            _searchButton?.OnSettingsChanged(); // in-game search button on/off
         }
 
         public void OnUnload()
@@ -399,6 +414,7 @@ namespace HsbgCardLookup
                 _bgHud?.CloseAll();
                 _bgMmr?.CloseAll();
                 _darkGifts?.CloseAll();
+                _searchButton?.CloseAll();
                 _overlayLarge?.Close();
                 _overlays = null;
             });
@@ -457,6 +473,7 @@ namespace HsbgCardLookup
             _recorder?.Poll();   // opt-in per-match board snapshots → CSV at match end
             _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
             _darkGifts?.Poll();  // opt-in Dark Gift list (shows while hovering the Dark Discovery button)
+            _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
         }
 
         private static readonly string LogDir = Path.Combine(
