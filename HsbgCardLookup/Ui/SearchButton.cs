@@ -22,9 +22,14 @@ namespace HsbgCardLookup.Ui
         // ~31px apart. Ours forms a third pill left of the book with the same size and spacing.
         // Anchored to the canvas' BOTTOM-RIGHT corner (this corner UI hugs the window corner,
         // unlike the leaderboard column which maps into the centred 16:9 content area).
+        // Scaling law = HDT's own (OverlayWindow: LeaderboardTop => Height * 0.15 etc.): HS renders
+        // with a fixed vertical world size, so ALL of the game's UI — sizes and corner insets alike —
+        // scales with window HEIGHT only. Neither HDT nor HearthMirror can read real UI positions
+        // (verified: HearthMirror's API is state-only; HDT's leaderboard "attachment" is exactly this
+        // kind of height-fraction constant), so calibrated constants ARE the attachment mechanism.
         private const double RefBtnW = 61, RefBtnH = 43;
         private const double RefRightInset = 199;    // canvas right edge → our right edge (book left − 31 − our width)
-        private const double RefBottomInset = 4;     // canvas bottom edge → our bottom edge (matches the pills' row)
+        private const double RefBottomInset = 1;     // canvas bottom edge → our bottom edge (4 measured, −3 from live calibration)
         private const double MinScale = 0.60, MaxScale = 2.00;
 
         // Matches the game's pills: near-black face, worn-metal rim, silvery glyph.
@@ -36,17 +41,20 @@ namespace HsbgCardLookup.Ui
 
         private readonly PluginConfig _config;
         private readonly Action _toggle;             // toggles the search overlay (wired by Plugin)
+        private readonly Action<string> _log;
 
         private Border _root;
         private Path _glyph;
         private bool _attached;
         private DateTime _lastPoll = DateTime.MinValue;
         private string _lastSig;
+        private string _lastLayoutLog;               // dedupe: log geometry only when it changes
 
-        public SearchButton(PluginConfig config, Action toggle)
+        public SearchButton(PluginConfig config, Action toggle, Action<string> log = null)
         {
             _config = config;
             _toggle = toggle;
+            _log = log;
         }
 
         // OnUpdate thread (~100ms), throttled; pure read → marshal to the canvas thread on change.
@@ -164,18 +172,24 @@ namespace HsbgCardLookup.Ui
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
 
-            double scale = Math.Min(cw / 1920.0, ch / 1080.0);
-            scale = Math.Max(MinScale, Math.Min(MaxScale, scale));
+            // Height-based scale only (see the constants' comment) — the game never scales by width.
+            double scale = Math.Max(MinScale, Math.Min(MaxScale, ch / 1080.0));
 
             double w = RefBtnW * scale, h = RefBtnH * scale;
             _root.Width = w;
             _root.Height = h;
-            _root.CornerRadius = new CornerRadius(h / 2);           // stadium shape, like the game's pills
-            _root.BorderThickness = new Thickness(Math.Max(1.0, 1.6 * scale));
+            _root.CornerRadius = new CornerRadius(h * 0.40);        // the game's pills are flatter than a stadium
+            _root.BorderThickness = new Thickness(Math.Max(1.0, 2.2 * scale));
             _glyph.Width = _glyph.Height = h * 0.52;
 
-            Canvas.SetLeft(_root, cw - RefRightInset * scale - w);
-            Canvas.SetTop(_root, ch - RefBottomInset * scale - h);
+            double left = cw - RefRightInset * scale - w;
+            double top = ch - RefBottomInset * scale - h;
+            Canvas.SetLeft(_root, left);
+            Canvas.SetTop(_root, top);
+
+            // One line per geometry change — the ground truth for calibrating against screenshots.
+            string sig = $"SearchButton layout: canvas {cw:F0}x{ch:F0}, scale {scale:F3}, rect ({left:F0},{top:F0},{w:F0}x{h:F0})";
+            if (sig != _lastLayoutLog) { _lastLayoutLog = sig; _log?.Invoke(sig); }
         }
     }
 }

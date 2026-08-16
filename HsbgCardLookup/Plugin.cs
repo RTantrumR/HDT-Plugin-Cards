@@ -113,7 +113,7 @@ namespace HsbgCardLookup
             _recorder = new Game.MatchRecorder(_store, _config, Log);
             _bgMmr = new Game.BgMmr(_config, _ui, Log);
             _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
-            _searchButton = new Ui.SearchButton(_config, ToggleOverlayFromButton);
+            _searchButton = new Ui.SearchButton(_config, ToggleOverlayFromButton, Log);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
 
