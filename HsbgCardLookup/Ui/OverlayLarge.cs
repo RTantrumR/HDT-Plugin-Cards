@@ -103,8 +103,13 @@ namespace HsbgCardLookup.Ui
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // search + filters
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });  // body (gets the freed footer space)
 
-            // ── Top row: search (fill) + filter dropdowns (right) ──
+            // ── Top row: search (fill) + filter dropdowns + close "✕" (far right) ──
             var topRow = new DockPanel { LastChildFill = true };
+            // Close button so the overlay is fully mouse-navigable (Esc / the hotkey still work).
+            var closeBtn = UiKit.ClearButton(HideIfOpen, "Close (Esc)", 18);
+            closeBtn.Margin = new Thickness(7, 0, 0, 0);
+            DockPanel.SetDock(closeBtn, Dock.Right);
+            topRow.Children.Add(closeBtn);
             var dds = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(10, 0, 0, 0) };
             BuildDropdownsInto(dds);
             DockPanel.SetDock(dds, Dock.Right);
