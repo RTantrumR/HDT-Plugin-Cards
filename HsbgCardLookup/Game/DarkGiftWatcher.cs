@@ -15,18 +15,19 @@ namespace HsbgCardLookup.Game
 {
     /// <summary>
     /// Opt-in in-match feature: the Dark Gift list panel, summoned by HOVERING the in-game Dark
-    /// Discovery button (any hero) or the "Feel Devastation" hero power (Nightmare Lord Xavius — his HP
-    /// follows the same offering rules, projected to the turn it will fire via its countdown tag). The
-    /// hover signal is HearthMirror's <c>GetBigCardState()</c> — the game's own "enlarged tooltip card"
-    /// state, whose CardId equals the hovered entity's card id — no screen-geometry guessing.
+    /// Discovery button. The hover signal is HearthMirror's <c>GetBigCardState()</c> — the game's own
+    /// "enlarged tooltip card" state, whose CardId equals the hovered entity's card id — no
+    /// screen-geometry guessing. (Nightmare Lord Xavius' hero power follows the same offering rules,
+    /// but is deliberately NOT a trigger — user direction.)
     ///
     /// The panel spawns about-centered — its right edge ~350px (scaled by HS width) LEFT of the
     /// cursor-on-button, so the button stays clickable and its tooltip readable — and lists every
     /// Dark Gift still obtainable this game (offerable-now glowing / future dimmed / expired omitted),
     /// floats guaranteed-tribe-relevant gifts to the top in green (from turn 6 one offer is the
-    /// player's most common minion type), and stays while hovered, while the cursor is on the panel,
-    /// or a short linger. The header carries only NON-duplicated info (the button's own tooltip
-    /// already states tier/uses/cost).
+    /// player's most common minion type). It appears once the button has been hovered for a short
+    /// dwell (so a cursor sweeping past it doesn't flash the panel) and stays while hovered, while
+    /// the cursor is on the panel, or a short linger. The header carries only NON-duplicated info
+    /// (the button's own tooltip already states tier/uses/cost).
     ///
     /// Live state read off the button entity (BG36_Button_DarkGift, probe-verified 2026-08-05):
     /// TAG_SCRIPT_DATA_NUM_2 = uses left, NUM_3/NUM_4 = current min/max offered tier, LOCK_VISUAL =
@@ -36,11 +37,9 @@ namespace HsbgCardLookup.Game
     public sealed class DarkGiftWatcher
     {
         private const string ButtonCardId = "BG36_Button_DarkGift";
-        // Nightmare Lord Xavius' hero power — same rules per the dev post; TAG_SCRIPT_DATA_NUM_1 is its
-        // "({0} turns left!)" countdown, so eligibility is shown for the turn it will actually fire.
-        private const string XaviusHpCardId = "BG36_HERO_105p";
         private const int StateMs = 500;     // entity re-read throttle
-        private const int LingerMs = 450;    // bridge unhover → panel-hover (and tooltip flicker)
+        private const int LingerMs = 400;    // bridge unhover → panel-hover (and tooltip flicker)
+        private const int ShowDelayMs = 100; // hover dwell before the panel appears
 
         private readonly CardStore _store;
         private readonly PluginConfig _config;
@@ -49,6 +48,8 @@ namespace HsbgCardLookup.Game
 
         private DateTime _lastStateRead = DateTime.MinValue;
         private DateTime _lastHoverUtc = DateTime.MinValue;
+        private DateTime _hoverSince = DateTime.MinValue;   // start of the current hover streak
+        private bool _dwellMet;                             // streak has passed ShowDelayMs
         private volatile string _lastSig;
         private bool _visibleNow;
         private volatile bool _lastHadPool;   // a pool was rendered on the last content build (mode cycling)
@@ -60,8 +61,6 @@ namespace HsbgCardLookup.Game
         private bool _locked;
         private int _uses = -1, _tierMin, _tierMax;
         private int _turn;
-        private bool _hpMode;                // last trigger was the Xavius hero power (vs the button)
-        private int _hpCountdown = -1;       // HP "turns left" (TAG_SCRIPT_DATA_NUM_1); -1 = not read
         private readonly List<string> _topTribes = new List<string>();   // most common board type(s)
         private IReadOnlyList<DarkGift> _gifts;   // effective gift list (site data or static fallback), resolved per match
         private bool _duos;                       // mode filter for the pool (Duos-only vs Solos-only cards)
@@ -121,12 +120,19 @@ namespace HsbgCardLookup.Game
 #endif
                 var now = DateTime.UtcNow;
                 bool hoverBtn = string.Equals(big, ButtonCardId, StringComparison.OrdinalIgnoreCase);
-                bool hoverHp = string.Equals(big, XaviusHpCardId, StringComparison.OrdinalIgnoreCase);
-                if (hoverBtn || hoverHp) { _lastHoverUtc = now; _hpMode = hoverHp; }
+                if (hoverBtn)
+                {
+                    // A gap longer than the linger starts a NEW hover streak; a shorter tooltip
+                    // flicker doesn't restart the dwell (same bridge the linger already provides).
+                    if ((now - _lastHoverUtc).TotalMilliseconds > LingerMs) _hoverSince = now;
+                    _lastHoverUtc = now;
+                    if ((now - _hoverSince).TotalMilliseconds >= ShowDelayMs) _dwellMet = true;
+                }
 
                 bool panelUnderMouse = _panel != null && _panel.IsUnderMouse;
-                bool show = hoverBtn || hoverHp || panelUnderMouse
-                    || (now - _lastHoverUtc).TotalMilliseconds < LingerMs;
+                bool lingering = (now - _lastHoverUtc).TotalMilliseconds < LingerMs;
+                if (!lingering && !panelUnderMouse) _dwellMet = false;   // hover ended → re-dwell next time
+                bool show = _dwellMet;
 
                 if (show && ((now - _lastStateRead).TotalMilliseconds >= StateMs || !_buttonFound))
                 {
@@ -135,8 +141,8 @@ namespace HsbgCardLookup.Game
                 }
 
                 // The rules only need the turn — the button entity just enriches the header — so a
-                // trigger hover always shows the panel. Xavius HP mode targets the HP's firing turn.
-                int targetTurn = _hpMode && _hpCountdown > 0 ? _turn + _hpCountdown : _turn;
+                // button hover always shows the panel.
+                int targetTurn = _turn;
 
                 // Nothing offerable yet (locked, pre-turn-3) → no panel at all. This also suppresses
                 // the game's own big-card presentations of the LOCKED button (e.g. the match-start
@@ -151,7 +157,7 @@ namespace HsbgCardLookup.Game
 
                 string mode = NormMode(_config.DarkGiftMode);
                 string sig = show
-                    ? $"{targetTurn}|{_locked}|{_hpMode}|{_hpCountdown}|{string.Join(",", _topTribes)}|{_tierMin}|{_tierMax}|{_lobbyTribes.Count}|{mode}"
+                    ? $"{targetTurn}|{_locked}|{string.Join(",", _topTribes)}|{_tierMin}|{_tierMax}|{_lobbyTribes.Count}|{mode}"
                     : "hidden";
                 if (sig == _lastSig) return;
                 bool fresh = show && !_visibleNow;   // hidden → shown: re-anchor at the cursor
@@ -165,9 +171,9 @@ namespace HsbgCardLookup.Game
                 if (show)
                 {
                     // Effective offered-tier window: the button's live tags when available (anomaly-
-                    // proof), else the published table for the target turn (Xavius projection etc.).
+                    // proof), else the published table for the current turn.
                     int wmin, wmax;
-                    if (!_hpMode && _buttonFound && _tierMin > 0) { wmin = _tierMin; wmax = Math.Max(_tierMin, _tierMax); }
+                    if (_buttonFound && _tierMin > 0) { wmin = _tierMin; wmax = Math.Max(_tierMin, _tierMax); }
                     else TierWindow(targetTurn, out wmin, out wmax);
 
                     // Guaranteed-tribe pool: only when the turn-6+ rule is live AND the top type is
@@ -252,10 +258,7 @@ namespace HsbgCardLookup.Game
                 if (_gifts == null) _gifts = DarkGifts.Resolve(_store);   // site data, static fallback
                 if (_lobbyTribes.Count == 0) ReadLobbyTribes();           // may be empty early — keep retrying
 
-                int playerId = -1;
-                try { playerId = g.Player?.Id ?? -1; } catch { }
-
-                Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity btn = null, hp = null;
+                Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity btn = null;
                 var ents = g.Entities;
                 if (ents != null)
                 {
@@ -263,9 +266,7 @@ namespace HsbgCardLookup.Game
                         try { ents.TryGetValue(_buttonId, out btn); } catch { btn = null; }
                     if (btn != null && !string.Equals(btn.CardId, ButtonCardId, StringComparison.OrdinalIgnoreCase))
                         btn = null;
-                    // One sweep resolves both the button and (Xavius only) OUR hero power — opponents
-                    // can be Xavius too, so the HP must be controller-filtered.
-                    if (btn == null || _hpMode)
+                    if (btn == null)
                     {
                         List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity> all;
                         try { all = new List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity>(ents.Values); }
@@ -273,17 +274,10 @@ namespace HsbgCardLookup.Game
                         foreach (var e in all)
                         {
                             string cid = null; try { cid = e?.CardId; } catch { }
-                            if (btn == null && string.Equals(cid, ButtonCardId, StringComparison.OrdinalIgnoreCase))
-                                btn = e;
-                            else if (hp == null && string.Equals(cid, XaviusHpCardId, StringComparison.OrdinalIgnoreCase)
-                                     && (playerId < 0 || Tag(e, GameTag.CONTROLLER) == playerId))
-                                hp = e;
-                            if (btn != null && (hp != null || !_hpMode)) break;
+                            if (string.Equals(cid, ButtonCardId, StringComparison.OrdinalIgnoreCase)) { btn = e; break; }
                         }
                     }
                 }
-
-                _hpCountdown = hp != null ? Tag(hp, GameTag.TAG_SCRIPT_DATA_NUM_1) : -1;
 
                 if (btn != null)
                 {
@@ -430,8 +424,7 @@ namespace HsbgCardLookup.Game
         }
 
         // The published turn → offered-tier window (dev post; live-verified against the button's tags
-        // T3–T10, frozen at 5–6 afterwards). Used when the button's live tags aren't applicable
-        // (Xavius projection to a future turn; button entity unresolved).
+        // T3–T10, frozen at 5–6 afterwards). Used when the button entity isn't resolved yet.
         private static void TierWindow(int turn, out int min, out int max)
         {
             if (turn <= 3) { min = 2; max = 2; }
@@ -564,8 +557,6 @@ namespace HsbgCardLookup.Game
         private string BuildHeader(int targetTurn)
         {
             var parts = new List<string>();
-            if (_hpMode && _hpCountdown > 0) parts.Add($"Next Dark Gift: turn {targetTurn}");
-
             if (targetTurn >= 6)
                 parts.Add(_topTribes.Count > 0
                     ? $"one offer guaranteed: {string.Join("/", _topTribes)} (your top type)"
@@ -595,6 +586,7 @@ namespace HsbgCardLookup.Game
         {
             _lastSig = null;
             _visibleNow = false;
+            _dwellMet = false;   // a hover after this hide starts a fresh dwell
             if (_panel != null) { var p = _panel; Marshal(() => { try { p.Hide(); } catch { } }); }
         }
 
@@ -616,11 +608,11 @@ namespace HsbgCardLookup.Game
         private void ResetMatch()
         {
             _buttonId = -1; _buttonFound = false; _uses = -1; _locked = false;
-            _hpMode = false; _hpCountdown = -1;
             _topTribes.Clear();
             _lobbyTribes.Clear();
             _gifts = null;   // re-resolve next match (picks up background data refreshes)
-            _lastSig = null; _visibleNow = false; _lastHoverUtc = DateTime.MinValue;
+            _lastSig = null; _visibleNow = false;
+            _lastHoverUtc = DateTime.MinValue; _hoverSince = DateTime.MinValue; _dwellMet = false;
         }
 
         // ── Foreground gating (mirrors BgMmr/BgHud) ─────────────────────────────────────────────────

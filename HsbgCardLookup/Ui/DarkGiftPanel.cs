@@ -16,8 +16,8 @@ using HsbgCardLookup.Search;
 namespace HsbgCardLookup.Ui
 {
     /// <summary>
-    /// The Dark Gift list panel — summoned while the player hovers the in-game Dark Discovery button /
-    /// Xavius hero power (see <see cref="Game.DarkGiftWatcher"/>). It is NOT a window: the whole panel
+    /// The Dark Gift list panel — summoned while the player hovers the in-game Dark Discovery button
+    /// (see <see cref="Game.DarkGiftWatcher"/>). It is NOT a window: the whole panel
     /// lives inside HDT's own overlay canvas (<c>Core.OverlayCanvas</c>), registered with
     /// <c>OverlayExtensions.SetIsOverlayHitTestVisible</c> so HDT drops <c>WS_EX_TRANSPARENT</c> while
     /// the cursor is on it — real wheel/right-click reach us while the overlay window stays
