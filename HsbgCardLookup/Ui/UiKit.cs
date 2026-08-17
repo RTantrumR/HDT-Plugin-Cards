@@ -177,6 +177,30 @@ namespace HsbgCardLookup.Ui
             };
         }
 
+        /// <summary>Small red corner "✕" for the top drag strip: closes the overlay on click. Meant
+        /// to be overlaid AFTER the strip (it's a sibling, so its clicks never start a drag).</summary>
+        public static Border CornerCloseButton(Action onClose, string tooltip)
+        {
+            var normal = Br(Color.FromRgb(0xC9, 0x55, 0x55));
+            var hover = Br(Color.FromRgb(0xFF, 0x6B, 0x6B));
+            var glyph = new TextBlock
+            {
+                Text = "✕", FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = normal,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            };
+            var b = new Border
+            {
+                Width = 26, Height = 18, Background = Brushes.Transparent, Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 1, 6, 0), Child = glyph, ToolTip = tooltip
+            };
+            b.MouseEnter += (s, e) => glyph.Foreground = hover;
+            b.MouseLeave += (s, e) => glyph.Foreground = normal;
+            b.MouseLeftButtonDown += (s, e) => e.Handled = true;
+            b.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClose?.Invoke(); };
+            return b;
+        }
+
         /// <summary>
         /// A small clickable "✕" clear button. Brightens on hover; swallows the click so it
         /// won't bubble to a parent (e.g. a dropdown that would otherwise reopen). The caller

@@ -130,6 +130,10 @@ namespace HsbgCardLookup.Ui
             };
             grid.Children.Add(dragBar);
 
+            // Corner close "✕" inside the strip's band, overlaid after it so the corner clicks
+            // (the rest of the strip still drags) — the overlay is mouse-navigable end to end.
+            grid.Children.Add(UiKit.CornerCloseButton(HideIfOpen, "Close (Esc)"));
+
             Content = grid;
         }
 

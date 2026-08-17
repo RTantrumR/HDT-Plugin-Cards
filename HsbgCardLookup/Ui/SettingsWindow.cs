@@ -214,6 +214,15 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(Separator());
 
+            stack.Children.Add(ToggleRow("In-game search button (by the card list)", _config.ShowSearchButton, v =>
+            {
+                _config.ShowSearchButton = v;
+                _status.Text = v
+                    ? "Magnifying glass next to the game's card-list book toggles the search."
+                    : "In-game search button off.";
+                _onChanged();
+            }));
+
             stack.Children.Add(ToggleRow("Show Duos cards", _config.ShowDuos, v =>
             {
                 _config.ShowDuos = v;

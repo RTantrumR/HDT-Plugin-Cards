@@ -19,6 +19,9 @@ namespace HsbgCardLookup.Config
         public string FocusKey { get; set; } = "S";
         // Whether duos-only cards appear in results/browse.
         public bool ShowDuos { get; set; } = true;
+        // Magnifying-glass button on the in-game overlay (left of the game's card-list book,
+        // bottom-right) that toggles the search — a mouse path for players without the hotkey.
+        public bool ShowSearchButton { get; set; } = true;
         // Floating cards dragged onto the screen hide together with the overlay (and reappear when
         // it reopens). When false, they live independently and survive the overlay closing/unfocusing.
         public bool HideDraggedWithApp { get; set; } = true;
