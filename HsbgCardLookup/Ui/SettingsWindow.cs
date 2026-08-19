@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Hotkey;
+using HsbgCardLookup.Update;
 
 namespace HsbgCardLookup.Ui
 {
@@ -33,6 +35,7 @@ namespace HsbgCardLookup.Ui
         private readonly TextBlock _status;             // single instance, re-parented onto every page
         private string _capturing;   // kind being rebound, or null
         private bool _onSubPage;     // Esc: sub-page → back, main page → close
+        private bool _onMainPage;    // so a pushed update-state change can refresh the main page's hint
         private TextBlock _artFolderLabel;   // shows the current art-cache folder
         private Border _artChangeBtn;        // disabled while a move is in progress
         private bool _arranging;             // HUD arrange mode is active
@@ -40,12 +43,29 @@ namespace HsbgCardLookup.Ui
         private TextBlock _arrangeBtnLabel;
         private readonly List<Action> _modeRefresh = new List<Action>();   // Dark-Gift mode row repaints
 
-        public SettingsWindow(PluginConfig config, HotkeyManager hotkey, Action onChanged, Action<bool> onHudEditMode)
+        private readonly string _currentVersion;
+        private readonly Action _checkForUpdates;
+        private readonly Action<UpdateNotice> _downloadUpdate;
+        private readonly Action<string> _skipUpdate;
+        private readonly Action _restartForUpdate;
+        private UpdateNotice _updateNotice;     // most recently pushed state (see RefreshUpdateStatus)
+        private double? _updateProgress;
+        private bool _onUpdatesPage;
+        private StackPanel _updateActionsHost;  // repainted in place, no full page rebuild needed
+
+        internal SettingsWindow(PluginConfig config, HotkeyManager hotkey, Action onChanged, Action<bool> onHudEditMode,
+            string currentVersion, Action checkForUpdates, Action<UpdateNotice> downloadUpdate,
+            Action<string> skipUpdate, Action restartForUpdate)
         {
             _config = config;
             _hotkey = hotkey;
             _onChanged = onChanged;
             _onHudEditMode = onHudEditMode;
+            _currentVersion = currentVersion;
+            _checkForUpdates = checkForUpdates;
+            _downloadUpdate = downloadUpdate;
+            _skipUpdate = skipUpdate;
+            _restartForUpdate = restartForUpdate;
 
             Title = "HSBG Card Lookup - Settings";
             WindowStyle = WindowStyle.SingleBorderWindow;
@@ -89,6 +109,8 @@ namespace HsbgCardLookup.Ui
         {
             _capturing = null;            // navigating away cancels a pending key capture
             _onSubPage = sub;
+            _onMainPage = !sub;
+            _onUpdatesPage = false; _updateActionsHost = null;   // page-local; rebuilt when its page shows
             _arrangeBtn = null; _arrangeBtnLabel = null;   // page-local; rebuilt when its page shows
             _modeRefresh.Clear();
 
@@ -170,6 +192,8 @@ namespace HsbgCardLookup.Ui
                         : "Dark Gift list off.";
                     _onChanged();
                 }, BuildDarkGifts));
+
+            stack.Children.Add(CategoryRow("Updates", UpdatesHint(), null, null, BuildUpdates));
 
             string exportDir = System.IO.Path.Combine(PluginConfig.DataDir, "match-exports");
             stack.Children.Add(CategoryRow("Match export (CSV)",
@@ -435,6 +459,132 @@ namespace HsbgCardLookup.Ui
                 "Only the guaranteed-type minion arts; the panel stays hidden when no pool applies."));
 
             Content = stack;
+        }
+
+        // ── Updates ───────────────────────────────────────────────────────────────────────────
+
+        // Short line for the main-page category row — recomputed each time BuildMain runs (including
+        // the live refresh RefreshUpdateStatus triggers while this page is the active one).
+        private string UpdatesHint()
+        {
+            if (_updateProgress.HasValue) return $"Downloading v{_updateNotice?.AvailableVersion}…";
+            if (_updateNotice == null) return $"You're on v{_currentVersion}.";
+            if (_updateNotice.AvailableForDownload) return $"Update v{_updateNotice.AvailableVersion} available.";
+            if (_updateNotice.RestartReady) return "Downloaded — restart to apply.";
+            return $"You're on v{_currentVersion}.";
+        }
+
+        private void BuildUpdates()
+        {
+            var stack = NewPage("Updates", sub: true);
+            _onUpdatesPage = true;
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"Installed version: v{_currentVersion}",
+                Foreground = UiKit.TextPrimary, FontSize = 15, Margin = new Thickness(0, 0, 0, 12)
+            });
+
+            _updateActionsHost = new StackPanel();
+            stack.Children.Add(_updateActionsHost);
+            RepaintUpdateArea();
+
+            Content = stack;
+        }
+
+        // Called by Plugin whenever the known update state changes (background check, manual check,
+        // download progress) — the same push that drives the F3 banner and the in-game badge, so all
+        // three never disagree. Only actually repaints when the Updates sub-page is the one showing;
+        // the main page's hint text catches up next time BuildMain runs.
+        internal void RefreshUpdateStatus(UpdateNotice notice, double? progress)
+        {
+            _updateNotice = notice;
+            _updateProgress = progress;
+            if (_onUpdatesPage) RepaintUpdateArea();
+            else if (_onMainPage) BuildMain();
+        }
+
+        private void RepaintUpdateArea()
+        {
+            if (_updateActionsHost == null) return;
+            _updateActionsHost.Children.Clear();
+
+            if (_updateProgress.HasValue)
+            {
+                var f = _updateProgress.Value;
+                var pctText = f >= 0 ? $"Downloading v{_updateNotice?.AvailableVersion}… {(int)Math.Round(Math.Max(0, Math.Min(1, f)) * 100)}%"
+                    : $"Downloading v{_updateNotice?.AvailableVersion}…";
+                _updateActionsHost.Children.Add(new TextBlock
+                {
+                    Text = pctText, Foreground = UiKit.TextPrimary, FontSize = 14, TextWrapping = TextWrapping.Wrap
+                });
+                return;
+            }
+
+            if (_updateNotice != null && _updateNotice.AvailableForDownload)
+            {
+                _updateActionsHost.Children.Add(new TextBlock
+                {
+                    Text = $"Update v{_updateNotice.AvailableVersion} is available.",
+                    Foreground = UiKit.AccentBrush, FontSize = 15, Margin = new Thickness(0, 0, 0, 8),
+                    TextWrapping = TextWrapping.Wrap
+                });
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+                var notice = _updateNotice;
+                row.Children.Add(SmallButton("Download", () => _downloadUpdate(notice)));
+                row.Children.Add(SmallButton("Skip this version", () => _skipUpdate(notice.AvailableVersion)));
+                _updateActionsHost.Children.Add(row);
+                if (!string.IsNullOrEmpty(_updateNotice.Url))
+                    _updateActionsHost.Children.Add(LinkText("View release notes ↗", _updateNotice.Url));
+                return;
+            }
+
+            if (_updateNotice != null && _updateNotice.RestartReady)
+            {
+                _updateActionsHost.Children.Add(new TextBlock
+                {
+                    Text = _updateNotice.Message, Foreground = UiKit.TextPrimary, FontSize = 14,
+                    Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap
+                });
+                _updateActionsHost.Children.Add(SmallButton("Restart HDT now", _restartForUpdate));
+                return;
+            }
+
+            string msg = _updateNotice?.Message ?? "Not checked yet this session.";
+            _updateActionsHost.Children.Add(new TextBlock
+            {
+                Text = msg, Foreground = (_updateNotice?.IsError ?? false) ? Brushes.IndianRed : UiKit.TextMuted,
+                FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8)
+            });
+            _updateActionsHost.Children.Add(SmallButton("Check for updates", () =>
+            {
+                _status.Text = "Checking for updates…";
+                _checkForUpdates();
+            }));
+        }
+
+        private static Border SmallButton(string text, Action onClick)
+        {
+            var lbl = new TextBlock { Text = text, Foreground = UiKit.TextPrimary, FontSize = 13.5, HorizontalAlignment = HorizontalAlignment.Center };
+            var b = new Border
+            {
+                Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7), Padding = new Thickness(12, 6, 12, 6), Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 8, 0), Child = lbl
+            };
+            b.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick?.Invoke(); };
+            return b;
+        }
+
+        private static TextBlock LinkText(string text, string url)
+        {
+            var t = new TextBlock
+            {
+                Text = text, Foreground = UiKit.AccentBrush, FontSize = 13, Cursor = Cursors.Hand,
+                TextDecorations = TextDecorations.Underline
+            };
+            t.MouseLeftButtonUp += (s, e) => { e.Handled = true; try { Process.Start(url); } catch { } };
+            return t;
         }
 
         // ── Row builders ──────────────────────────────────────────────────────────────────────

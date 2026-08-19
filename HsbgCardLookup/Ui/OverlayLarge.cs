@@ -825,45 +825,150 @@ namespace HsbgCardLookup.Ui
         /// <summary>Show a dismissible banner at the top of the overlay (auto-update status). An
         /// error notice gets a red tint and, when <paramref name="url"/> is set, a clickable
         /// manual-install link.</summary>
-        public void SetUpdateNotice(string message, bool isError, string url)
+        public void SetUpdateNotice(string message, bool isError, string url, string linkLabel = null)
         {
             if (_notice == null) return;
             if (string.IsNullOrEmpty(message)) { _notice.Visibility = Visibility.Collapsed; return; }
+
+            // No icon "✕" here — this banner sits directly under the window's own red corner-close, and
+            // two X glyphs stacked in the same corner read as one ambiguous control. A text "Dismiss"
+            // action, styled like the other banners' actions, is unambiguous. Same row shape as the offer
+            // banner — actions immediately after the text, NOT pushed to the container's right edge next
+            // to the window-close button (that's what actually caused the misclick/overlap risk). A fixed
+            // MaxWidth on the message keeps TextWrapping.Wrap working for the rare long message (a
+            // horizontal StackPanel otherwise gives its children infinite width, so Wrap has nothing to
+            // wrap against) without changing where the actions sit.
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 9, 8, 9) };
+            row.Children.Add(new TextBlock
+            {
+                Text = message,
+                Foreground = UiKit.TextPrimary,
+                FontSize = 13.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 560,
+                Margin = new Thickness(0, 0, 16, 0)
+            });
+            if (!string.IsNullOrEmpty(url))
+                row.Children.Add(NoticeAction(linkLabel ?? url, () => { try { Process.Start(url); } catch { } }));
+            row.Children.Add(NoticeAction("Dismiss", () => { _notice.Visibility = Visibility.Collapsed; }, UiKit.TextSecondary));
+
+            _notice.Child = row;
+            _notice.Background = isError
+                ? new SolidColorBrush(Color.FromRgb(0x4A, 0x1F, 0x1F))
+                : UiKit.Br(UiKit.PanelActive);
+            _notice.BorderBrush = isError ? new SolidColorBrush(Color.FromRgb(0x7A, 0x33, 0x33)) : UiKit.AccentBrush;
+            _notice.BorderThickness = new Thickness(0, 0, 0, 1);
+            _notice.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>A small clickable underlined text action, matching the banner's existing link
+        /// style (see the URL line in <see cref="SetUpdateNotice"/>).</summary>
+        private static TextBlock NoticeAction(string text, Action onClick, Brush color = null)
+        {
+            var t = new TextBlock
+            {
+                Text = text,
+                Foreground = color ?? UiKit.AccentBrush,
+                FontSize = 13,
+                Cursor = Cursors.Hand,
+                TextDecorations = TextDecorations.Underline,
+                Margin = new Thickness(0, 0, 18, 0)
+            };
+            t.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick?.Invoke(); };
+            return t;
+        }
+
+        /// <summary>Show the "update available" banner with explicit Download / Skip / read-the-release
+        /// actions, all on one row — background checks no longer download on their own, this is where
+        /// the user consents. No separate dismiss "✕": Download and Skip already each make the offer
+        /// go away (one by proceeding, one by declining), so a third, generic "close" would just be a
+        /// second, unclear way to do the same thing. Release notes deliberately does NOT dismiss — the
+        /// decision is still pending after reading them.</summary>
+        public void SetUpdateOfferNotice(string version, string releaseUrl, Action onDownload, Action onSkip)
+        {
+            if (_notice == null) return;
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(14, 9, 8, 9)
+            };
+            row.Children.Add(new TextBlock
+            {
+                Text = $"Update v{version} is available.",
+                Foreground = UiKit.TextPrimary,
+                FontSize = 13.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 16, 0)
+            });
+            row.Children.Add(NoticeAction("Download", onDownload));
+            row.Children.Add(NoticeAction("Skip this version", onSkip, UiKit.TextSecondary));
+            if (!string.IsNullOrEmpty(releaseUrl))
+                row.Children.Add(NoticeAction("View release notes ↗",
+                    () => { try { Process.Start(releaseUrl); } catch { } }, UiKit.TextSecondary));
+
+            _notice.Child = row;
+            _notice.Background = UiKit.Br(UiKit.PanelActive);
+            _notice.BorderBrush = UiKit.AccentBrush;
+            _notice.BorderThickness = new Thickness(0, 0, 0, 1);
+            _notice.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>Show the banner as an in-progress download with a fill-proportional bar; a
+        /// negative <paramref name="fraction"/> means the server didn't report a size (text only, no
+        /// bar). The release-notes link stays available so the user can read it while it downloads.
+        /// </summary>
+        public void SetUpdateProgressNotice(string version, string releaseUrl, double fraction)
+        {
+            if (_notice == null) return;
 
             var content = new DockPanel { LastChildFill = true, Margin = new Thickness(14, 9, 8, 9) };
             var dismiss = UiKit.ClearButton(() => { _notice.Visibility = Visibility.Collapsed; }, "Dismiss");
             DockPanel.SetDock(dismiss, Dock.Right);
             content.Children.Add(dismiss);
 
-            var text = new StackPanel { Orientation = Orientation.Vertical };
-            text.Children.Add(new TextBlock
+            var col = new StackPanel { Orientation = Orientation.Vertical };
+            bool known = fraction >= 0;
+            var pct = known ? (int)Math.Round(Math.Max(0, Math.Min(1, fraction)) * 100) : 0;
+            col.Children.Add(new TextBlock
             {
-                Text = message,
+                Text = known ? $"Downloading update v{version}… {pct}%" : $"Downloading update v{version}…",
                 Foreground = UiKit.TextPrimary,
                 FontSize = 13.5,
                 TextWrapping = TextWrapping.Wrap
             });
-            if (!string.IsNullOrEmpty(url))
-            {
-                var link = new TextBlock
-                {
-                    Text = url,
-                    Foreground = UiKit.AccentBrush,
-                    FontSize = 13,
-                    Cursor = Cursors.Hand,
-                    TextDecorations = TextDecorations.Underline,
-                    Margin = new Thickness(0, 3, 0, 0)
-                };
-                link.MouseLeftButtonUp += (s, e) => { try { Process.Start(url); } catch { } };
-                text.Children.Add(link);
-            }
-            content.Children.Add(text);
 
+            if (known)
+            {
+                var track = new Border
+                {
+                    Height = 6, CornerRadius = new CornerRadius(3),
+                    Background = UiKit.Br(Color.FromRgb(0x33, 0x38, 0x42)),
+                    Margin = new Thickness(0, 6, 0, 0)
+                };
+                var bar = new Grid();
+                bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(pct, GridUnitType.Star) });
+                bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100 - pct, GridUnitType.Star) });
+                var fill = new Border { CornerRadius = new CornerRadius(3), Background = UiKit.AccentBrush };
+                Grid.SetColumn(fill, 0);
+                bar.Children.Add(fill);
+                track.Child = bar;
+                col.Children.Add(track);
+            }
+
+            if (!string.IsNullOrEmpty(releaseUrl))
+            {
+                var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+                actions.Children.Add(NoticeAction("View release notes ↗",
+                    () => { try { Process.Start(releaseUrl); } catch { } }, UiKit.TextSecondary));
+                col.Children.Add(actions);
+            }
+
+            content.Children.Add(col);
             _notice.Child = content;
-            _notice.Background = isError
-                ? new SolidColorBrush(Color.FromRgb(0x4A, 0x1F, 0x1F))
-                : UiKit.Br(UiKit.PanelActive);
-            _notice.BorderBrush = isError ? new SolidColorBrush(Color.FromRgb(0x7A, 0x33, 0x33)) : UiKit.AccentBrush;
+            _notice.Background = UiKit.Br(UiKit.PanelActive);
+            _notice.BorderBrush = UiKit.AccentBrush;
             _notice.BorderThickness = new Thickness(0, 0, 0, 1);
             _notice.Visibility = Visibility.Visible;
         }

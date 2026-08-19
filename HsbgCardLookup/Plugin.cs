@@ -54,7 +54,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 3, 3);
+        public Version Version => new Version(0, 3, 4);
 
         // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
         // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the
@@ -113,7 +113,7 @@ namespace HsbgCardLookup
             _recorder = new Game.MatchRecorder(_store, _config, Log);
             _bgMmr = new Game.BgMmr(_config, _ui, Log);
             _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
-            _searchButton = new Ui.SearchButton(_config, ToggleOverlayFromButton, Log);
+            _searchButton = new Ui.SearchButton(_config, ToggleOverlayFromButton, SkipVersion, Log);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
 
@@ -222,22 +222,90 @@ namespace HsbgCardLookup
             catch { return null; }
         }
 
+        // ── Update state: one source of truth, pushed to every surface that can show it ──────────
+        // (the F3 banner, the Settings "Updates" page, and the in-game badge by the search button —
+        // see PushUpdateUi). A plain background check never pops a dialog; only a result that traces
+        // back to something the user explicitly clicked (userInitiated) is allowed to.
+        private Update.UpdateNotice _lastUpdateNotice;
+        private double? _downloadProgress;   // non-null while a user-initiated download is in flight
+
         private async Task CheckForUpdateAsync()
         {
             try
             {
-                var notice = await Updater.RunAsync(Version, PluginDir(), _config);
+                var notice = await Updater.RunAsync(Version, _config);
                 if (notice == null) return;
-                Log("Update: " + notice.Message.Replace("\n", " | "));
-                _ui?.BeginInvoke(new Action(() =>
-                    _overlayLarge?.SetUpdateNotice(notice.Message, notice.IsError, notice.Url)));
+                Log("Update: " + (notice.AvailableForDownload
+                    ? $"v{notice.AvailableVersion} available"
+                    : notice.Message.Replace("\n", " | ")));
+                _ui?.BeginInvoke(new Action(() => SetUpdateState(notice, userInitiated: false)));
             }
             catch (Exception ex) { Log("CheckForUpdateAsync error: " + ex.Message); }
         }
 
-        // User-triggered "Check for updates" — wired to the HDT plugins-menu item and the overlay
-        // toolbar's ⟳ icon. Bypasses the 6h throttle and always gives feedback (incl. "up to date" /
-        // "couldn't check"); prompts a restart when an update is staged. Runs off the UI thread.
+        // OnLoad checks exactly once, at launch — with no periodic re-check, a session that outlives
+        // that check's 6h throttle window (very common — BG sessions run 30min-4h, and plenty of
+        // people leave HDT running for days) would never learn about a release that ships mid-session.
+        // Re-attempt every 20 minutes of uptime; Updater.RunAsync's own persisted 6h throttle is the
+        // real gate, so ~17 of every 18 attempts return null immediately with no network call at all.
+        private DateTime _lastUpdateAttempt = DateTime.MinValue;
+        private void PollBackgroundUpdateCheck()
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _lastUpdateAttempt).TotalMinutes < 20) return;
+            _lastUpdateAttempt = now;
+            Task.Run(() => CheckForUpdateAsync());
+        }
+
+        // Set the current known state and push it to every surface. userInitiated gates the
+        // restart-confirmation prompt: only a result that traces back to an explicit click (manual
+        // check, or a Download that just finished) is allowed to pop it — a silent background check
+        // finding a still-staged update from last session must never pop an unprompted dialog (that
+        // can steal foreground from Hearthstone, which hides HDT's entire in-game overlay).
+        private void SetUpdateState(Update.UpdateNotice notice, bool userInitiated)
+        {
+            _lastUpdateNotice = notice;
+            _downloadProgress = null;
+            PushUpdateUi();
+            if (userInitiated && notice != null && notice.RestartReady) PromptRestart(notice);
+        }
+
+        private void SetDownloadProgress(double fraction)
+        {
+            _downloadProgress = fraction;
+            PushUpdateUi();
+        }
+
+        // Renders _lastUpdateNotice/_downloadProgress onto every live surface. UI-thread only.
+        private void PushUpdateUi()
+        {
+            var notice = _lastUpdateNotice;
+            var progress = _downloadProgress;
+
+            if (progress.HasValue)
+                _overlayLarge?.SetUpdateProgressNotice(notice?.AvailableVersion, notice?.Url, progress.Value);
+            else if (notice != null && notice.AvailableForDownload)
+                _overlayLarge?.SetUpdateOfferNotice(notice.AvailableVersion, notice.Url,
+                    () => StartDownload(notice), () => SkipVersion(notice.AvailableVersion));
+            else if (notice != null)
+                _overlayLarge?.SetUpdateNotice(notice.Message, notice.IsError, notice.Url, notice.LinkLabel);
+            else
+                _overlayLarge?.SetUpdateNotice(null, false, null);
+
+            _settings?.RefreshUpdateStatus(notice, progress);
+            _searchButton?.SetUpdateState(notice, progress);
+        }
+
+        private void PromptRestart(Update.UpdateNotice notice)
+        {
+            var ans = MessageBox.Show(notice.Message + "\n\nRestart HDT now to finish installing?",
+                "HSBG Card Lookup — Update ready", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (ans == MessageBoxResult.Yes) RestartHost();
+        }
+
+        // User-triggered "Check for updates" — wired to the HDT plugins-menu item, the overlay
+        // toolbar's ⟳ icon, and the Settings "Updates" page. Bypasses the 6h throttle and always
+        // gives feedback (incl. "up to date" / "couldn't check"). Runs off the UI thread.
         internal void CheckForUpdatesInteractive()
         {
             if (_overlayLarge?.IsVisible == true)
@@ -245,38 +313,67 @@ namespace HsbgCardLookup
             Task.Run(async () =>
             {
                 Update.UpdateNotice notice = null;
-                try { notice = await Update.Updater.RunAsync(Version, PluginDir(), _config, manual: true); }
+                try { notice = await Update.Updater.RunAsync(Version, _config, manual: true); }
                 catch (Exception ex) { Log("CheckForUpdatesInteractive error: " + ex.Message); }
                 _ui?.BeginInvoke(new Action(() => HandleManualNotice(notice)));
             });
         }
 
-        // Show the manual-check result. Banner if the overlay is open; otherwise (triggered from HDT's
-        // plugins menu with the overlay closed) a MessageBox. A staged update always prompts a restart.
+        // User's "Download" click, from any of the three surfaces — stages the release with a live
+        // progress bar. Always resolves through SetUpdateState directly, NEVER through
+        // HandleManualNotice's MessageBox fallback: a failure here must stay passive-only, since this
+        // can be triggered from the in-game badge mid-match, where a MessageBox would steal foreground
+        // from Hearthstone and hide HDT's whole overlay for something as minor as a failed download.
+        // (A RestartReady success is still allowed to prompt — that's a direct, expected consequence of
+        // the click, and proportionate: an actual restart is about to tear the overlay down anyway.)
+        private void StartDownload(Update.UpdateNotice available)
+        {
+            SetDownloadProgress(0);
+            var progress = new Progress<double>(f => _ui?.BeginInvoke(new Action(() => SetDownloadProgress(f))));
+            Task.Run(async () =>
+            {
+                Update.UpdateNotice result;
+                try { result = await Update.Updater.DownloadAsync(available, progress); }
+                catch (Exception ex)
+                {
+                    Log("StartDownload error: " + ex.Message);
+                    result = new Update.UpdateNotice($"Download failed. Install v{available.AvailableVersion} manually:",
+                        true, available.Url);
+                }
+                _ui?.BeginInvoke(new Action(() => SetUpdateState(result, userInitiated: true)));
+            });
+        }
+
+        private void SkipVersion(string version)
+        {
+            Update.Updater.Skip(_config, version);
+            SetUpdateState(null, userInitiated: false);
+        }
+
+        // Show the manual-check result. Banner/Settings/badge always get it via SetUpdateState; a
+        // MessageBox is ONLY added on top when the overlay is closed — reachable exclusively from
+        // HDT's plugins-menu item (the toolbar ⟳ and Settings' button both require a window that's
+        // already focused, so overlayOpen is true and this fallback never fires for them).
         private void HandleManualNotice(Update.UpdateNotice notice)
         {
             if (notice == null)
                 notice = new Update.UpdateNotice("Couldn't check for updates right now — please try again later.", true);
 
             bool overlayOpen = _overlayLarge?.IsVisible == true;
+            SetUpdateState(notice, userInitiated: true);
 
-            if (notice.RestartReady)
+            if (notice.RestartReady) return;   // PromptRestart (inside SetUpdateState) already gave feedback
+            if (overlayOpen) return;           // the banner already shows the result
+
+            if (notice.AvailableForDownload)
             {
-                if (overlayOpen) _overlayLarge.SetUpdateNotice(notice.Message, false, null);
-                var ans = MessageBox.Show(notice.Message + "\n\nRestart HDT now to finish installing?",
-                    "HSBG Card Lookup — Update ready", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (ans == MessageBoxResult.Yes) RestartHost();
-                return;
+                var ans = MessageBox.Show(
+                    $"Version {notice.AvailableVersion} is available.\n\nOpen the releases page in your browser?",
+                    "HSBG Card Lookup — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (ans == MessageBoxResult.Yes)
+                    try { System.Diagnostics.Process.Start(notice.Url); } catch { }
             }
-
-            if (overlayOpen)
-            {
-                _overlayLarge.SetUpdateNotice(notice.Message, notice.IsError, notice.Url);
-                return;
-            }
-
-            // Overlay closed: surface via MessageBox; offer the releases link when there is one.
-            if (!string.IsNullOrEmpty(notice.Url))
+            else if (!string.IsNullOrEmpty(notice.Url))
             {
                 var ans = MessageBox.Show(notice.Message + "\n\nOpen the releases page in your browser?",
                     "HSBG Card Lookup — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
@@ -291,8 +388,10 @@ namespace HsbgCardLookup
         }
 
         // Relaunch HDT to apply a staged update. HDT scans plugins only at startup, so finishing an
-        // install needs a restart. We spawn a detached helper that waits for every HDT process to exit
-        // then starts the Squirrel shim, then ask HDT to shut down (runs OnUnload). Mirrors restartHDT.ps1.
+        // install needs a restart. We spawn a detached helper that waits for every HDT process to fully
+        // exit, THEN copies the already-downloaded+staged files over the plugin folder (nothing is
+        // locked anymore at that point — no live-swap of a loaded module), then starts the Squirrel
+        // shim, then ask HDT to shut down (runs OnUnload). Mirrors restartHDT.ps1 plus the copy step.
         private void RestartHost()
         {
             try
@@ -310,17 +409,33 @@ namespace HsbgCardLookup
                 }
                 if (!File.Exists(shim)) { Log("RestartHost: HDT exe not found"); return; }
 
+                // Get-Process returning empty means the process object is gone, not that the OS has
+                // necessarily finished releasing every file handle it held — observed live 2026-08-19:
+                // Copy-Item hit a still-locked file right after the wait loop exited. By default that's
+                // a NON-terminating PowerShell error, so it printed nothing (hidden window) and just
+                // fell through to Start-Process, silently skipping the copy entirely. Fixed with a grace
+                // period plus a bounded retry loop around the copy itself (~1s + up to 10×500ms ≈ 6s
+                // worst case) rather than trusting the single wait-loop's timing.
+                var waitClause = "while(Get-Process -Name HearthstoneDeckTracker -ErrorAction SilentlyContinue)"
+                    + "{Start-Sleep -Milliseconds 300}; Start-Sleep -Milliseconds 1000; ";
+                var stagedSrc = Update.Updater.ResolveStagedSourceRoot();
+                var copyClause = (stagedSrc != null && Directory.Exists(stagedSrc))
+                    ? "for($i=0; $i -lt 10; $i++) { try { Copy-Item -Path '" + stagedSrc
+                        + "\\*' -Destination '" + PluginDir() + "' -Recurse -Force -ErrorAction Stop; break } "
+                        + "catch { Start-Sleep -Milliseconds 500 } }; "
+                    : "";
+
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "powershell.exe",
-                    Arguments = "-NoProfile -WindowStyle Hidden -Command "
-                        + "\"while(Get-Process -Name HearthstoneDeckTracker -ErrorAction SilentlyContinue)"
-                        + "{Start-Sleep -Milliseconds 300}; Start-Process '" + shim + "'\"",
+                    Arguments = "-NoProfile -WindowStyle Hidden -Command \""
+                        + waitClause + copyClause + "Start-Process '" + shim + "'\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                 };
                 System.Diagnostics.Process.Start(psi);
-                Log("RestartHost: relauncher spawned, shutting down HDT");
+                Log("RestartHost: relauncher spawned" + (copyClause.Length > 0 ? " (will apply staged update)" : "")
+                    + ", shutting down HDT");
                 _ui?.BeginInvoke(new Action(() => Application.Current?.Shutdown()));
             }
             catch (Exception ex) { Log("RestartHost error: " + ex.Message); }
@@ -457,9 +572,11 @@ namespace HsbgCardLookup
             {
                 _bgHud?.SetEditMode(on);
                 _bgMmr?.SetEditMode(on);   // the MMR standings panel arranges alongside the HUD boxes
-            });
+            }, Version.ToString(), CheckForUpdatesInteractive, StartDownload, SkipVersion,
+            () => { if (_lastUpdateNotice != null) PromptRestart(_lastUpdateNotice); });
             _settings.Closed += (s, e) => _settings = null;
             _settings.Show();
+            _settings.RefreshUpdateStatus(_lastUpdateNotice, _downloadProgress);   // seed with what's already known
         }
 
         // Fires ~every 100 ms. Drives the read-only BG state probe (self-throttled to ~1.5s).
@@ -474,6 +591,7 @@ namespace HsbgCardLookup
             _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
             _darkGifts?.Poll();  // opt-in Dark Gift list (shows while hovering the Dark Discovery button)
             _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
+            PollBackgroundUpdateCheck(); // re-attempt every 20 min so a long session isn't frozen at launch-time state
         }
 
         private static readonly string LogDir = Path.Combine(

@@ -10,23 +10,34 @@ using HsbgCardLookup.Net;
 
 namespace HsbgCardLookup.Update
 {
-    /// <summary>A message to surface to the user about an update (success / "restart to apply" /
-    /// failed-with-link).</summary>
+    /// <summary>A message to surface to the user about an update: a newer version found (offer
+    /// Download/Skip), "downloaded — restart to apply", a plain status ("up to date" / "couldn't
+    /// check"), or an error with a manual-install link.</summary>
     internal sealed class UpdateNotice
     {
         public string Message;
         public bool IsError;
-        public string Url;          // non-null => show a clickable link (manual install fallback)
-        public bool RestartReady;   // true => an update is staged; restarting HDT applies it
+        public string Url;                 // releases page — manual-install fallback, or "read more"
+        public string LinkLabel;           // custom text for Url's link, instead of the raw URL
+        public bool RestartReady;          // true => staged; restarting HDT applies it
+        public bool AvailableForDownload;  // true => a newer version was found, not yet downloaded
+        public string AvailableVersion;    // set when AvailableForDownload
+        public string DownloadUrl;         // the release zip asset URL, for DownloadAsync
         public UpdateNotice(string message, bool isError = false, string url = null)
         { Message = message; IsError = isError; Url = url; }
     }
 
     /// <summary>
-    /// Self-update via GitHub Releases. Across restarts: download the newer release zip → extract to
-    /// a staging folder → copy over the plugin folder (HDT shadow-copies to load, so source files are
-    /// normally unlocked) → write a pending marker. Next launch: if the running version matches the
-    /// pending one, show "Updated to N + changelog"; else retry / show a manual-install link.
+    /// Self-update via GitHub Releases, gated on explicit user consent. Checking never downloads —
+    /// finding a newer version returns an <see cref="UpdateNotice"/> with
+    /// <see cref="UpdateNotice.AvailableForDownload"/> set, and the UI offers Download/Skip. Only
+    /// <see cref="DownloadAsync"/> (fired by the user's "Download" click) fetches the zip and extracts
+    /// it to a staging folder + writes a pending marker. The actual file swap never touches the live,
+    /// loaded plugin — it happens in the relauncher's PowerShell script (<see cref="Plugin.RestartHost"/>)
+    /// only after HDT has fully exited, via <see cref="ResolveStagedSourceRoot"/>. Next launch: if the
+    /// running version matches the pending one, show "Updated to vN" with a link to the release notes
+    /// (never the raw release body — that's Markdown, and none of our banners render it); if it's still staged
+    /// (the user hasn't restarted through our prompt yet), re-offer the restart with no re-download.
     /// Best-effort — offline / missing repo / any failure = no update.
     /// </summary>
     internal static class Updater
@@ -36,14 +47,16 @@ namespace HsbgCardLookup.Update
         private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(6);
 
         private static string StagingDir => Path.Combine(PluginConfig.DataDir, "update-staging");
+        internal static string StagedFilesDir => Path.Combine(StagingDir, "files");
         private static string MarkerPath => Path.Combine(PluginConfig.DataDir, "update-pending.json");
         private static string ReleasesUrl => "https://github.com/" + GitHubRepo + "/releases/latest";
         private static string ApiLatest => "https://api.github.com/repos/" + GitHubRepo + "/releases/latest";
 
         /// <param name="manual">User-triggered ("Check for updates" button): skip the 6h throttle and
         /// always return a notice — including "you're up to date" / "couldn't check" — so the UI can
-        /// give feedback. The background check (manual=false) stays silent in those cases (returns null).</param>
-        public static async Task<UpdateNotice> RunAsync(Version current, string pluginDir, PluginConfig config, bool manual = false)
+        /// give feedback. The background check (manual=false) stays silent in those cases (returns null),
+        /// and also stays silent about a version the user already chose to skip.</param>
+        public static async Task<UpdateNotice> RunAsync(Version current, PluginConfig config, bool manual = false)
         {
             try
             {
@@ -56,15 +69,13 @@ namespace HsbgCardLookup.Update
                     {
                         ClearMarker();
                         SafeDeleteDir(StagingDir);
-                        return new UpdateNotice($"Updated to version {pending.Version}\nChangelog:\n"
-                            + (string.IsNullOrWhiteSpace(pending.Changelog) ? "(no notes)" : pending.Changelog.Trim()));
+                        return new UpdateNotice($"Updated to version {pending.Version}.", false, pending.Url ?? ReleasesUrl)
+                            { LinkLabel = "View release notes ↗" };
                     }
-                    // Staged but not yet running — try to apply again, then ask for a restart.
-                    bool applied = TryApply(pluginDir);
-                    return applied
-                        ? new UpdateNotice($"Update v{pending.Version} ready — restart HDT to finish.") { RestartReady = true }
-                        : new UpdateNotice($"Update v{pending.Version} couldn't be applied automatically. "
-                            + "Please install it manually:", true, pending.Url ?? ReleasesUrl);
+                    // Already downloaded, just not applied yet (the user hasn't restarted through our
+                    // prompt). No re-download — the relauncher applies what's already staged.
+                    return new UpdateNotice($"Update v{pending.Version} downloaded — restart HDT to apply.")
+                        { RestartReady = true };
                 }
 
                 // 2. Throttle (background only), then check the latest release.
@@ -88,42 +99,68 @@ namespace HsbgCardLookup.Update
                 if (v <= current)
                     return manual ? new UpdateNotice($"You're on the latest version (v{current}).") : null;
 
+                if (!manual)
+                {
+                    var skipped = ParseVersion(config.SkippedUpdateVersion);
+                    if (skipped != null && v <= skipped) return null;
+                }
+
                 var asset = rel.Assets?.FirstOrDefault(
                     a => a.Name != null && a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
                 if (asset == null || string.IsNullOrEmpty(asset.DownloadUrl))
                     return new UpdateNotice($"Version {v} is available. Download it here:", true, ReleasesUrl);
 
-                if (!await DownloadAndExtract(asset.DownloadUrl).ConfigureAwait(false))
-                    return new UpdateNotice($"Version {v} is available but the download failed. "
-                        + "Install it manually:", true, ReleasesUrl);
-
-                WriteMarker(new Pending { Version = v.ToString(), Changelog = rel.Body, Url = ReleasesUrl });
-                bool ok = TryApply(pluginDir);
-                return ok
-                    ? new UpdateNotice($"Update v{v} downloaded — restart HDT to apply.") { RestartReady = true }
-                    : new UpdateNotice($"Update v{v} downloaded but couldn't be applied automatically. "
-                        + "Install it manually:", true, ReleasesUrl);
+                return new UpdateNotice($"Version {v} is available.")
+                {
+                    AvailableForDownload = true,
+                    AvailableVersion = v.ToString(),
+                    DownloadUrl = asset.DownloadUrl,
+                    Url = ReleasesUrl,
+                };
             }
             catch { return null; }
         }
 
-        private static async Task<bool> DownloadAndExtract(string zipUrl)
+        /// <summary>Fetch + extract the release the last <see cref="RunAsync"/> found (fired by the
+        /// user's "Download" click), reporting progress 0..1 (or -1 once, if the server sent no
+        /// Content-Length). Stages the files and writes the pending marker — never touches the live
+        /// plugin folder; that happens in the relauncher after HDT exits. Returns RestartReady on
+        /// success, or an error notice with the manual-install link on failure.</summary>
+        public static async Task<UpdateNotice> DownloadAsync(UpdateNotice available, IProgress<double> progress)
         {
             try
             {
                 SafeDeleteDir(StagingDir);
                 Directory.CreateDirectory(StagingDir);
                 var zipPath = Path.Combine(StagingDir, "_update.zip");
-                if (!await AssetClient.DownloadToFileAsync(zipUrl, zipPath).ConfigureAwait(false))
-                    return false;
+                if (!await AssetClient.DownloadToFileAsync(available.DownloadUrl, zipPath, progress).ConfigureAwait(false))
+                    return new UpdateNotice($"Download failed. Install v{available.AvailableVersion} manually:",
+                        true, ReleasesUrl);
 
-                var extractDir = Path.Combine(StagingDir, "files");
+                var extractDir = StagedFilesDir;
                 SafeDeleteDir(extractDir);
                 ZipFile.ExtractToDirectory(zipPath, extractDir);
                 try { File.Delete(zipPath); } catch { }
-                return File.Exists(ResolveExtractedDll(extractDir));
+                if (!File.Exists(ResolveExtractedDll(extractDir)))
+                    return new UpdateNotice($"The downloaded update looked incomplete. Install v{available.AvailableVersion} manually:",
+                        true, ReleasesUrl);
+
+                WriteMarker(new Pending { Version = available.AvailableVersion, Url = ReleasesUrl });
+                return new UpdateNotice($"Update v{available.AvailableVersion} downloaded — restart HDT to apply.")
+                    { RestartReady = true };
             }
-            catch { return false; }
+            catch
+            {
+                return new UpdateNotice($"Download failed. Install v{available.AvailableVersion} manually:", true, ReleasesUrl);
+            }
+        }
+
+        /// <summary>Remember a version the user explicitly chose not to install — background checks
+        /// won't re-offer it (or older).</summary>
+        public static void Skip(PluginConfig config, string version)
+        {
+            config.SkippedUpdateVersion = version;
+            config.Save();
         }
 
         /// <summary>Locate the plugin DLL inside the extracted tree, descending through a single
@@ -136,94 +173,16 @@ namespace HsbgCardLookup.Update
             return hit ?? direct;
         }
 
-        /// <summary>Copy the extracted files over the plugin folder. The running plugin DLL and our
-        /// bundled deps (loaded via AssemblyResolve.LoadFrom) are LOCKED while HDT runs, so a plain
-        /// in-place overwrite fails — <see cref="CopyOne"/> renames a locked file aside (.old, allowed
-        /// even while loaded) and writes the new one, which loads on the next restart. Files already
-        /// identical (unchanged deps) are skipped.</summary>
-        private static bool TryApply(string pluginDir)
+        /// <summary>The folder that should be copied wholesale over the live plugin folder — the one
+        /// directly containing HsbgCardLookup.dll inside the staged extraction (skips the installer
+        /// extras — install.bat/README — that sit alongside it at the zip root). Used by
+        /// <see cref="Plugin.RestartHost"/> to build the relauncher's copy step; null if nothing is
+        /// staged.</summary>
+        public static string ResolveStagedSourceRoot()
         {
-            try
-            {
-                CleanupOldFiles(pluginDir);   // remove *.old left by a previous update (now unlocked)
-
-                var extractDir = Path.Combine(StagingDir, "files");
-                var dll = ResolveExtractedDll(extractDir);
-                if (!File.Exists(dll)) return false;
-                var srcRoot = Path.GetDirectoryName(dll);
-
-                if (!CopyOne(dll, Path.Combine(pluginDir, "HsbgCardLookup.dll"))) return false;
-                foreach (var src in Directory.GetFiles(srcRoot, "*", SearchOption.AllDirectories))
-                {
-                    var rel = src.Substring(srcRoot.Length).TrimStart(Path.DirectorySeparatorChar);
-                    if (rel.Equals("HsbgCardLookup.dll", StringComparison.OrdinalIgnoreCase)) continue;
-                    var dest = Path.Combine(pluginDir, rel);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dest));
-                    if (!CopyOne(src, dest)) return false;
-                }
-                return true;
-            }
-            catch { return false; }
-        }
-
-        // Copy src→dest, tolerating a locked destination (the loaded plugin DLL / bundled deps): if the
-        // existing file is already identical, skip it; otherwise rename the locked file aside (.old —
-        // Windows permits renaming an in-use module) and write the new one, which takes effect on the
-        // next HDT restart. Returns false only if even the rename+copy fails.
-        private static bool CopyOne(string src, string dest)
-        {
-            try { File.Copy(src, dest, true); return true; }
-            catch
-            {
-                try
-                {
-                    if (File.Exists(dest) && SameFile(src, dest)) return true;   // unchanged, just locked
-                    var aside = dest + ".old";
-                    try { if (File.Exists(aside)) File.Delete(aside); } catch { }
-                    File.Move(dest, aside);
-                    File.Copy(src, dest, true);
-                    return true;
-                }
-                catch { return false; }
-            }
-        }
-
-        private static bool SameFile(string a, string b)
-        {
-            try
-            {
-                var fa = new FileInfo(a); var fb = new FileInfo(b);
-                if (!fa.Exists || !fb.Exists || fa.Length != fb.Length) return false;
-                const int N = 65536;
-                using (var sa = File.OpenRead(a))
-                using (var sb = File.OpenRead(b))
-                {
-                    var ba = new byte[N]; var bb = new byte[N];
-                    int ra;
-                    while ((ra = sa.Read(ba, 0, N)) > 0)
-                    {
-                        int off = 0, n;
-                        while (off < ra && (n = sb.Read(bb, off, ra - off)) > 0) off += n;
-                        if (off != ra) return false;
-                        for (int i = 0; i < ra; i++) if (ba[i] != bb[i]) return false;
-                    }
-                }
-                return true;
-            }
-            catch { return false; }
-        }
-
-        // Delete *.old left behind by a prior update (the old locked modules; freed after the restart).
-        private static void CleanupOldFiles(string pluginDir)
-        {
-            try
-            {
-                foreach (var f in Directory.GetFiles(pluginDir, "*.old", SearchOption.AllDirectories))
-                {
-                    try { File.Delete(f); } catch { }
-                }
-            }
-            catch { }
+            if (!Directory.Exists(StagedFilesDir)) return null;
+            var dll = ResolveExtractedDll(StagedFilesDir);
+            return File.Exists(dll) ? Path.GetDirectoryName(dll) : null;
         }
 
         private static Version ParseVersion(string tag)
@@ -255,14 +214,12 @@ namespace HsbgCardLookup.Update
         private sealed class Pending
         {
             public string Version;
-            public string Changelog;
             public string Url;
         }
 
         private sealed class GhRelease
         {
             [JsonProperty("tag_name")] public string TagName { get; set; }
-            [JsonProperty("body")] public string Body { get; set; }
             [JsonProperty("assets")] public List<GhAsset> Assets { get; set; }
         }
 

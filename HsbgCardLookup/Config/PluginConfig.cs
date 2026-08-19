@@ -109,6 +109,9 @@ namespace HsbgCardLookup.Config
         public int PatchNoticeLastSeenId { get; set; } = 0;
         // Aggregate manifest hash of the art pack already applied; a change triggers re-sync.
         public string ArtPackHash { get; set; } = "";
+        // Version the user explicitly chose "Skip" for (background checks won't re-offer it or older;
+        // the manual "Check for updates" button always reports regardless).
+        public string SkippedUpdateVersion { get; set; } = "";
 
         /// <summary>Writable data folder in %APPDATA% (config, caches) — survives DLL redeploys.</summary>
         public static string DataDir => Path.Combine(
