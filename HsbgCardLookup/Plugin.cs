@@ -54,7 +54,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 3, 4);
+        public Version Version => new Version(0, 3, 4, 1);
 
         // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
         // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the
@@ -425,10 +425,15 @@ namespace HsbgCardLookup
                         + "catch { Start-Sleep -Milliseconds 500 } }; "
                     : "";
 
+                // No "-WindowStyle Hidden" here — CreateNoWindow=true below already suppresses the
+                // window at the OS process-creation level (CREATE_NO_WINDOW), before PowerShell's own
+                // startup code would even run. Stacking both was flagged in a 2026-08-20 AV-heuristic
+                // review as a specific "doubly-hidden window" signal some ML classifiers weight; dropping
+                // the redundant one is a zero-behavior-change reduction (nothing was ever visible either way).
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "powershell.exe",
-                    Arguments = "-NoProfile -WindowStyle Hidden -Command \""
+                    Arguments = "-NoProfile -Command \""
                         + waitClause + copyClause + "Start-Process '" + shim + "'\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
