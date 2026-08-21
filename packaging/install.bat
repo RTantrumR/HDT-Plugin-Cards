@@ -47,12 +47,18 @@ if %ERRORLEVEL% GEQ 8 (
 
 echo   Done! HSBG Card Lookup is installed.
 echo(
-echo   Next:
-echo     1. Start Hearthstone Deck Tracker.
-echo     2. If asked, enable the plugin under Options ^> Plugins.
-echo     3. Press F3 to open the card search.
-echo(
+echo   If asked on first launch, enable the plugin under Options ^> Plugins.
+echo   Press F3 in-game to open the card search.
 echo   ^(First launch downloads card art in the background - about 200 MB, one time.^)
 echo(
-pause
+
+REM Offer to relaunch HDT right away (it was closed above if it was running).
+set "HDTEXE=%LOCALAPPDATA%\HearthstoneDeckTracker\HearthstoneDeckTracker.exe"
+if exist "%HDTEXE%" (
+  choice /c YN /m "  Start Hearthstone Deck Tracker now"
+  if not errorlevel 2 start "" "%HDTEXE%"
+) else (
+  echo   Next: start Hearthstone Deck Tracker.
+  pause
+)
 exit /b 0

@@ -112,6 +112,9 @@ namespace HsbgCardLookup.Config
         // Version the user explicitly chose "Skip" for (background checks won't re-offer it or older;
         // the manual "Check for updates" button always reports regardless).
         public string SkippedUpdateVersion { get; set; } = "";
+        // Plugin version of the previous run — a bump means the user just updated, driving the
+        // one-time "Updated to vN" notice (replaced the retired staging-marker mechanism).
+        public string LastRunVersion { get; set; } = "";
 
         /// <summary>Writable data folder in %APPDATA% (config, caches) — survives DLL redeploys.</summary>
         public static string DataDir => Path.Combine(

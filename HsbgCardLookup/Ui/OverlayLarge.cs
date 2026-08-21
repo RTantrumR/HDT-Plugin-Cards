@@ -879,13 +879,12 @@ namespace HsbgCardLookup.Ui
             return t;
         }
 
-        /// <summary>Show the "update available" banner with explicit Download / Skip / read-the-release
-        /// actions, all on one row — background checks no longer download on their own, this is where
-        /// the user consents. No separate dismiss "✕": Download and Skip already each make the offer
-        /// go away (one by proceeding, one by declining), so a third, generic "close" would just be a
-        /// second, unclear way to do the same thing. Release notes deliberately does NOT dismiss — the
-        /// decision is still pending after reading them.</summary>
-        public void SetUpdateOfferNotice(string version, string releaseUrl, Action onDownload, Action onSkip)
+        /// <summary>Show the "update available" banner: the version + a "Download page ↗" link (the
+        /// release page in the browser — the zip and the notes live together there; since v0.4.0 the
+        /// plugin never downloads the update itself) + Skip, all on one row. No separate dismiss "✕":
+        /// Skip already declines, and the offer deliberately survives opening the page — the decision
+        /// is only settled by skipping or actually installing (the version bump clears it).</summary>
+        public void SetUpdateOfferNotice(string version, string releaseUrl, Action onOpenDownloadPage, Action onSkip)
         {
             if (_notice == null) return;
 
@@ -902,71 +901,10 @@ namespace HsbgCardLookup.Ui
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 16, 0)
             });
-            row.Children.Add(NoticeAction("Download", onDownload));
+            row.Children.Add(NoticeAction("Download page ↗", onOpenDownloadPage));
             row.Children.Add(NoticeAction("Skip this version", onSkip, UiKit.TextSecondary));
-            if (!string.IsNullOrEmpty(releaseUrl))
-                row.Children.Add(NoticeAction("View release notes ↗",
-                    () => { try { Process.Start(releaseUrl); } catch { } }, UiKit.TextSecondary));
 
             _notice.Child = row;
-            _notice.Background = UiKit.Br(UiKit.PanelActive);
-            _notice.BorderBrush = UiKit.AccentBrush;
-            _notice.BorderThickness = new Thickness(0, 0, 0, 1);
-            _notice.Visibility = Visibility.Visible;
-        }
-
-        /// <summary>Show the banner as an in-progress download with a fill-proportional bar; a
-        /// negative <paramref name="fraction"/> means the server didn't report a size (text only, no
-        /// bar). The release-notes link stays available so the user can read it while it downloads.
-        /// </summary>
-        public void SetUpdateProgressNotice(string version, string releaseUrl, double fraction)
-        {
-            if (_notice == null) return;
-
-            var content = new DockPanel { LastChildFill = true, Margin = new Thickness(14, 9, 8, 9) };
-            var dismiss = UiKit.ClearButton(() => { _notice.Visibility = Visibility.Collapsed; }, "Dismiss");
-            DockPanel.SetDock(dismiss, Dock.Right);
-            content.Children.Add(dismiss);
-
-            var col = new StackPanel { Orientation = Orientation.Vertical };
-            bool known = fraction >= 0;
-            var pct = known ? (int)Math.Round(Math.Max(0, Math.Min(1, fraction)) * 100) : 0;
-            col.Children.Add(new TextBlock
-            {
-                Text = known ? $"Downloading update v{version}… {pct}%" : $"Downloading update v{version}…",
-                Foreground = UiKit.TextPrimary,
-                FontSize = 13.5,
-                TextWrapping = TextWrapping.Wrap
-            });
-
-            if (known)
-            {
-                var track = new Border
-                {
-                    Height = 6, CornerRadius = new CornerRadius(3),
-                    Background = UiKit.Br(Color.FromRgb(0x33, 0x38, 0x42)),
-                    Margin = new Thickness(0, 6, 0, 0)
-                };
-                var bar = new Grid();
-                bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(pct, GridUnitType.Star) });
-                bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100 - pct, GridUnitType.Star) });
-                var fill = new Border { CornerRadius = new CornerRadius(3), Background = UiKit.AccentBrush };
-                Grid.SetColumn(fill, 0);
-                bar.Children.Add(fill);
-                track.Child = bar;
-                col.Children.Add(track);
-            }
-
-            if (!string.IsNullOrEmpty(releaseUrl))
-            {
-                var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-                actions.Children.Add(NoticeAction("View release notes ↗",
-                    () => { try { Process.Start(releaseUrl); } catch { } }, UiKit.TextSecondary));
-                col.Children.Add(actions);
-            }
-
-            content.Children.Add(col);
-            _notice.Child = content;
             _notice.Background = UiKit.Br(UiKit.PanelActive);
             _notice.BorderBrush = UiKit.AccentBrush;
             _notice.BorderThickness = new Thickness(0, 0, 0, 1);

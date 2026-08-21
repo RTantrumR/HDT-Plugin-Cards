@@ -67,7 +67,6 @@ namespace HsbgCardLookup.Ui
         private TextBlock _badgeText;
         private Border _badgeClose;
         private UpdateNotice _updateNotice;
-        private double? _updateProgress;              // non-null while a download is in flight
 
         public SearchButton(PluginConfig config, Action toggle, Action<string> onSkip, Action<string> log = null)
         {
@@ -99,18 +98,16 @@ namespace HsbgCardLookup.Ui
         /// <summary>Settings changed — drop the signature so the next poll re-applies.</summary>
         public void OnSettingsChanged() => _lastSig = null;
 
-        /// <summary>Pushed by Plugin whenever the known update state changes (background check, manual
-        /// check, or download progress) — the one source of truth shared with the F3 banner and the
-        /// Settings "Updates" page. <paramref name="progress"/> non-null means a download is in
-        /// flight (0..1, or -1 if the server didn't report a size); null means not downloading.</summary>
-        internal void SetUpdateState(UpdateNotice notice, double? progress)
+        /// <summary>Pushed by Plugin whenever the known update state changes (background or manual
+        /// check) — the one source of truth shared with the F3 banner and the Settings "Updates"
+        /// page.</summary>
+        internal void SetUpdateState(UpdateNotice notice)
         {
             try
             {
                 Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher?.BeginInvoke(new Action(() =>
                 {
                     _updateNotice = notice;
-                    _updateProgress = progress;
                     RefreshBadge();
                 }));
             }
@@ -262,7 +259,7 @@ namespace HsbgCardLookup.Ui
         // Whether there's currently something worth showing the badge for — a plain "up to date" /
         // error notice stays silent (that's what the F3 banner and Settings page are for).
         private bool HasNoteworthyUpdate() =>
-            _updateProgress.HasValue || (_updateNotice != null && (_updateNotice.AvailableForDownload || _updateNotice.RestartReady));
+            _updateNotice != null && _updateNotice.AvailableForDownload;
 
         private void RefreshBadge()
         {
@@ -272,19 +269,8 @@ namespace HsbgCardLookup.Ui
 
             if (!show) { _badge.Visibility = Visibility.Collapsed; return; }
 
-            bool downloading = _updateProgress.HasValue;
-            bool restartReady = !downloading && _updateNotice.RestartReady;
-
-            if (downloading)
-            {
-                var f = _updateProgress.Value;
-                _badgeText.Text = f >= 0 ? $"Updating… {(int)Math.Round(Math.Max(0, Math.Min(1, f)) * 100)}%" : "Updating…";
-            }
-            else if (restartReady) _badgeText.Text = "Restart to update";
-            else _badgeText.Text = "Update available";
-
-            // Skipping only makes sense while it's still an offer — not mid-download or once staged.
-            _badgeClose.Visibility = (!downloading && !restartReady) ? Visibility.Visible : Visibility.Collapsed;
+            _badgeText.Text = "Update available";
+            _badgeClose.Visibility = Visibility.Visible;   // the ✕ skips this version
 
             _badge.Visibility = Visibility.Visible;
             Layout();   // re-measure — the badge's own width depends on its text
@@ -314,10 +300,10 @@ namespace HsbgCardLookup.Ui
 
             if (_badge != null && _badge.Visibility == Visibility.Visible)
             {
-                // Wide enough for "Restart to update" at this scale's font size; centered over the
+                // Wide enough for "Update available" at this scale's font size; centered over the
                 // button, floating just above it with a small gap.
                 double bh = Math.Max(20, h * 0.62);
-                double bw = Math.Max(150 * scale, w * 2.6);   // fits "Restart to update", the longest state text
+                double bw = Math.Max(150 * scale, w * 2.6);
                 double bLeft = left + (w - bw) / 2;
                 double bTop = top - bh - (5 * scale);
 

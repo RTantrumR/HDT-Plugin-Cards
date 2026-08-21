@@ -93,57 +93,5 @@ namespace HsbgCardLookup.Net
             catch { return false; }
         }
 
-        /// <summary>Download a URL straight to a file (atomic via a temp file + move). Returns
-        /// true on success. Used for release zips and the card-data snapshot.</summary>
-        public static async Task<bool> DownloadToFileAsync(string url, string destPath)
-        {
-            try
-            {
-                var bytes = await GetBytesAsync(url).ConfigureAwait(false);
-                if (bytes == null) return false;
-                Directory.CreateDirectory(Path.GetDirectoryName(destPath));
-                var tmp = destPath + ".tmp";
-                File.WriteAllBytes(tmp, bytes);
-                if (File.Exists(destPath)) File.Delete(destPath);
-                File.Move(tmp, destPath);
-                return true;
-            }
-            catch { return false; }
-        }
-
-        /// <summary>Same as <see cref="DownloadToFileAsync(string,string)"/>, but streams (no full
-        /// in-memory buffer) and reports fractional progress (0..1) as bytes arrive — or -1 once, if
-        /// the server didn't send a Content-Length. Used for the user-initiated update download so a
-        /// progress bar can track it.</summary>
-        public static async Task<bool> DownloadToFileAsync(string url, string destPath, IProgress<double> progress)
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(destPath));
-                var tmp = destPath + ".tmp";
-                using (var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
-                {
-                    if (!resp.IsSuccessStatusCode) return false;
-                    var total = resp.Content.Headers.ContentLength;
-                    using (var src = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false))
-                    using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, true))
-                    {
-                        var buffer = new byte[1 << 16];
-                        long read = 0;
-                        int n;
-                        while ((n = await src.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
-                        {
-                            await fs.WriteAsync(buffer, 0, n).ConfigureAwait(false);
-                            read += n;
-                            progress?.Report(total.HasValue && total.Value > 0 ? (double)read / total.Value : -1);
-                        }
-                    }
-                }
-                if (File.Exists(destPath)) File.Delete(destPath);
-                File.Move(tmp, destPath);
-                return true;
-            }
-            catch { return false; }
-        }
     }
 }
