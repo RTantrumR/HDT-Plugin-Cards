@@ -11,8 +11,8 @@ namespace HsbgCardLookup.Ui
 {
     /// <summary>
     /// Per-portrait MMR labels for the BG leaderboard, drawn inside HDT's own overlay canvas
-    /// (<c>Core.OverlayCanvas</c>). Solo layout only. Reference geometry adapted from
-    /// HDT-BGMMRPlugin (MIT) — see NOTICE (repo root).
+    /// (<c>Core.OverlayCanvas</c>). Solo and duos layouts (<see cref="IsDuos"/> picks the slot
+    /// arrays). Reference geometry adapted from HDT-BGMMRPlugin (MIT) — see NOTICE (repo root).
     /// </summary>
     public sealed class LeaderboardOverlay
     {
@@ -20,6 +20,7 @@ namespace HsbgCardLookup.Ui
         {
             public string Name;
             public int Rating;          // 0 = below the leaderboard cutoff (shown as 8000↓)
+            public bool RatingPending;  // leaderboard blob not loaded yet → show "…" instead of 8000↓
             public int Delta;
             public int TavernTier;      // 1..7; 0 = unknown (icon hidden)
             public bool IsDead;
@@ -33,6 +34,9 @@ namespace HsbgCardLookup.Ui
         private const double RefW = 1920.0, RefH = 1080.0;
         private static readonly double[] RefSlotLeft = { 255.00, 252.14, 249.29, 246.43, 243.57, 240.71, 237.86, 235.00 };
         private static readonly double[] RefSlotTop = { 168.0, 260.0, 355.0, 445.0, 540.0, 633.0, 727.0, 822.0 };
+        // Duos: portraits pair up per team (rows 0+1, 2+3, 4+5, 6+7), 34 ref px apart inside a pair.
+        private static readonly double[] DuosRefSlotLeft = { 245.0, 245.0, 242.0, 242.0, 239.0, 239.0, 236.0, 236.0 };
+        private static readonly double[] DuosRefSlotTop = { 178.0, 212.0, 365.0, 399.0, 552.0, 586.0, 739.0, 773.0 };
         // Label grew 5px UPWARD from the original 28px (bottom edge stays put on the portrait) to fit
         // a larger, readable font. Without names it's a single line, so it shrinks to RefLabelH1 —
         // still bottom-anchored, so the rating sits where it always did.
@@ -64,6 +68,8 @@ namespace HsbgCardLookup.Ui
         public bool ShowTiers { get; set; } = true;
         public bool ShowLastOpp { get; set; } = true;
         public bool DimDead { get; set; } = true;
+        /// <summary>Duos layout: teamed slot geometry (rows arrive team-ordered from BgMmr).</summary>
+        public bool IsDuos { get; set; }
 
         private bool TwoLines => ShowNames && (ShowRating || ShowDeltas);
         private bool BoxVisible => ShowNames || ShowRating || ShowDeltas;
@@ -169,8 +175,8 @@ namespace HsbgCardLookup.Ui
                 _names[i].Text = r.Name;
                 _names[i].Foreground = dim ? Dead : Brushes.White;
                 _names[i].Visibility = ShowNames ? Visibility.Visible : Visibility.Collapsed;
-                _ratings[i].Text = r.Rating > 0 ? r.Rating.ToString() : "8000↓";
-                _ratings[i].Foreground = dim ? Dead : (r.Rating > 0 ? UiKit.AccentBrush : Muted);
+                _ratings[i].Text = r.RatingPending ? "…" : (r.Rating > 0 ? r.Rating.ToString() : "8000↓");
+                _ratings[i].Foreground = dim ? Dead : (!r.RatingPending && r.Rating > 0 ? UiKit.AccentBrush : Muted);
                 _ratings[i].Visibility = ShowRating ? Visibility.Visible : Visibility.Collapsed;
                 if (ShowDeltas && r.Delta != 0 && !dim)
                 {
@@ -241,10 +247,12 @@ namespace HsbgCardLookup.Ui
                 _ratings[i].FontSize = 11.5 * scale;
                 _arrows[i].FontSize = 9.5 * scale;
 
-                double refLeft = RefSlotLeft[i] + (_shifted[i] ? RefOpponentShift : 0.0);
+                double refSlotLeft = IsDuos ? DuosRefSlotLeft[i] : RefSlotLeft[i];
+                double refSlotTop = IsDuos ? DuosRefSlotTop[i] : RefSlotTop[i];
+                double refLeft = refSlotLeft + (_shifted[i] ? RefOpponentShift : 0.0);
                 double left = contentLeft + (refLeft / RefW) * contentW;
                 // Bottom-anchored: a shorter (name-less) label keeps the same bottom edge, then lifts.
-                double top = contentTop + ((RefSlotTop[i] - RefLabelUp + (RefLabelH - refH) - lift) / RefH) * contentH;
+                double top = contentTop + ((refSlotTop - RefLabelUp + (RefLabelH - refH) - lift) / RefH) * contentH;
                 Canvas.SetLeft(b, left);
                 Canvas.SetTop(b, top);
 

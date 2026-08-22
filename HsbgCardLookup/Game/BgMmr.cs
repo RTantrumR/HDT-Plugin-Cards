@@ -18,9 +18,10 @@ namespace HsbgCardLookup.Game
     /// Opt-in in-match feature: opponents' Battlegrounds MMR as per-portrait labels on the BG
     /// leaderboard (plus tavern tier, dead dimming, last-opponent marker). Rendering lives in
     /// <see cref="LeaderboardOverlay"/> on HDT's own overlay canvas; ratings/deltas come from the
-    /// per-region blob <c>hsbg.cards/bgmmr/{REGION}.json</c> (fetched once per match, disk-cache
-    /// fallback). Solo only. Overlay geometry + opponent tracking adapted from HDT-BGMMRPlugin
-    /// (MIT) — see NOTICE (repo root).
+    /// per-region blob <c>hsbg.cards/bgmmr/{REGION}.json</c> (duos: <c>{REGION}-duo.json</c> — a
+    /// separate leaderboard), fetched once per match, disk-cache fallback. Solo and duos layouts.
+    /// Overlay geometry + opponent/team tracking adapted from HDT-BGMMRPlugin (MIT) — see NOTICE
+    /// (repo root).
     /// </summary>
     public sealed class BgMmr
     {
@@ -43,7 +44,9 @@ namespace HsbgCardLookup.Game
         // Per-match state (all read/written on the OnUpdate thread).
         private readonly HashSet<int> _dead = new HashSet<int>();              // PLAYER_IDs, latched
         private readonly Dictionary<int, int> _lastTier = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> _teammate = new Dictionary<int, int>();  // duos: pid -> teammate pid, latched
         private int _trackedOpponentId;
+        private int _trackedOpponentTeammateId;   // duos: the opposing team's second member
         private int _combatOpponentId;
         private int _lastOpponentId;
         private bool _wasCombat;
@@ -51,7 +54,9 @@ namespace HsbgCardLookup.Game
         // Per-match leaderboard fetch state.
         private volatile Dictionary<string, int> _players;   // name -> rating
         private volatile Dictionary<string, int> _deltas;    // name -> today's change (non-zero only)
-        private string _fetchRegion;
+        private volatile Dictionary<string, string> _ciName; // case-insensitive name -> canonical blob name
+        private string _fetchKey;                            // region + optional "-duo" suffix
+        private DateTime _lastBlobFail = DateTime.MinValue;
         private volatile bool _fetching;
 
         public BgMmr(PluginConfig config, Dispatcher ui, Action<string> log)
@@ -87,17 +92,19 @@ namespace HsbgCardLookup.Game
                 _lastPoll = now;
 
                 List<LeaderboardOverlay.Row> rows = null;
-                if (isBg && !_ended && !isDuos)
+                if (isBg && !_ended)
                 {
                     string region = CurrentRegion();
-                    if (region != null) EnsureBlob(region);
+                    if (region != null) EnsureBlob(region, isDuos);
                     UpdateOpponentTracking();
-                    rows = ReadStandings();
+                    rows = isDuos ? ReadStandingsDuos() : ReadStandings();
                 }
 
                 bool show = rows != null && rows.Count > 0;
-                // Every per-part toggle folds into the signature so a settings change re-renders.
-                string flags = (_config.ShowMmrLabels ? "L" : "") + (_config.ShowMmrPanel ? "P" : "")
+                // Every per-part toggle folds into the signature so a settings change re-renders
+                // ("D" = duos layout, "~" = blob still pending — rows render "…" until it loads).
+                string flags = (isDuos ? "D" : "") + (_players == null ? "~" : "")
+                    + (_config.ShowMmrLabels ? "L" : "") + (_config.ShowMmrPanel ? "P" : "")
                     + (_config.ShowOpponentNames ? "n" : "") + (_config.ShowMmrRating ? "r" : "")
                     + (_config.ShowMmrDeltas ? "a" : "") + "t" + _config.TavernTierMode
                     + (_config.ShowLastOpponent ? "o" : "") + (_config.DimDeadPlayers ? "d" : "");
@@ -110,7 +117,8 @@ namespace HsbgCardLookup.Game
                 _lastSig = sig;
 
                 var rr = show ? rows : null;
-                Marshal(() => ApplyUi(rr));
+                bool duo = isDuos;
+                Marshal(() => ApplyUi(rr, duo));
             }
             catch { /* OnUpdate must never throw */ }
         }
@@ -140,6 +148,7 @@ namespace HsbgCardLookup.Game
                 if (on)
                 {
                     EnsurePanel();
+                    _panel.IsDuos = false;   // sample standings are a solo board
                     SyncPanelFlags();
                     _panel.SetEditMode(true);
                 }
@@ -172,7 +181,6 @@ namespace HsbgCardLookup.Game
                 }
                 catch { }
 
-                var players = _players; var deltas = _deltas;
                 // Ghost hero copies can briefly duplicate a place — prefer the in-play entity.
                 var byPlace = new Dictionary<int, KeyValuePair<bool, LeaderboardOverlay.Row>>();
                 foreach (var e in Snapshot(g.Entities.Values))
@@ -205,11 +213,10 @@ namespace HsbgCardLookup.Game
                     }
 
                     string name = heroToName.TryGetValue(NormHero(cid), out var n) ? n : null;
-                    int rating = 0, delta = 0;
+                    int rating = 0, delta = 0; bool pending = _players == null;
                     if (name != null)
                     {
-                        if (players != null && players.TryGetValue(name, out var r)) rating = r;   // else 0 = 8000↓
-                        if (deltas != null && deltas.TryGetValue(name, out var d)) delta = d;
+                        LookupRating(name, out rating, out delta, out pending);
                     }
                     else
                     {
@@ -223,6 +230,7 @@ namespace HsbgCardLookup.Game
                     {
                         Name = name,
                         Rating = rating,
+                        RatingPending = pending,
                         Delta = delta,
                         TavernTier = pid > 0 && _lastTier.TryGetValue(pid, out var lt) ? lt : 0,
                         IsDead = pid > 0 && _dead.Contains(pid),
@@ -238,23 +246,206 @@ namespace HsbgCardLookup.Game
             return outp;
         }
 
+        // Exact-case lookup first, then case-insensitive via the canonical-name index (other data
+        // sources may change a name's capitalization). Pending = the blob hasn't loaded yet ("…").
+        private void LookupRating(string name, out int rating, out int delta, out bool pending)
+        {
+            rating = 0; delta = 0;
+            var players = _players; var deltas = _deltas; var ci = _ciName;
+            pending = players == null;
+            if (pending || string.IsNullOrEmpty(name)) return;
+            string key = name;
+            if (!players.ContainsKey(key) && ci != null && ci.TryGetValue(name, out var canon)) key = canon;
+            if (players.TryGetValue(key, out var r)) rating = r;   // else 0 = 8000↓
+            if (deltas != null && deltas.TryGetValue(key, out var d)) delta = d;
+        }
+
+        // ── Duos standings: per-player records → teams → team-ordered rows ──────────────────────────
+        // Duos teammates can SHARE a PLAYER_LEADERBOARD_PLACE, so unlike the solo path (deduped by
+        // place) this one keys on PLAYER_ID. Team pairing/order mirrors HDT-BGMMRPlugin: explicit
+        // teammate-tag links first (latched — an abandoned team can later receive transient ranks),
+        // then equal-place, then adjacency; teams by best place; the player who fights first next
+        // combat is listed first within a team (that's how the game stacks the paired portraits).
+        private sealed class DuoRec
+        {
+            public int Pid;
+            public string CardId;
+            public string HeroName;    // fallback display name (bot / blank-name lobby slot)
+            public int Place;          // 0 = unknown
+            public bool FightsFirst;
+            public bool InPlay;
+        }
+
+        private List<LeaderboardOverlay.Row> ReadStandingsDuos()
+        {
+            var outp = new List<LeaderboardOverlay.Row>();
+            try
+            {
+                var g = Core.Game;
+                if (g?.Entities == null) return outp;
+
+                // Hero card id (skin/gold-normalized) -> player battletag, from the lobby roster.
+                var heroToName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    var lobby = HearthMirror.Reflection.Client?.GetBattlegroundsLobbyInfo();
+                    if (lobby?.Players != null)
+                        foreach (var p in lobby.Players)
+                            if (!string.IsNullOrEmpty(p?.HeroCardId) && !string.IsNullOrWhiteSpace(p?.Name))
+                                heroToName[NormHero(p.HeroCardId)] = p.Name;
+                }
+                catch { }
+
+                var recs = new Dictionary<int, DuoRec>();
+                var ffPids = new HashSet<int>();
+                foreach (var e in Snapshot(g.Entities.Values))
+                {
+                    int pid = 0;
+                    try { if (e.HasTag(GameTag.PLAYER_ID)) pid = e.GetTag(GameTag.PLAYER_ID); } catch { }
+                    if (pid <= 0) continue;
+
+                    // Team-link + fights-first tags can sit on any of the player's entities (hero or
+                    // player entity — the reference plugin checks the hero first, then any entity with
+                    // that PLAYER_ID), so read them before the hero-row filter below.
+                    try
+                    {
+                        if (e.HasTag(GameTag.BACON_DUO_TEAMMATE_PLAYER_ID))
+                        {
+                            int mate = e.GetTag(GameTag.BACON_DUO_TEAMMATE_PLAYER_ID);
+                            if (mate > 0 && mate != pid) _teammate[pid] = mate;   // latched
+                        }
+                    }
+                    catch { }
+                    try
+                    {
+                        if (e.HasTag(GameTag.BACON_DUO_PLAYER_FIGHTS_FIRST_NEXT_COMBAT)
+                            && e.GetTag(GameTag.BACON_DUO_PLAYER_FIGHTS_FIRST_NEXT_COMBAT) > 0)
+                            ffPids.Add(pid);
+                    }
+                    catch { }
+
+                    int place = 0;
+                    try { place = e.GetTag(GameTag.PLAYER_LEADERBOARD_PLACE); } catch { }
+                    string cid = e?.CardId;
+                    if (place <= 0 || string.IsNullOrEmpty(cid)) continue;   // hero rows only below
+
+                    // Tier/death latches — same rules as solo (tier can transiently read 0 while HS
+                    // swaps hero entities; death is permanent, ghost copies may read full health).
+                    try
+                    {
+                        if (e.HasTag(GameTag.PLAYER_TECH_LEVEL))
+                        {
+                            int t = e.GetTag(GameTag.PLAYER_TECH_LEVEL);
+                            if (t >= 1 && t <= 7) _lastTier[pid] = t;
+                        }
+                    }
+                    catch { }
+                    try { if (e.HasTag(GameTag.HEALTH) && e.Health <= 0) _dead.Add(pid); } catch { }
+
+                    bool inPlay = false;
+                    try { inPlay = e.IsInPlay; } catch { }
+                    string heroName = null;
+                    try { heroName = e.Card?.Name; } catch { }
+
+                    if (!recs.TryGetValue(pid, out var rec))
+                        recs[pid] = new DuoRec { Pid = pid, CardId = cid, HeroName = heroName, Place = place, InPlay = inPlay };
+                    else if (inPlay && !rec.InPlay)   // ghost hero copies — prefer the in-play entity
+                    {
+                        rec.CardId = cid; rec.HeroName = heroName; rec.Place = place; rec.InPlay = true;
+                    }
+                }
+                foreach (var pid in ffPids)
+                    if (recs.TryGetValue(pid, out var rec)) rec.FightsFirst = true;
+
+                var players = recs.Values.OrderBy(p => p.Pid).ToList();
+                var ordered = BuildDuosTeams(players, _teammate)
+                    .OrderBy(t => t.Select(p => p.Place).Where(pl => pl >= 1 && pl <= 8).DefaultIfEmpty(9).Min())
+                    .SelectMany(t => t.OrderByDescending(p => p.FightsFirst).ThenBy(p => p.Pid))
+                    .Take(8);
+
+                foreach (var p in ordered)
+                {
+                    string name = heroToName.TryGetValue(NormHero(p.CardId), out var n) ? n : null;
+                    int rating = 0, delta = 0; bool pending = _players == null;
+                    if (name != null) LookupRating(name, out rating, out delta, out pending);
+                    else name = string.IsNullOrEmpty(p.HeroName) ? "?" : p.HeroName;
+
+                    outp.Add(new LeaderboardOverlay.Row
+                    {
+                        Name = name,
+                        Rating = rating,
+                        RatingPending = pending,
+                        Delta = delta,
+                        TavernTier = _lastTier.TryGetValue(p.Pid, out var lt) ? lt : 0,
+                        IsDead = _dead.Contains(p.Pid),
+                        IsLastOpponent = p.Pid == _lastOpponentId,
+                        // Both members of the opposing team lean out with their portraits.
+                        IsCurrentOpponent = p.Pid == _trackedOpponentId
+                            || (_trackedOpponentTeammateId > 0 && p.Pid == _trackedOpponentTeammateId)
+                    });
+                }
+            }
+            catch { }
+            return outp;
+        }
+
+        private static List<List<DuoRec>> BuildDuosTeams(List<DuoRec> players, Dictionary<int, int> teammate)
+        {
+            bool Linked(int a, int b) =>
+                (teammate.TryGetValue(a, out var x) && x == b) || (teammate.TryGetValue(b, out var y) && y == a);
+
+            var remaining = new List<DuoRec>(players);
+            var teams = new List<List<DuoRec>>();
+            // Explicit links first, so a player can't be consumed by a temporary-place fallback
+            // before their partner is considered.
+            foreach (var p in players)
+            {
+                if (!remaining.Contains(p)) continue;
+                var linked = remaining.FirstOrDefault(c => !ReferenceEquals(c, p) && Linked(p.Pid, c.Pid));
+                if (linked == null) continue;
+                teams.Add(new List<DuoRec> { p, linked });
+                remaining.Remove(p);
+                remaining.Remove(linked);
+            }
+            // Fallback for links not exposed yet at match start: same place, then adjacency.
+            while (remaining.Count > 0)
+            {
+                var p = remaining[0];
+                remaining.RemoveAt(0);
+                var mate = remaining.FirstOrDefault(c => p.Place >= 1 && c.Place == p.Place);
+                if (mate == null && remaining.Count > 0) mate = remaining[0];
+                var team = new List<DuoRec> { p };
+                if (mate != null) { team.Add(mate); remaining.Remove(mate); }
+                teams.Add(team);
+            }
+            return teams;
+        }
+
         // ── Opponent tracking: NEXT_OPPONENT_PLAYER_ID + combat-edge latch ──────────────────────────
         private void UpdateOpponentTracking()
         {
             try
             {
                 var g = Core.Game;
-                int next = 0;
+                int next = 0, nextMate = 0;
                 try
                 {
                     var pe = g?.PlayerEntity;
                     if (pe != null && pe.HasTag(GameTag.NEXT_OPPONENT_PLAYER_ID))
                         next = pe.GetTag(GameTag.NEXT_OPPONENT_PLAYER_ID);
+                    if (pe != null && pe.HasTag(GameTag.NEXT_OPPONENT_TEAMMATE_PLAYER_ID))
+                        nextMate = pe.GetTag(GameTag.NEXT_OPPONENT_TEAMMATE_PLAYER_ID);
                 }
                 catch { }
                 int selfId = 0;
                 try { selfId = g?.Player?.Id ?? 0; } catch { }
-                if (next > 0 && next != selfId) _trackedOpponentId = next;
+                if (next > 0 && next != selfId)
+                {
+                    _trackedOpponentId = next;
+                    // Duos: the opposing team's second member — only adopted alongside a main-tag
+                    // update, and only when it's a distinct player. Always 0 in solo.
+                    _trackedOpponentTeammateId = nextMate > 0 && nextMate != next ? nextMate : 0;
+                }
 
                 bool isCombat = false;
                 try { isCombat = g != null && g.IsBattlegroundsCombatPhase; } catch { }
@@ -276,11 +467,12 @@ namespace HsbgCardLookup.Game
         }
 
         // ── Overlay + panel (canvas thread) ─────────────────────────────────────────────────────────
-        private void ApplyUi(List<LeaderboardOverlay.Row> rows)
+        private void ApplyUi(List<LeaderboardOverlay.Row> rows, bool isDuos)
         {
             try
             {
                 if (_overlay == null) _overlay = new LeaderboardOverlay();
+                _overlay.IsDuos = isDuos;
                 bool any = rows != null && rows.Count > 0;
 
                 // Surface 1: the portrait-anchored parts — the MMR/name label box (gated by
@@ -306,6 +498,7 @@ namespace HsbgCardLookup.Game
                 if (any && _config.ShowMmrPanel)
                 {
                     EnsurePanel();
+                    _panel.IsDuos = isDuos;
                     SyncPanelFlags();
                     _panel.SetStandings(rows);
                 }
@@ -393,47 +586,61 @@ namespace HsbgCardLookup.Game
             try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
         }
 
-        // ── Leaderboard blob: fetch once per match, disk-cache fallback ───────────────────────────────
-        private void EnsureBlob(string region)
+        // ── Leaderboard blob: fetch once per match+mode, disk-cache fallback ──────────────────────────
+        // Key = region + optional "-duo" suffix (duos has its own leaderboard). A failed fetch backs
+        // off 60s instead of retrying every poll tick — e.g. while the duo blob doesn't exist yet.
+        private void EnsureBlob(string region, bool duos)
         {
+            string key = region + (duos ? "-duo" : "");
             if (_fetching) return;
-            if (string.Equals(_fetchRegion, region, StringComparison.Ordinal) && _players != null) return;
-            _fetchRegion = region;
+            if (string.Equals(_fetchKey, key, StringComparison.Ordinal))
+            {
+                if (_players != null) return;
+                if ((DateTime.UtcNow - _lastBlobFail).TotalSeconds < 60) return;
+            }
+            _fetchKey = key;
             _fetching = true;
             Task.Run(async () =>
             {
-                try { await FetchBlob(region); }
+                try { await FetchBlob(key); }
                 finally { _fetching = false; }
             });
         }
 
-        private async Task FetchBlob(string region)
+        private async Task FetchBlob(string key)
         {
-            string url = AssetClient.SiteBase + "/bgmmr/" + region + ".json";
+            string url = AssetClient.SiteBase + "/bgmmr/" + key + ".json";
             var json = await AssetClient.GetStringAsync(url);
-            if (!string.IsNullOrEmpty(json) && Adopt(json, region, "loaded")) return;
+            if (!string.IsNullOrEmpty(json) && Adopt(json, key, "loaded")) return;
             try
             {
-                var path = Path.Combine(CacheDir, region + ".json");
-                if (File.Exists(path) && Adopt(File.ReadAllText(path), region, "cache")) return;
+                var path = Path.Combine(CacheDir, key + ".json");
+                if (File.Exists(path) && Adopt(File.ReadAllText(path), key, "cache")) return;
             }
             catch { }
-            _log?.Invoke($"BgMmr: leaderboard {region} unavailable (all show 8000↓)");
+            _lastBlobFail = DateTime.UtcNow;
+            _log?.Invoke($"BgMmr: leaderboard {key} unavailable (ratings pending)");
         }
 
         // Parse the blob into the players + deltas maps; on a live fetch also refresh the disk cache.
-        private bool Adopt(string json, string region, string source)
+        private bool Adopt(string json, string key, string source)
         {
             Blob blob;
             try { blob = JsonConvert.DeserializeObject<Blob>(json); } catch { return false; }
             if (blob?.Players == null) return false;
-            _players = new Dictionary<string, int>(blob.Players, StringComparer.Ordinal);
+            var players = new Dictionary<string, int>(blob.Players, StringComparer.Ordinal);
+            _players = players;
             _deltas = blob.Deltas != null
                 ? new Dictionary<string, int>(blob.Deltas, StringComparer.Ordinal)
                 : new Dictionary<string, int>(StringComparer.Ordinal);
+            // Case-insensitive fallback index: CI name -> the canonical (highest-rated) blob name.
+            var ci = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in players)
+                if (!ci.TryGetValue(kv.Key, out var cur) || kv.Value > players[cur]) ci[kv.Key] = kv.Key;
+            _ciName = ci;
             if (source == "loaded")
-                try { Directory.CreateDirectory(CacheDir); File.WriteAllText(Path.Combine(CacheDir, region + ".json"), json); } catch { }
-            _log?.Invoke($"BgMmr: leaderboard {region} {source} ({_players.Count} players, {_deltas.Count} deltas)");
+                try { Directory.CreateDirectory(CacheDir); File.WriteAllText(Path.Combine(CacheDir, key + ".json"), json); } catch { }
+            _log?.Invoke($"BgMmr: leaderboard {key} {source} ({players.Count} players, {_deltas.Count} deltas)");
             return true;
         }
 
@@ -468,9 +675,11 @@ namespace HsbgCardLookup.Game
 
         private void ResetMatch()
         {
-            _players = null; _deltas = null; _fetchRegion = null; _lastSig = null;
-            _dead.Clear(); _lastTier.Clear();
-            _trackedOpponentId = 0; _combatOpponentId = 0; _lastOpponentId = 0; _wasCombat = false;
+            _players = null; _deltas = null; _ciName = null; _fetchKey = null; _lastSig = null;
+            _lastBlobFail = DateTime.MinValue;
+            _dead.Clear(); _lastTier.Clear(); _teammate.Clear();
+            _trackedOpponentId = 0; _trackedOpponentTeammateId = 0;
+            _combatOpponentId = 0; _lastOpponentId = 0; _wasCombat = false;
         }
 
         private static IEnumerable<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity> Snapshot(

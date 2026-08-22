@@ -38,6 +38,8 @@ namespace HsbgCardLookup.Ui
         public bool ShowTiers { get; set; } = true;
         public bool ShowLastOpp { get; set; } = true;
         public bool DimDead { get; set; } = true;
+        /// <summary>Duos: rows arrive team-ordered (pairs 0+1, 2+3, …) — a wider gap separates teams.</summary>
+        public bool IsDuos { get; set; }
 
         /// <summary>A move/resize gesture ended — receives the new placement fractions (xf, yf, wf).</summary>
         public Action<double, double, double> GeometryChanged;
@@ -243,8 +245,8 @@ namespace HsbgCardLookup.Ui
                 _names[i].Foreground = dim ? Dead : Brushes.White;
                 _names[i].Visibility = ShowNames ? Visibility.Visible : Visibility.Collapsed;
 
-                _ratings[i].Text = r.Rating > 0 ? r.Rating.ToString() : "8000↓";
-                _ratings[i].Foreground = dim ? Dead : (r.Rating > 0 ? UiKit.AccentBrush : Muted);
+                _ratings[i].Text = r.RatingPending ? "…" : (r.Rating > 0 ? r.Rating.ToString() : "8000↓");
+                _ratings[i].Foreground = dim ? Dead : (!r.RatingPending && r.Rating > 0 ? UiKit.AccentBrush : Muted);
                 _ratings[i].Visibility = ShowRating ? Visibility.Visible : Visibility.Collapsed;
 
                 if (ShowDeltas && r.Delta != 0 && !dim)
@@ -326,7 +328,9 @@ namespace HsbgCardLookup.Ui
             _root.Padding = new Thickness(7 * s, 4 * s, 7 * s, 4 * s);
             for (int i = 0; i < MaxSlots; i++)
             {
-                _rows[i].Margin = new Thickness(0, 1.5 * s, 0, 1.5 * s);
+                // Duos: a wider gap above rows 2/4/6 separates the team pairs.
+                double topGap = IsDuos && i > 0 && i % 2 == 0 ? 7.0 : 1.5;
+                _rows[i].Margin = new Thickness(0, topGap * s, 0, 1.5 * s);
                 _swords[i].FontSize = 11.5 * s;
                 _swords[i].Margin = new Thickness(0, 0, 3 * s, 0);
                 _names[i].FontSize = 12.5 * s;
