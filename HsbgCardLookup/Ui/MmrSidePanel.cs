@@ -46,6 +46,7 @@ namespace HsbgCardLookup.Ui
 
         private readonly Border _root;
         private readonly StackPanel _list;
+        private readonly Line[] _teamDividers = new Line[3];   // duos: dashed line between team pairs
         private readonly Grid[] _rows = new Grid[MaxSlots];
         private readonly TextBlock[] _swords = new TextBlock[MaxSlots];
         private readonly TextBlock[] _names = new TextBlock[MaxSlots];
@@ -105,6 +106,22 @@ namespace HsbgCardLookup.Ui
                 _swords[i] = sw; _names[i] = name; _ratings[i] = rating; _arrows[i] = arrow; _tiers[i] = tier;
                 _rows[i] = g;
                 _list.Children.Add(g);
+
+                // Duos: a dashed divider after every pair, so the list reads as 4 teams, not 8 solos.
+                if (i == 1 || i == 3 || i == 5)
+                {
+                    var d = new Line
+                    {
+                        X1 = 0, Y1 = 0, X2 = 1, Y2 = 0,
+                        Stretch = Stretch.Fill,
+                        Stroke = Muted, StrokeThickness = 1,
+                        StrokeDashArray = new DoubleCollection { 3, 3 },
+                        Opacity = 0.6,
+                        Visibility = Visibility.Collapsed
+                    };
+                    _teamDividers[i / 2] = d;
+                    _list.Children.Add(d);
+                }
             }
 
             var arrowPath = new Path
@@ -262,6 +279,9 @@ namespace HsbgCardLookup.Ui
                 _tiers[i].Visibility = icon != null ? Visibility.Visible : Visibility.Collapsed;
             }
 
+            for (int k = 0; k < _teamDividers.Length; k++)
+                _teamDividers[k].Visibility = IsDuos && k * 2 + 2 < n ? Visibility.Visible : Visibility.Collapsed;
+
             _root.Visibility = Visibility.Visible;
             Layout();
         }
@@ -326,11 +346,11 @@ namespace HsbgCardLookup.Ui
 
             _root.Width = w;
             _root.Padding = new Thickness(7 * s, 4 * s, 7 * s, 4 * s);
+            foreach (var d in _teamDividers)
+                d.Margin = new Thickness(2 * s, 2.5 * s, 2 * s, 1.0 * s);
             for (int i = 0; i < MaxSlots; i++)
             {
-                // Duos: a wider gap above rows 2/4/6 separates the team pairs.
-                double topGap = IsDuos && i > 0 && i % 2 == 0 ? 7.0 : 1.5;
-                _rows[i].Margin = new Thickness(0, topGap * s, 0, 1.5 * s);
+                _rows[i].Margin = new Thickness(0, 1.5 * s, 0, 1.5 * s);
                 _swords[i].FontSize = 11.5 * s;
                 _swords[i].Margin = new Thickness(0, 0, 3 * s, 0);
                 _names[i].FontSize = 12.5 * s;

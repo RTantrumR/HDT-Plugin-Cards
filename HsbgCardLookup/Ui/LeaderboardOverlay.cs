@@ -34,13 +34,14 @@ namespace HsbgCardLookup.Ui
         private const double RefW = 1920.0, RefH = 1080.0;
         private static readonly double[] RefSlotLeft = { 255.00, 252.14, 249.29, 246.43, 243.57, 240.71, 237.86, 235.00 };
         private static readonly double[] RefSlotTop = { 168.0, 260.0, 355.0, 445.0, 540.0, 633.0, 727.0, 822.0 };
-        // Duos: portraits pair up per team (rows 0+1, 2+3, 4+5, 6+7), 34 ref px apart inside a pair.
-        // Tops recalibrated 2026-08-23 from a live 1080p screenshot: the reference plugin's values
-        // ((178,212),(365,399),(552,586),(739,773)) sat ~62-70px above the actual portrait blocks
-        // (tops ≈ 248/432/617/801, step ≈ 184 not 187) — each label pair now sits ON its team's
-        // portrait block with a ~3px inset, teammate labels 34px apart as before.
+        // Duos: portraits pair up per team (rows 0+1, 2+3, 4+5, 6+7). Calibration round 2
+        // (2026-08-23, second live 1080p screenshot, measured off the team frames' bottom edges —
+        // the crispest landmark): each team block = TWO GLUED ~80px portraits (161px total), block
+        // tops 240/432/625/818 (step ~192.5 — round 1's ~184 was off, hence the per-team drift).
+        // Label 1 sits on portrait 1, label 2 is a static +80 (one portrait height) below it on
+        // portrait 2 — not 34px-stacked on the first portrait like the reference plugin had them.
         private static readonly double[] DuosRefSlotLeft = { 245.0, 245.0, 242.0, 242.0, 239.0, 239.0, 236.0, 236.0 };
-        private static readonly double[] DuosRefSlotTop = { 256.0, 290.0, 440.0, 474.0, 625.0, 659.0, 809.0, 843.0 };
+        private static readonly double[] DuosRefSlotTop = { 248.0, 328.0, 440.0, 520.0, 633.0, 713.0, 826.0, 906.0 };
         // Label grew 5px UPWARD from the original 28px (bottom edge stays put on the portrait) to fit
         // a larger, readable font. Without names it's a single line, so it shrinks to RefLabelH1 —
         // still bottom-anchored, so the rating sits where it always did.
