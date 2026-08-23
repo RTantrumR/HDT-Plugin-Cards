@@ -26,13 +26,16 @@ namespace HsbgCardLookup.Ui
     internal sealed class MmrPanelPreview
     {
         private const double FallbackW = 1920, FallbackH = 1080;
+        private const double FramePad = 14;                    // breathing room around the panel
+        private const double MinViewH = 120, MaxViewH = 360;   // the page has a ScrollViewer, but stay sane
 
         private readonly PluginConfig _config;
         private readonly double _viewW, _viewH;
 
         private readonly Border _viewport;
         private readonly Canvas _clip;
-        private readonly Canvas _stage;
+        private readonly Canvas _bgLayer;   // backdrop, kept covering the viewport
+        private readonly Canvas _stage;     // the panel, centred
         private readonly Image _backdrop;
         private readonly System.Windows.Shapes.Rectangle _gradient;
         private readonly MmrSidePanel _panel;
@@ -65,12 +68,22 @@ namespace HsbgCardLookup.Ui
                     new Point(0.3, 0), new Point(0.7, 1))
             };
 
+            // Two layers, offset independently. The panel is centred in the box for looks, which means
+            // its crop runs past the canvas edge whenever it sits near one (the default placement does).
+            // If the backdrop shared that offset it would run out and leave a bare strip, so it gets its
+            // own offset that keeps it covering the viewport. The backdrop is context, not a map of
+            // where the panel sits — arrange mode is what shows that.
+            _bgLayer = new Canvas { Width = _cw, Height = _ch, IsHitTestVisible = false };
+            _bgLayer.Children.Add(_gradient);
+            _bgLayer.Children.Add(_backdrop);
+
             _stage = new Canvas { Width = _cw, Height = _ch, IsHitTestVisible = false };
-            _stage.Children.Add(_gradient);
-            _stage.Children.Add(_backdrop);
 
             _clip = new Canvas { ClipToBounds = true, IsHitTestVisible = false };
+            _clip.Children.Add(_bgLayer);
             _clip.Children.Add(_stage);
+            // The panel sizes to its content, so re-frame whenever anything about it changes.
+            _clip.LayoutUpdated += (s, e) => UpdateCrop();
 
             _viewport = new Border
             {
@@ -123,8 +136,8 @@ namespace HsbgCardLookup.Ui
                 // "what would it look like" — but it shouldn't read as live either.
                 _viewport.Opacity = _config.ShowMmrPanel ? 1.0 : 0.45;
 
-                // Crop after the panel has laid out, so its real height is known.
-                _viewport.Dispatcher.BeginInvoke(new Action(CentreOnPanel),
+                // Re-frame after the panel has laid out, so its real size is known.
+                _viewport.Dispatcher.BeginInvoke(new Action(UpdateCrop),
                     System.Windows.Threading.DispatcherPriority.Loaded);
             }
             catch { }
@@ -163,7 +176,20 @@ namespace HsbgCardLookup.Ui
             _cw = FallbackW; _ch = FallbackH;
         }
 
-        private void CentreOnPanel()
+        /// <summary>
+        /// Frame the panel: grow the viewport to whatever the panel needs (duos is a good deal taller
+        /// than solo, and the scale is the user's) and centre it.
+        ///
+        /// The crop is deliberately NOT clamped to the canvas. Clamping is what stops a panel parked
+        /// against the screen edge — the default placement — from ever being centred; letting the crop
+        /// run past the edge keeps the panel in the middle of the box whatever its in-game position.
+        /// The cost is that the backdrop can run out before the viewport does, which the viewport's own
+        /// background covers.
+        ///
+        /// Driven from LayoutUpdated because the panel's size is content-dependent and only known after
+        /// WPF measures it; every write is guarded so this settles instead of re-triggering layout.
+        /// </summary>
+        private void UpdateCrop()
         {
             try
             {
@@ -173,10 +199,20 @@ namespace HsbgCardLookup.Ui
                 double pw = b.Width > 0 ? b.Width : 210;
                 double ph = b.Height > 0 ? b.Height : 200;
 
-                double cropX = Clamp(px + pw / 2.0 - _viewW / 2.0, 0, Math.Max(0, _cw - _viewW));
-                double cropY = Clamp(py + ph / 2.0 - _viewH / 2.0, 0, Math.Max(0, _ch - _viewH));
-                Canvas.SetLeft(_stage, -cropX);
-                Canvas.SetTop(_stage, -cropY);
+                double wantH = Clamp(ph + 2 * FramePad, MinViewH, MaxViewH);
+                if (Math.Abs(_viewport.Height - wantH) > 0.5) _viewport.Height = wantH;
+
+                double viewH = wantH;
+                double cropX = px + pw / 2.0 - _viewW / 2.0;
+                double cropY = py + ph / 2.0 - viewH / 2.0;
+                if (Math.Abs(Canvas.GetLeft(_stage) + cropX) > 0.5) Canvas.SetLeft(_stage, -cropX);
+                if (Math.Abs(Canvas.GetTop(_stage) + cropY) > 0.5) Canvas.SetTop(_stage, -cropY);
+
+                // Same view, clamped inside the canvas so the backdrop never runs out.
+                double bgX = Clamp(cropX, 0, Math.Max(0, _cw - _viewW));
+                double bgY = Clamp(cropY, 0, Math.Max(0, _ch - viewH));
+                if (Math.Abs(Canvas.GetLeft(_bgLayer) + bgX) > 0.5) Canvas.SetLeft(_bgLayer, -bgX);
+                if (Math.Abs(Canvas.GetTop(_bgLayer) + bgY) > 0.5) Canvas.SetTop(_bgLayer, -bgY);
             }
             catch { }
         }
