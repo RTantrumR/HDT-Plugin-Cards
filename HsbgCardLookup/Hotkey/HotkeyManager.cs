@@ -29,11 +29,18 @@ namespace HsbgCardLookup.Hotkey
         public event Action<Key> KeyCaptured;
 
         private bool _capturing;
+        private volatile bool _suppressed;
 
         // Capture mode (settings window active): swallow every key-down and report it via KeyCaptured,
         // so rebinding doesn't trigger the hotkeys being rebound.
         public void BeginCapture() => _capturing = true;
         public void EndCapture() => _capturing = false;
+
+        /// <summary>Stop OUR hotkeys firing without swallowing anything — used while the settings
+        /// window is focused, so F3 doesn't summon the overlay from under the dialog while ordinary
+        /// typing, Alt+Tab and system shortcuts all still reach Windows normally. Distinct from
+        /// capture mode, which really does eat every key and only runs during a rebind.</summary>
+        public void Suppress(bool on) => _suppressed = on;
 
         public HotkeyManager()
         {
@@ -79,7 +86,7 @@ namespace HsbgCardLookup.Hotkey
                         try { KeyCaptured?.Invoke(KeyInterop.KeyFromVirtualKey(vk)); } catch { }
                         return (IntPtr)1;   // swallow during rebind
                     }
-                    if (_targets.TryGetValue(vk, out Key key))
+                    if (!_suppressed && _targets.TryGetValue(vk, out Key key))
                     {
                         try { HotkeyPressed?.Invoke(key, GetForegroundProcessName()); } catch { }
                         // fall through — normal mode never swallows

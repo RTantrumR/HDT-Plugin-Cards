@@ -25,10 +25,11 @@ namespace HsbgCardLookup.Game
     /// OnUpdate thread (defensively, collections mutate on HDT threads); all canvas work is marshalled
     /// to the overlay-canvas dispatcher, and only when the resolved set actually changes.
     ///
-    /// An "arrange" mode (<see cref="SetEditMode"/>, the HDT-style "unlock overlay") shows every enabled
-    /// box as a draggable/resizable placeholder — with sample art + a dashed outline + a label — so the
-    /// HUD can be laid out before anything is acquired. NB: the canvas only renders while Hearthstone is
-    /// up (and interacts while it's foreground), so arranging needs HS running.
+    /// An "arrange" mode (<see cref="SetArrange"/>, the HDT-style "unlock overlay") shows the boxes being
+    /// positioned as draggable/resizable placeholders — with sample art + a dashed outline + a label — so
+    /// the HUD can be laid out before anything is acquired, and before the feature is even switched on.
+    /// NB: the canvas only renders while Hearthstone is up (and interacts while it's foreground), so
+    /// arranging needs HS running.
     /// </summary>
     public sealed class BgHud
     {
@@ -47,6 +48,7 @@ namespace HsbgCardLookup.Game
         private volatile string _lastSig;
         private volatile Desired _desired = new Desired();   // last game-state read (refreshed every 750ms)
         private bool _editing;                                // arrange mode owns the cards (canvas thread only)
+        private ArrangeTarget _arrange = ArrangeTarget.None;  // which feature this arrange session targets
 
         // Match-end latch: HDT keeps IsBattlegroundsMatch true through the post-game/placement (MMR)
         // screen, so we hide on the OnGameEnd event and stay hidden until a NEW match begins (a raw
@@ -130,13 +132,15 @@ namespace HsbgCardLookup.Game
         /// resizable placeholder (sample art + dashed outline + label) regardless of match state, so
         /// the HUD can be laid out with nothing acquired. Geometry persists per move/resize via the
         /// normal <see cref="HudSlot"/> path. Needs Hearthstone running (the canvas renders over it).</summary>
-        public void SetEditMode(bool on)
+        internal void SetArrange(ArrangeTarget target)
         {
             try
             {
+                bool on = target == ArrangeTarget.Trinkets || target == ArrangeTarget.Anomaly;
                 var d = on ? ReadDesired() : null;
                 Marshal(() =>
                 {
+                    _arrange = target;
                     _editing = on;
                     if (on) EnterEdit(d);
                     else
@@ -144,6 +148,8 @@ namespace HsbgCardLookup.Game
                         foreach (var s in _trinkets) s.ExitEdit();
                         _anomaly.ExitEdit();
                         _lastSig = null;
+                        // Also runs when ANOTHER feature is being arranged: Apply then hides these
+                        // cards, which is exactly what "only show what's being arranged" means.
                         Apply(ReadDesired());   // restore live cards / hide empties
                     }
                 });
@@ -151,18 +157,22 @@ namespace HsbgCardLookup.Game
             catch { }
         }
 
-        // Show placeholders for every enabled slot (canvas thread).
+        // Show placeholders for the slots being arranged (canvas thread). The feature's own on/off
+        // toggle is deliberately ignored — you can position a HUD before switching it on — but
+        // ShowExtraTrinkets still applies, because that is a COUNT, not an on/off: arranging two boxes
+        // the user has chosen not to have would just be clutter.
         private void EnterEdit(Desired d = null)
         {
             if (d == null) d = ReadDesired();
+            bool trinkets = _arrange == ArrangeTarget.Trinkets;
             for (int i = 0; i < _trinkets.Length; i++)
             {
-                if (TrinketSlotEnabled(i))
+                if (trinkets && (i < 2 || _config.ShowExtraTrinkets))
                     EnterEditSlot(_trinkets[i], d.InMatch ? d.Trinkets[i] : null,
                                   RepresentativeTrinket(greater: i == 1), TrinketLabels[i]);
                 else _trinkets[i].Hide();
             }
-            if (_config.ShowAnomaly)
+            if (_arrange == ArrangeTarget.Anomaly)
                 EnterEditSlot(_anomaly, d.InMatch ? d.Anomaly : null, RepresentativeAnomaly(), "Anomaly");
             else _anomaly.Hide();
         }
@@ -314,7 +324,8 @@ namespace HsbgCardLookup.Game
 
         // Lesser/greater (0,1) follow ShowTrinkets; the two overflow boxes (2,3) also require the
         // opt-in ShowExtraTrinkets flag (off by default — some people only want the usual pair).
-        private bool TrinketSlotEnabled(int i) => _config.ShowTrinkets && (i < 2 || _config.ShowExtraTrinkets);
+        private bool TrinketSlotEnabled(int i) =>
+            _config.ShowTrinkets && ArrangeSession.AllowsTrinkets && (i < 2 || _config.ShowExtraTrinkets);
 
         // ── Apply to canvas cards (canvas thread) ────────────────────────────────────────────────
         private void Apply(Desired d)
@@ -322,7 +333,8 @@ namespace HsbgCardLookup.Game
             if (_editing) return;   // arrange mode owns the cards; poll updates wait until it exits
             for (int i = 0; i < _trinkets.Length; i++)
                 ReconcileSlot(_trinkets[i], TrinketSlotEnabled(i) && d.InMatch && !_trinkets[i].Suppressed ? d.Trinkets[i] : null);
-            ReconcileSlot(_anomaly, _config.ShowAnomaly && d.InMatch && !_anomaly.Suppressed ? d.Anomaly : null);
+            ReconcileSlot(_anomaly, _config.ShowAnomaly && ArrangeSession.AllowsAnomaly
+                && d.InMatch && !_anomaly.Suppressed ? d.Anomaly : null);
         }
 
         // ── HUD right-click menu (canvas thread — the card's WPF event routes here) ──────────────

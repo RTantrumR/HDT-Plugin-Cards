@@ -66,7 +66,14 @@ namespace HsbgCardLookup.Config
         public bool ShowMmrLabels { get; set; } = true;
         // Surface: a separate draggable/resizable standings panel on the overlay (like a HUD card).
         public bool ShowMmrPanel { get; set; } = false;
-        // Content: player names. Off by default — streamers often don't want opponent names on screen.
+        // Content: what fills the panel's name column — "Players" (battletags), "Heroes" (the hero's
+        // card name) or "Off" (no name column at all). Defaults to Heroes: streamers usually don't want
+        // opponent battletags on screen, and a hero name is strictly more useful than a blank column.
+        // Empty means "an old config that predates this setting" — resolved in Load().
+        public string OpponentNameMode { get; set; } = "";
+        // LEGACY element (pre-0.5): the bool this replaced. Kept only so an existing config.xml still
+        // parses and migrates; Load() folds it into OpponentNameMode. Save() keeps it in sync so that
+        // rolling the DLL back to an older build still reads a sensible value. Do not read it directly.
         public bool ShowOpponentNames { get; set; } = false;
         // Content: the MMR rating itself (turn off for e.g. a names-only or tiers-only setup).
         public bool ShowMmrRating { get; set; } = true;
@@ -132,11 +139,27 @@ namespace HsbgCardLookup.Config
                 if (File.Exists(FilePath))
                 {
                     using (var fs = File.OpenRead(FilePath))
-                        return (PluginConfig)new XmlSerializer(typeof(PluginConfig)).Deserialize(fs);
+                    {
+                        var loaded = (PluginConfig)new XmlSerializer(typeof(PluginConfig)).Deserialize(fs);
+                        loaded.Migrate();
+                        return loaded;
+                    }
                 }
             }
             catch { /* fall through to defaults */ }
-            return new PluginConfig();
+            var fresh = new PluginConfig();
+            fresh.Migrate();
+            return fresh;
+        }
+
+        /// <summary>Fold retired settings into their replacements after loading. A config written by an
+        /// older build has no OpponentNameMode element, so the mode comes from the bool it replaced:
+        /// names on → "Players"; names off → "Heroes" rather than "Off", because hiding the battletag
+        /// was only ever a way to avoid showing it, not a wish for an empty column.</summary>
+        private void Migrate()
+        {
+            if (string.IsNullOrEmpty(OpponentNameMode))
+                OpponentNameMode = ShowOpponentNames ? "Players" : "Heroes";
         }
 
         public void Save()
@@ -144,6 +167,8 @@ namespace HsbgCardLookup.Config
             try
             {
                 Directory.CreateDirectory(Dir);
+                // Keep the retired bool consistent so an older build reading this file still behaves.
+                ShowOpponentNames = string.Equals(OpponentNameMode, "Players", StringComparison.OrdinalIgnoreCase);
                 using (var fs = File.Create(FilePath))
                     new XmlSerializer(typeof(PluginConfig)).Serialize(fs, this);
             }

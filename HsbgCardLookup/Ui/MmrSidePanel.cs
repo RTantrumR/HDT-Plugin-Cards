@@ -30,13 +30,14 @@ namespace HsbgCardLookup.Ui
         private const double RefW = 210;          // panel width at scale 1 (fonts are tuned to this)
         private const double MinW = 140, MaxW = 480;
         private const double DefaultXF = 0.005, DefaultYF = 0.30;
+        private const double MaxNameW = 108;      // reference px; longer names ellipsize
 
-        /// <summary>Content switches — same meaning as on <see cref="LeaderboardOverlay"/>.</summary>
-        public bool ShowNames { get; set; }
+        /// <summary>What fills the name column: "Players", "Heroes" or "Off". See
+        /// <see cref="PluginConfig.OpponentNameMode"/>.</summary>
+        public string NameMode { get; set; } = "Heroes";
         public bool ShowRating { get; set; } = true;
         public bool ShowDeltas { get; set; } = true;
         public bool ShowTiers { get; set; } = true;
-        public bool ShowLastOpp { get; set; } = true;
         public bool DimDead { get; set; } = true;
         /// <summary>Duos: rows arrive team-ordered (pairs 0+1, 2+3, …) — a wider gap separates teams.</summary>
         public bool IsDuos { get; set; }
@@ -44,20 +45,28 @@ namespace HsbgCardLookup.Ui
         /// <summary>A move/resize gesture ended — receives the new placement fractions (xf, yf, wf).</summary>
         public Action<double, double, double> GeometryChanged;
 
+        // Column order. The delta gets a column of its OWN, left of the rating, so a row with a delta
+        // can't shove the rating and tier sideways — every rating in the list starts at the same x.
+        private const int ColPlace = 0, ColName = 1, ColDelta = 2, ColRating = 3, ColTier = 4, ColCount = 5;
+
         private readonly Border _root;
-        private readonly StackPanel _list;
+        private readonly Grid _list;                           // ONE grid: columns are shared by every row
+        private readonly ColumnDefinition[] _cols = new ColumnDefinition[ColCount];
         private readonly Line[] _teamDividers = new Line[3];   // duos: dashed line between team pairs
-        private readonly Grid[] _rows = new Grid[MaxSlots];
-        private readonly TextBlock[] _swords = new TextBlock[MaxSlots];
+        private readonly TextBlock[] _places = new TextBlock[MaxSlots];        // solo: one per player
+        private readonly TextBlock[] _placeSpans = new TextBlock[MaxSlots / 2];// duos: one per team, spanning
         private readonly TextBlock[] _names = new TextBlock[MaxSlots];
         private readonly TextBlock[] _ratings = new TextBlock[MaxSlots];
         private readonly TextBlock[] _arrows = new TextBlock[MaxSlots];
         private readonly Image[] _tiers = new Image[MaxSlots];
+        private readonly FrameworkElement[][] _rowCells = new FrameworkElement[MaxSlots][];
+        private readonly bool[] _colUsed = new bool[ColCount];
         private readonly Border _handle;
         private readonly Rectangle _editOutline;
         private readonly Border _editLabel;
         private readonly DispatcherTimer _handleHide;
 
+        private readonly Canvas _host;      // null = HDT's overlay canvas
         private bool _attached;
         private bool _editing;
         private bool _hasPos;
@@ -66,49 +75,102 @@ namespace HsbgCardLookup.Ui
         private bool _dragging, _resizing, _moved;
         private Point _startCursor;
         private double _startLeft, _startTop, _startW;
+        private double _nominalW = RefW;    // drives the scale; the real width comes from the content
 
         private static readonly Brush PanelBg = Frozen(Color.FromArgb(0xDC, 0x0A, 0x0D, 0x14));
         private static readonly Brush Muted = Frozen(Color.FromRgb(0x9A, 0xA3, 0xB4));
         private static readonly Brush Dead = Frozen(Color.FromRgb(0x91, 0x91, 0x91));
         private static readonly Brush Up = Frozen(Color.FromRgb(0x4A, 0xDE, 0x80));
         private static readonly Brush Down = Frozen(Color.FromRgb(0xF8, 0x71, 0x71));
-        private static readonly Brush Swords = Frozen(Color.FromRgb(0xF5, 0xC4, 0x51));
 
-        public MmrSidePanel()
+        /// <summary>The canvas this instance lives in: HDT's game overlay by default, or a caller's own
+        /// canvas for an off-game preview. Held per instance rather than swapped globally, so a preview
+        /// can never capture the live in-match panel's attach (and vice versa) — _host is readonly and
+        /// _attached caches, so an instance is bound to one canvas for its whole life.</summary>
+        private Canvas Host => _host ?? Core.OverlayCanvas;
+
+        public MmrSidePanel() : this(null) { }
+
+        /// <param name="host">Render into this canvas instead of HDT's overlay. A hosted instance is a
+        /// passive preview: it registers no overlay hit-testing and wires no drag/resize gestures, so it
+        /// can never install the global mouse hook or write geometry back to config.</param>
+        public MmrSidePanel(Canvas host)
         {
-            _list = new StackPanel();
-            for (int i = 0; i < MaxSlots; i++)
+            _host = host;
+            // ONE grid for the whole list, so a column means the same thing on every row. Per-row
+            // grids (what this used to be) size their Auto columns independently, so a delta on one row
+            // would push that row's rating and tier out of line with the rest — the list stopped reading
+            // as columns at all.
+            _list = new Grid();
+            _cols[ColPlace] = new ColumnDefinition { Width = GridLength.Auto };
+            _cols[ColName] = new ColumnDefinition { Width = GridLength.Auto };
+            _cols[ColDelta] = new ColumnDefinition { Width = GridLength.Auto };
+            _cols[ColRating] = new ColumnDefinition { Width = GridLength.Auto };
+            _cols[ColTier] = new ColumnDefinition { Width = GridLength.Auto };
+            foreach (var c in _cols) _list.ColumnDefinitions.Add(c);
+
+            // Rows run team, team-divider, team, … so a duos place number can span its pair.
+            for (int r = 0; r < MaxSlots + _teamDividers.Length; r++)
+                _list.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            for (int t = 0; t < _placeSpans.Length; t++)
             {
-                var g = new Grid { Visibility = Visibility.Collapsed };
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                       // ⚔
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // name
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                       // rating
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                       // ▲/▼
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                       // tier
-
-                var sw = new TextBlock { Text = "⚔", Foreground = Swords, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetColumn(sw, 0); g.Children.Add(sw);
-                var name = new TextBlock
+                var span = new TextBlock
                 {
-                    Foreground = Brushes.White, FontWeight = FontWeights.SemiBold,
-                    TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap,
-                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 6, 0)
+                    Foreground = Muted, FontWeight = FontWeights.SemiBold,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextAlignment = TextAlignment.Right,
+                    Visibility = Visibility.Collapsed
                 };
-                Grid.SetColumn(name, 1); g.Children.Add(name);
-                var rating = new TextBlock { FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetColumn(rating, 2); g.Children.Add(rating);
-                var arrow = new TextBlock { FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) };
-                Grid.SetColumn(arrow, 3); g.Children.Add(arrow);
-                var tier = new Image { Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) };
-                RenderOptions.SetBitmapScalingMode(tier, BitmapScalingMode.HighQuality);
-                Grid.SetColumn(tier, 4); g.Children.Add(tier);
+                Grid.SetColumn(span, ColPlace); Grid.SetRow(span, RowOf(t * 2)); Grid.SetRowSpan(span, 2);
+                _list.Children.Add(span);
+                _placeSpans[t] = span;
 
-                _swords[i] = sw; _names[i] = name; _ratings[i] = rating; _arrows[i] = arrow; _tiers[i] = tier;
-                _rows[i] = g;
-                _list.Children.Add(g);
+                for (int k = 0; k < 2; k++)
+                {
+                    int i = t * 2 + k;
+                    int row = RowOf(i);
+
+                    var place = new TextBlock
+                    {
+                        Foreground = Muted, FontWeight = FontWeights.SemiBold,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextAlignment = TextAlignment.Right
+                    };
+                    var name = new TextBlock
+                    {
+                        Foreground = Brushes.White, FontWeight = FontWeights.SemiBold,
+                        TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    var arrow = new TextBlock
+                    {
+                        FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Right, TextAlignment = TextAlignment.Right
+                    };
+                    var rating = new TextBlock
+                    {
+                        FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Right, TextAlignment = TextAlignment.Right
+                    };
+                    var tier = new Image { Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center };
+                    RenderOptions.SetBitmapScalingMode(tier, BitmapScalingMode.HighQuality);
+
+                    Place(place, ColPlace, row);
+                    Place(name, ColName, row);
+                    Place(arrow, ColDelta, row);
+                    Place(rating, ColRating, row);
+                    Place(tier, ColTier, row);
+
+                    _places[i] = place; _names[i] = name; _arrows[i] = arrow;
+                    _ratings[i] = rating; _tiers[i] = tier;
+                    _rowCells[i] = new FrameworkElement[] { place, name, arrow, rating, tier };
+                }
 
                 // Duos: a dashed divider after every pair, so the list reads as 4 teams, not 8 solos.
-                if (i == 1 || i == 3 || i == 5)
+                if (t < _teamDividers.Length)
                 {
                     var d = new Line
                     {
@@ -119,7 +181,9 @@ namespace HsbgCardLookup.Ui
                         Opacity = 0.6,
                         Visibility = Visibility.Collapsed
                     };
-                    _teamDividers[i / 2] = d;
+                    Grid.SetRow(d, RowOf(t * 2 + 1) + 1);
+                    Grid.SetColumn(d, 0); Grid.SetColumnSpan(d, ColCount);
+                    _teamDividers[t] = d;
                     _list.Children.Add(d);
                 }
             }
@@ -181,6 +245,10 @@ namespace HsbgCardLookup.Ui
                 Child = grid
             };
 
+            // Content-driven width: re-clamp whenever it actually changes (a column switched off, a
+            // longer name, a rescale). Never during a drag — that would fight the cursor.
+            _root.SizeChanged += (s, e) => { if (!_dragging && !_resizing) ClampPosition(); };
+
             _handleHide = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
             _handleHide.Tick += (s, e) =>
             {
@@ -188,21 +256,69 @@ namespace HsbgCardLookup.Ui
                 if (!_editing && !_resizing) _handle.Visibility = Visibility.Collapsed;
             };
 
-            _handle.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: true, e); };
-            _root.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: false, e); };
-            _root.MouseMove += (s, e) => { _handle.Visibility = Visibility.Visible; _handleHide.Stop(); _handleHide.Start(); };
+            if (_host == null)
+            {
+                _handle.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: true, e); };
+                _root.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: false, e); };
+                _root.MouseMove += (s, e) => { _handle.Visibility = Visibility.Visible; _handleHide.Stop(); _handleHide.Start(); };
 
-            try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+                // Registers with HDT's hover loop so the overlay stops being click-through over this
+                // element. Meaningless for a preview, which is not in HDT's overlay at all.
+                try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+            }
         }
 
         public bool IsVisible => _attached && _root.Visibility == Visibility.Visible;
+
+        /// <summary>Keep the panel inside the canvas. Split out of Layout and also driven by the
+        /// panel's own SizeChanged, because the width now depends on the content: it isn't known until
+        /// WPF has measured, and calling UpdateLayout to force that would run a layout pass over the
+        /// WHOLE tree from inside a layout callback.</summary>
+        private void ClampPosition()
+        {
+            var canvas = Host;
+            if (canvas == null) return;
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            if (cw <= 0 || ch <= 0) return;
+            double actualW = _root.ActualWidth > 0 ? _root.ActualWidth : _nominalW;
+            Canvas.SetLeft(_root, Clamp(_xf * cw, 0, Math.Max(0, cw - actualW)));
+            Canvas.SetTop(_root, Clamp(_yf * ch, 0, Math.Max(0, ch * 0.97)));
+            if (!_hasPos) _hasPos = true;
+        }
+
+        // Grid row for player slot i: two players per team, then a divider row between teams.
+        private static int RowOf(int slot) => slot + slot / 2;
+
+        private void SetRowVisible(int i, bool on)
+        {
+            var v = on ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var c in _rowCells[i]) c.Visibility = v;
+        }
+
+        private void Place(UIElement el, int col, int row)
+        {
+            Grid.SetColumn(el, col); Grid.SetRow(el, row);
+            _list.Children.Add(el);
+        }
+
+        /// <summary>Where the panel currently sits in its canvas, once laid out (zero-size until then).</summary>
+        public Rect Bounds
+        {
+            get
+            {
+                double x = Canvas.GetLeft(_root), y = Canvas.GetTop(_root);
+                if (double.IsNaN(x)) x = 0;
+                if (double.IsNaN(y)) y = 0;
+                return new Rect(x, y, _root.ActualWidth, _root.ActualHeight);
+            }
+        }
 
         // ── Attach / show / hide (canvas thread) ─────────────────────────────────────────────────
 
         private bool Attach()
         {
             if (_attached) return true;
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return false;
             canvas.Children.Add(_root);
             canvas.SizeChanged += OnCanvasSizeChanged;
@@ -227,7 +343,7 @@ namespace HsbgCardLookup.Ui
             EndGesture(persist: false);
             try
             {
-                var canvas = Core.OverlayCanvas;
+                var canvas = Host;
                 if (canvas != null)
                 {
                     canvas.SizeChanged -= OnCanvasSizeChanged;
@@ -242,25 +358,36 @@ namespace HsbgCardLookup.Ui
         /// content part switched off — hides it.</summary>
         public void SetStandings(IReadOnlyList<LeaderboardOverlay.Row> rows)
         {
-            bool anyContent = ShowNames || ShowRating || ShowDeltas || ShowTiers || ShowLastOpp;
+            bool showNames = !string.Equals(NameMode, "Off", StringComparison.OrdinalIgnoreCase);
+            bool heroes = string.Equals(NameMode, "Heroes", StringComparison.OrdinalIgnoreCase);
+            // The place number is always worth showing here: unlike the portrait labels, this list is
+            // detached from the board, so nothing else says who is 1st. It is not part of anyContent
+            // for the same reason a row of bare numbers is not a standings panel.
+            // While arranging, the box shows regardless — otherwise turning every part off would make
+            // Arrange bring the game forward and then display nothing to position.
+            bool anyContent = showNames || ShowRating || ShowDeltas || ShowTiers || _editing;
             int n = rows?.Count ?? 0;
             if (n == 0 || !anyContent || !Attach()) { Hide(); return; }
 
             for (int i = 0; i < MaxSlots; i++)
             {
-                if (i >= n) { _rows[i].Visibility = Visibility.Collapsed; continue; }
+                if (i >= n) { SetRowVisible(i, false); continue; }
                 var r = rows[i];
                 bool dim = DimDead && r.IsDead;
 
-                _rows[i].Visibility = Visibility.Visible;
-                _rows[i].Opacity = dim ? 0.6 : 1.0;
+                SetRowVisible(i, true);
+                foreach (var c in _rowCells[i]) c.Opacity = dim ? 0.6 : 1.0;
 
-                _swords[i].Visibility = ShowLastOpp ? Visibility.Visible : Visibility.Collapsed;
-                _swords[i].Opacity = r.IsLastOpponent ? 1.0 : 0.0;   // keeps the column aligned
+                // Solo: a number per row. Duos: one number spanning the pair (set below), so the
+                // per-row ones stand down rather than repeating the team's place twice.
+                _places[i].Text = r.Place >= 1 ? r.Place.ToString() : "";
+                _places[i].Foreground = dim ? Dead : Muted;
+                _places[i].Opacity = dim ? 0.6 : 1.0;
+                _places[i].Visibility = IsDuos ? Visibility.Collapsed : Visibility.Visible;
 
-                _names[i].Text = r.Name;
+                _names[i].Text = heroes ? (r.HeroName ?? "") : (r.Name ?? "");
                 _names[i].Foreground = dim ? Dead : Brushes.White;
-                _names[i].Visibility = ShowNames ? Visibility.Visible : Visibility.Collapsed;
+                _names[i].Visibility = showNames ? Visibility.Visible : Visibility.Collapsed;
 
                 _ratings[i].Text = r.RatingPending ? "…" : (r.Rating > 0 ? r.Rating.ToString() : "8000↓");
                 _ratings[i].Foreground = dim ? Dead : (!r.RatingPending && r.Rating > 0 ? UiKit.AccentBrush : Muted);
@@ -279,8 +406,31 @@ namespace HsbgCardLookup.Ui
                 _tiers[i].Visibility = icon != null ? Visibility.Visible : Visibility.Collapsed;
             }
 
+            for (int t = 0; t < _placeSpans.Length; t++)
+            {
+                int first = t * 2;
+                bool live = IsDuos && first < n;
+                _placeSpans[t].Visibility = live ? Visibility.Visible : Visibility.Collapsed;
+                if (!live) continue;
+                var r = rows[first];
+                _placeSpans[t].Text = r.Place >= 1 ? r.Place.ToString() : "";
+                // Dim the team number only when the WHOLE team is out — one dead teammate does not
+                // knock the team off the board.
+                bool teamDead = DimDead && r.IsDead && (first + 1 >= n || rows[first + 1].IsDead);
+                _placeSpans[t].Foreground = teamDead ? Dead : Muted;
+                _placeSpans[t].Opacity = teamDead ? 0.6 : 1.0;
+            }
+
             for (int k = 0; k < _teamDividers.Length; k++)
                 _teamDividers[k].Visibility = IsDuos && k * 2 + 2 < n ? Visibility.Visible : Visibility.Collapsed;
+
+            // A switched-off part gives its column back rather than leaving a gap: the panel sizes to
+            // its content, so dropping the names really does make it narrower.
+            _colUsed[ColPlace] = true;
+            _colUsed[ColName] = showNames;
+            _colUsed[ColDelta] = ShowDeltas;
+            _colUsed[ColRating] = ShowRating;
+            _colUsed[ColTier] = ShowTiers;
 
             _root.Visibility = Visibility.Visible;
             Layout();
@@ -308,20 +458,27 @@ namespace HsbgCardLookup.Ui
             }
         }
 
-        private static List<LeaderboardOverlay.Row> SampleRows()
+        internal static List<LeaderboardOverlay.Row> SampleRows() => SampleRows(false);
+
+        /// <param name="duos">Duos standings: rows arrive team-ordered and each PAIR shares one
+        /// leaderboard place, which is what the spanning place number in the list renders.</param>
+        internal static List<LeaderboardOverlay.Row> SampleRows(bool duos)
         {
             var outp = new List<LeaderboardOverlay.Row>();
             string[] names = { "Sevel", "DoGBiscuit", "Saphirel", "Maks7k", "Beterbabbit", "Pockyplays", "XiaoT", "Fasteddyhaha" };
+            string[] heroes = { "Sire Denathrius", "Rafaam", "Queen Azshara", "Cariel Roame",
+                                "The Curator", "Illidan Stormrage", "Tess Greymane", "Reno Jackson" };
             int[] ratings = { 14872, 13561, 12208, 11440, 10653, 9781, 8944, 0 };
             for (int i = 0; i < names.Length; i++)
                 outp.Add(new LeaderboardOverlay.Row
                 {
                     Name = names[i],
+                    HeroName = heroes[i],
+                    Place = duos ? i / 2 + 1 : i + 1,
                     Rating = ratings[i],
                     Delta = i == 1 ? 213 : i == 4 ? -96 : 0,
                     TavernTier = 1 + (i * 5) % 7,
-                    IsDead = i == 7,
-                    IsLastOpponent = i == 2
+                    IsDead = duos ? i >= 6 : i == 7
                 });
             return outp;
         }
@@ -335,48 +492,68 @@ namespace HsbgCardLookup.Ui
 
         private void Layout()
         {
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
 
             if (_wf <= 0) _wf = RefW / cw;
+            // _wf keeps its old meaning (a nominal width fraction) so saved placements still scale the
+            // same, but it now drives SCALE only — the panel's actual width comes from its content, so
+            // switching a column off genuinely narrows it instead of leaving dead space.
             double w = Clamp(_wf * cw, MinW, MaxW);
             double s = w / RefW;
+            _nominalW = w;
 
-            _root.Width = w;
             _root.Padding = new Thickness(7 * s, 4 * s, 7 * s, 4 * s);
             foreach (var d in _teamDividers)
                 d.Margin = new Thickness(2 * s, 2.5 * s, 2 * s, 1.0 * s);
+            // Column gaps are LEFT margins, never right: a collapsed column then takes its gap with
+            // it, and the last visible column never leaves a trailing strip of dead space.
+            foreach (var span in _placeSpans)
+            {
+                span.FontSize = 13.5 * s;
+                span.MinWidth = 13 * s;
+                span.Margin = new Thickness(0);
+            }
             for (int i = 0; i < MaxSlots; i++)
             {
-                _rows[i].Margin = new Thickness(0, 1.5 * s, 0, 1.5 * s);
-                _swords[i].FontSize = 11.5 * s;
-                _swords[i].Margin = new Thickness(0, 0, 3 * s, 0);
+                _places[i].FontSize = 11.5 * s;
+                _places[i].MinWidth = 13 * s;   // so 1..8 all occupy one column width
+                _places[i].Margin = new Thickness(0, 1.5 * s, 0, 1.5 * s);
                 _names[i].FontSize = 12.5 * s;
-                _ratings[i].FontSize = 12.5 * s;
+                _names[i].Margin = new Thickness(7 * s, 1.5 * s, 0, 1.5 * s);
+                // Cap the name rather than letting it widen the panel without limit: a long battletag
+                // is trimmed with an ellipsis instead of pushing the rating off to the right.
+                _names[i].MaxWidth = MaxNameW * s;
                 _arrows[i].FontSize = 10.5 * s;
+                _arrows[i].Margin = new Thickness(9 * s, 1.5 * s, 0, 1.5 * s);
+                _ratings[i].FontSize = 12.5 * s;
+                _ratings[i].Margin = new Thickness(6 * s, 1.5 * s, 0, 1.5 * s);
                 _tiers[i].Height = 20 * s;
+                _tiers[i].Margin = new Thickness(6 * s, 1.5 * s, 0, 1.5 * s);
             }
 
-            double left = Clamp(_xf * cw, 0, Math.Max(0, cw - w));
-            double top = Clamp(_yf * ch, 0, Math.Max(0, ch * 0.97));
-            Canvas.SetLeft(_root, left);
-            Canvas.SetTop(_root, top);
-            if (!_hasPos) _hasPos = true;
+            // Collapsing the ColumnDefinition itself (not just the cells) is what actually reclaims the
+            // space — an Auto column with only Collapsed children still keeps any margin its children own.
+            for (int c = 0; c < ColCount; c++)
+                _cols[c].Width = _colUsed[c] ? GridLength.Auto : new GridLength(0);
+
+            ClampPosition();
         }
 
         // ── Move / resize gestures (LL mouse hook, installed only for the gesture) ───────────────
 
         private void BeginGesture(bool resize, MouseButtonEventArgs e)
         {
+            if (_host != null) return;   // preview: never install the global mouse hook
             if (!_attached || _dragging || _resizing) return;
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return;
             try { _startCursor = e.GetPosition(canvas); } catch { return; }
             _startLeft = Canvas.GetLeft(_root);
             _startTop = Canvas.GetTop(_root);
-            _startW = _root.Width;
+            _startW = _nominalW;
             if (double.IsNaN(_startLeft) || double.IsNaN(_startTop) || double.IsNaN(_startW)) return;
             _moved = false;
             _dragging = !resize;
@@ -386,7 +563,7 @@ namespace HsbgCardLookup.Ui
 
         private void OnGestureMove()
         {
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) { EndGesture(persist: false); return; }
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
@@ -403,12 +580,13 @@ namespace HsbgCardLookup.Ui
 
             if (_dragging)
             {
-                Canvas.SetLeft(_root, Clamp(_startLeft + dx, 0, Math.Max(0, cw - _root.Width)));
+                Canvas.SetLeft(_root, Clamp(_startLeft + dx, 0, Math.Max(0, cw - _root.ActualWidth)));
                 Canvas.SetTop(_root, Clamp(_startTop + dy, 0, Math.Max(0, ch - _root.ActualHeight)));
             }
             else if (_resizing)
             {
-                // Width-only resize anchored at the top-left; fonts rescale via Layout.
+                // Drag right to scale up: the panel has no fixed width any more, so this drives the
+                // nominal width that Layout turns into the scale factor.
                 _wf = Clamp(_startW + dx, MinW, MaxW) / cw;
                 Layout();
             }
@@ -421,13 +599,13 @@ namespace HsbgCardLookup.Ui
             RemoveHook();
             if (!persist || !_moved) return;
 
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
             _xf = Canvas.GetLeft(_root) / cw;
             _yf = Canvas.GetTop(_root) / ch;
-            _wf = _root.Width / cw;
+            _wf = _nominalW / cw;
             try { GeometryChanged?.Invoke(_xf, _yf, _wf); } catch { }
         }
 

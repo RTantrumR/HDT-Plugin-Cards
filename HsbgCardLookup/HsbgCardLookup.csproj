@@ -42,6 +42,7 @@
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
     <!-- Folder picker for the art-cache-dir setting (framework assembly; not redistributed). -->
+    <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
     <!-- WPF: needed now because IPlugin.MenuItem is System.Windows.Controls.MenuItem -->
     <Reference Include="System.Xaml" />
@@ -111,6 +112,9 @@
     <Compile Include="Ui\MmrSidePanel.cs" />
     <Compile Include="Ui\HudContextMenu.cs" />
     <Compile Include="Ui\HudCanvasCard.cs" />
+    <Compile Include="Ui\ArrangeSession.cs" />
+    <Compile Include="Ui\ArrangeBanner.cs" />
+    <Compile Include="Ui\MmrPanelPreview.cs" />
     <Compile Include="Ui\HsGeometry.cs" />
     <Compile Include="Game\BgHud.cs" />
     <Compile Include="Game\MatchRecorder.cs" />

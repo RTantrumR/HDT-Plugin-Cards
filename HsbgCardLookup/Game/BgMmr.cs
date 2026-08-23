@@ -105,12 +105,13 @@ namespace HsbgCardLookup.Game
                 // ("D" = duos layout, "~" = blob still pending — rows render "…" until it loads).
                 string flags = (isDuos ? "D" : "") + (_players == null ? "~" : "")
                     + (_config.ShowMmrLabels ? "L" : "") + (_config.ShowMmrPanel ? "P" : "")
-                    + (_config.ShowOpponentNames ? "n" : "") + (_config.ShowMmrRating ? "r" : "")
+                    + "n" + _config.OpponentNameMode + (_config.ShowMmrRating ? "r" : "")
                     + (_config.ShowMmrDeltas ? "a" : "") + "t" + _config.TavernTierMode
                     + (_config.ShowLastOpponent ? "o" : "") + (_config.DimDeadPlayers ? "d" : "");
                 string sig = show
                     ? flags + "|" + string.Join(",", rows.Select(r =>
-                        r.Name + "=" + r.Rating + "/" + r.Delta + "/" + r.TavernTier +
+                        r.Place + ":" + r.Name + "/" + r.HeroName +
+                        "=" + r.Rating + "/" + r.Delta + "/" + r.TavernTier +
                         (r.IsDead ? "d" : "") + (r.IsLastOpponent ? "l" : "") + (r.IsCurrentOpponent ? "c" : "")))
                     : "0";
                 if (sig == _lastSig) return;
@@ -136,26 +137,28 @@ namespace HsbgCardLookup.Game
             });
         }
 
-        /// <summary>Arrange mode (shared with the HUD's "Arrange…" button): show the standings panel
-        /// with sample data so it can be placed/resized out of a match. Needs Hearthstone running.</summary>
-        public void SetEditMode(bool on)
+        /// <summary>Arrange mode: show the standings panel with sample data so it can be placed and
+        /// resized out of a match. Needs Hearthstone running (the canvas only draws over the game).
+        /// The panel is shown even when its own toggle is off, so a layout can be set up first; the
+        /// portrait labels drop for the duration, since only the arranged feature stays on screen.</summary>
+        internal void SetArrange(ArrangeTarget target)
         {
             Marshal(() =>
             {
+                bool on = target == ArrangeTarget.MmrPanel;
                 _editing = on;
-                bool enabled = _config.ShowOpponentMmr && _config.ShowMmrPanel;
-                if (on && !enabled) return;              // panel surface off → nothing to arrange
                 if (on)
                 {
+                    _overlay?.HideAll();     // don't wait for the next poll to clear the labels
                     EnsurePanel();
                     _panel.IsDuos = false;   // sample standings are a solo board
                     SyncPanelFlags();
                     _panel.SetEditMode(true);
                 }
-                else if (_panel != null)
+                else
                 {
-                    _panel.SetEditMode(false);
-                    _lastSig = null;                     // next poll restores live standings if any
+                    _panel?.SetEditMode(false);
+                    _lastSig = null;         // next poll restores live standings / labels if any
                 }
             });
         }
@@ -212,6 +215,11 @@ namespace HsbgCardLookup.Game
                         try { if (e.HasTag(GameTag.HEALTH) && e.Health <= 0) _dead.Add(pid); } catch { }
                     }
 
+                    // The hero name is read unconditionally: the panel can display it in place of the
+                    // player name (streamer mode), not just when there is no battletag to show.
+                    string heroName = null;
+                    try { heroName = e.Card?.Name; } catch { }
+
                     string name = heroToName.TryGetValue(NormHero(cid), out var n) ? n : null;
                     int rating = 0, delta = 0; bool pending = _players == null;
                     if (name != null)
@@ -222,13 +230,14 @@ namespace HsbgCardLookup.Game
                     {
                         // No battletag (bot / blank-name lobby slot) → fall back to the hero name; such
                         // players are never on the leaderboard (8000↓).
-                        try { name = e.Card?.Name; } catch { }
-                        if (string.IsNullOrEmpty(name)) name = "?";
+                        name = string.IsNullOrEmpty(heroName) ? "?" : heroName;
                     }
 
                     var row = new LeaderboardOverlay.Row
                     {
                         Name = name,
+                        HeroName = heroName,
+                        Place = place,
                         Rating = rating,
                         RatingPending = pending,
                         Delta = delta,
@@ -373,6 +382,8 @@ namespace HsbgCardLookup.Game
                     outp.Add(new LeaderboardOverlay.Row
                     {
                         Name = name,
+                        HeroName = p.HeroName,
+                        Place = p.Place,
                         Rating = rating,
                         RatingPending = pending,
                         Delta = delta,
@@ -475,6 +486,15 @@ namespace HsbgCardLookup.Game
                 _overlay.IsDuos = isDuos;
                 bool any = rows != null && rows.Count > 0;
 
+                // Arranging: only the feature being positioned is on screen. The panel keeps its own
+                // _editing path below (it IS the thing being arranged when AllowsMmrPanel is true).
+                if (ArrangeSession.IsActive)
+                {
+                    if (!ArrangeSession.AllowsMmrLabels) _overlay.HideAll();
+                    if (!ArrangeSession.AllowsMmrPanel) _panel?.Hide();
+                    return;   // when the panel IS the target, _editing owns what it shows
+                }
+
                 // Surface 1: the portrait-anchored parts — the MMR/name label box (gated by
                 // ShowMmrLabels), the tavern-tier icons (their own location axis: TavernTierMode
                 // Portraits/Panel/Both/Off) and the ⚔ marker are all INDEPENDENT, so e.g. tiers can
@@ -483,7 +503,8 @@ namespace HsbgCardLookup.Game
                 bool portraitAny = _config.ShowMmrLabels || TiersOnPortraits || _config.ShowLastOpponent;
                 if (any && portraitAny)
                 {
-                    _overlay.ShowNames = _config.ShowMmrLabels && _config.ShowOpponentNames;
+                    _overlay.ShowNames = _config.ShowMmrLabels
+                        && string.Equals(_config.OpponentNameMode, "Players", StringComparison.OrdinalIgnoreCase);
                     _overlay.ShowRating = _config.ShowMmrLabels && _config.ShowMmrRating;
                     _overlay.ShowDeltas = _config.ShowMmrLabels && _config.ShowMmrDeltas;
                     _overlay.ShowTiers = TiersOnPortraits;
@@ -523,36 +544,36 @@ namespace HsbgCardLookup.Game
 
         private void SyncPanelFlags()
         {
-            _panel.ShowNames = _config.ShowOpponentNames;
+            _panel.NameMode = _config.OpponentNameMode;
             _panel.ShowRating = _config.ShowMmrRating;
             _panel.ShowDeltas = _config.ShowMmrDeltas;
             _panel.ShowTiers = TiersInPanel;
-            _panel.ShowLastOpp = _config.ShowLastOpponent;
             _panel.DimDead = _config.DimDeadPlayers;
         }
 
         // TavernTierMode ("Off"/"Portraits"/"Panel"/"Both"; unknown/empty = Both) → per-surface bools.
-        private bool TiersOnPortraits
+        /// <summary>Where tavern-tier icons go, resolved from TavernTierMode. Static so anything that
+        /// renders the same surfaces (the settings preview) reads the axis through this one rule instead
+        /// of re-implementing it and drifting.</summary>
+        internal static bool TiersOnPortraitsFor(PluginConfig config)
         {
-            get
-            {
-                var m = _config.TavernTierMode;
-                return string.IsNullOrEmpty(m)
-                    || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(m, "Portraits", StringComparison.OrdinalIgnoreCase);
-            }
+            var m = config.TavernTierMode;
+            return string.IsNullOrEmpty(m)
+                || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m, "Portraits", StringComparison.OrdinalIgnoreCase);
         }
 
-        private bool TiersInPanel
+        private bool TiersOnPortraits => TiersOnPortraitsFor(_config);
+
+        internal static bool TiersInPanelFor(PluginConfig config)
         {
-            get
-            {
-                var m = _config.TavernTierMode;
-                return string.IsNullOrEmpty(m)
-                    || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase);
-            }
+            var m = config.TavernTierMode;
+            return string.IsNullOrEmpty(m)
+                || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase);
         }
+
+        private bool TiersInPanel => TiersInPanelFor(_config);
 
         private void HideIfShown()
         {

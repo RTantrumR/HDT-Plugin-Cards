@@ -35,6 +35,7 @@ namespace HsbgCardLookup
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
         private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
+        private Ui.ArrangeBanner _arrangeBanner;                  // in-game strip shown while positioning
         private Ui.SearchButton _searchButton;                    // in-game 🔍 button by the card-list book
         private SettingsWindow _settings;
 #if DEBUG
@@ -425,10 +426,40 @@ namespace HsbgCardLookup
             RewireHotkeys();
             _overlayLarge?.RefreshPool();   // pick up a Show-Duos change live
             _floating?.OnSettingChanged();  // reconcile floating-card visibility (Hide-with-app toggle)
+            ReapplyFeatures();
+        }
+
+        // Re-evaluate every canvas feature against the current settings AND the current arrange
+        // session. Split out of ApplySettings so entering/leaving arrange can reuse it WITHOUT
+        // _config.Save() — that separation is what keeps a temporary force-on out of config.xml.
+        private void ReapplyFeatures()
+        {
             _bgHud?.OnSettingsChanged();    // show/hide the trinkets/anomaly HUD per its toggles
             _bgMmr?.OnSettingsChanged();    // opponent-MMR reader on/off
             _darkGifts?.OnSettingsChanged(); // Dark Gift hover panel on/off
             _searchButton?.OnSettingsChanged(); // in-game search button on/off
+        }
+
+        // Enter/leave arrange mode for ONE feature. Everything else on the canvas stands down for the
+        // duration (see ArrangeSession), and Hearthstone is brought forward because HDT only draws its
+        // overlay while the game has focus — otherwise the user would click Arrange and see nothing.
+        private void SetArrangeMode(Ui.ArrangeTarget target)
+        {
+            Ui.ArrangeSession.Set(target);
+            if (target != Ui.ArrangeTarget.None)
+            {
+                // HDT's own helper: it restores a minimized window and satisfies Windows' foreground
+                // lock, which a bare SetForegroundWindow from a background process does not.
+                try { Hearthstone_Deck_Tracker.User32.BringHsToForeground(); } catch { }
+            }
+            _bgHud?.SetArrange(target);
+            _bgMmr?.SetArrange(target);
+            ReapplyFeatures();
+
+            // A Done button on the overlay itself: clicking back into the settings window would take
+            // focus off Hearthstone, and HDT hides the whole overlay the moment that happens.
+            if (_arrangeBanner == null) _arrangeBanner = new Ui.ArrangeBanner(() => _settings?.EndArrangeFromOverlay());
+            _arrangeBanner.Show(target);
         }
 
         public void OnUnload()
@@ -438,6 +469,8 @@ namespace HsbgCardLookup
             _ui?.Invoke(() =>
             {
                 _settings?.Close(); _settings = null;
+                Ui.ArrangeSession.Set(Ui.ArrangeTarget.None);   // never leave a session latched
+                _arrangeBanner?.Close(); _arrangeBanner = null;
                 _floating?.CloseAll();
                 _bgHud?.CloseAll();
                 _bgMmr?.CloseAll();
@@ -480,12 +513,11 @@ namespace HsbgCardLookup
         // icon — both on the UI thread.
         private void OpenSettings()
         {
-            if (_settings != null) { _settings.Activate(); return; }
-            _settings = new SettingsWindow(_config, _hotkey, ApplySettings, on =>
-            {
-                _bgHud?.SetEditMode(on);
-                _bgMmr?.SetEditMode(on);   // the MMR standings panel arranges alongside the HUD boxes
-            }, Version.ToString(), CheckForUpdatesInteractive,
+            // Show(), not just Activate(): the window hides itself while a HUD is being arranged, and
+            // Activate() alone would do nothing visible.
+            if (_settings != null) { _settings.Show(); _settings.Activate(); return; }
+            _settings = new SettingsWindow(_config, _hotkey, ApplySettings, SetArrangeMode,
+            Version.ToString(), CheckForUpdatesInteractive,
             n => OpenDownloadPage(n?.Url), SkipVersion);
             _settings.Closed += (s, e) => _settings = null;
             _settings.Show();

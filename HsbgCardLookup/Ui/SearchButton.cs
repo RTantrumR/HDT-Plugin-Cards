@@ -84,7 +84,8 @@ namespace HsbgCardLookup.Ui
             _lastPoll = now;
 
             bool show = false;
-            try { show = _config.ShowSearchButton && Core.Game != null && Core.Game.IsBattlegroundsMatch; }
+            try { show = _config.ShowSearchButton && ArrangeSession.AllowsSearchButton
+                       && Core.Game != null && Core.Game.IsBattlegroundsMatch; }
             catch { }
 
             string sig = show ? "1" : "0";

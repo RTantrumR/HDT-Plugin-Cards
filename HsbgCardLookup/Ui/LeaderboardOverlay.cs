@@ -19,6 +19,8 @@ namespace HsbgCardLookup.Ui
         public sealed class Row
         {
             public string Name;
+            public string HeroName;     // hero card name — the panel shows it when player names are hidden
+            public int Place;           // leaderboard place; in duos both teammates share one
             public int Rating;          // 0 = below the leaderboard cutoff (shown as 8000↓)
             public bool RatingPending;  // leaderboard blob not loaded yet → show "…" instead of 8000↓
             public int Delta;

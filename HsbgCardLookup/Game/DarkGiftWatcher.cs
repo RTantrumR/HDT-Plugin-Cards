@@ -92,7 +92,7 @@ namespace HsbgCardLookup.Game
         {
             try
             {
-                if (!_config.ShowDarkGifts) { HideIfShown(); return; }
+                if (!_config.ShowDarkGifts || !ArrangeSession.AllowsDarkGifts) { HideIfShown(); return; }
 
                 // New-match reset. Primary signal: HDT's OnGameStart event (a fast requeue can go
                 // match→match without IsBattlegroundsMatch ever dipping false, which left the _ended
@@ -223,7 +223,7 @@ namespace HsbgCardLookup.Game
 
         public void OnSettingsChanged()
         {
-            if (!_config.ShowDarkGifts) { HideIfShown(); return; }
+            if (!_config.ShowDarkGifts || !ArrangeSession.AllowsDarkGifts) { HideIfShown(); return; }
             _lastSig = null;   // the display mode may have changed → re-render on the next poll
         }
 
