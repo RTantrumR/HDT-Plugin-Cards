@@ -61,9 +61,12 @@ namespace HsbgCardLookup.Ui
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
                 ClipToBounds = true,
+                // Subtle on purpose: this now spans the whole box, where it used to be a narrow crop of
+                // a screen-wide gradient and so read as almost flat. A strong ramp here competes with
+                // the panel, which is the thing being judged.
                 Background = new LinearGradientBrush(
-                    Color.FromRgb(0x23, 0x2C, 0x3C), Color.FromRgb(0x0A, 0x0D, 0x14),
-                    new Point(0.3, 0), new Point(0.7, 1)),
+                    Color.FromRgb(0x18, 0x1F, 0x2C), Color.FromRgb(0x0D, 0x11, 0x19),
+                    new Point(0.35, 0), new Point(0.65, 1)),
                 Margin = new Thickness(0, 2, 0, 10),
                 Child = _clip
             };
@@ -167,15 +170,21 @@ namespace HsbgCardLookup.Ui
                 double ph = b.Height > 0 ? b.Height : 200;
 
                 double wantH = Clamp(ph + 2 * FramePad, MinViewH, MaxViewH);
-                if (Math.Abs(_viewport.Height - wantH) > 0.5) _viewport.Height = wantH;
+                if (Changed(_viewport.Height, wantH)) _viewport.Height = wantH;
 
                 double cropX = px + pw / 2.0 - _viewW / 2.0;
                 double cropY = py + ph / 2.0 - wantH / 2.0;
-                if (Math.Abs(Canvas.GetLeft(_stage) + cropX) > 0.5) Canvas.SetLeft(_stage, -cropX);
-                if (Math.Abs(Canvas.GetTop(_stage) + cropY) > 0.5) Canvas.SetTop(_stage, -cropY);
+                if (Changed(Canvas.GetLeft(_stage), -cropX)) Canvas.SetLeft(_stage, -cropX);
+                if (Changed(Canvas.GetTop(_stage), -cropY)) Canvas.SetTop(_stage, -cropY);
             }
             catch { }
         }
+
+        /// <summary>Has this layout value actually moved? Unset Canvas.Left/Top read back as NaN, and
+        /// EVERY comparison against NaN is false — so a plain "difference > epsilon" guard silently
+        /// skips the FIRST write and the panel never gets positioned at all.</summary>
+        private static bool Changed(double current, double wanted) =>
+            double.IsNaN(current) || Math.Abs(current - wanted) > 0.5;
 
         private static double Clamp(double v, double lo, double hi) => v < lo ? lo : (v > hi ? hi : v);
     }
