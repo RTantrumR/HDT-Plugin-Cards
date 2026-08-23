@@ -34,14 +34,15 @@ namespace HsbgCardLookup.Ui
         private const double RefW = 1920.0, RefH = 1080.0;
         private static readonly double[] RefSlotLeft = { 255.00, 252.14, 249.29, 246.43, 243.57, 240.71, 237.86, 235.00 };
         private static readonly double[] RefSlotTop = { 168.0, 260.0, 355.0, 445.0, 540.0, 633.0, 727.0, 822.0 };
-        // Duos: portraits pair up per team (rows 0+1, 2+3, 4+5, 6+7). Calibration round 2
-        // (2026-08-23, second live 1080p screenshot, measured off the team frames' bottom edges —
-        // the crispest landmark): each team block = TWO GLUED ~80px portraits (161px total), block
-        // tops 240/432/625/818 (step ~192.5 — round 1's ~184 was off, hence the per-team drift).
-        // Label 1 sits on portrait 1, label 2 is a static +80 (one portrait height) below it on
-        // portrait 2 — not 34px-stacked on the first portrait like the reference plugin had them.
+        // Duos: portraits pair up per team (rows 0+1, 2+3, 4+5, 6+7), each team block = TWO GLUED
+        // 80px portraits. Geometry solved 2026-08-23 (round 3) against a live 1080p frame whose
+        // crop offset was DERIVED from our own 8 rendered labels, not eyeballed — the team frames'
+        // bottom borders sit at screen y 363/555/749, giving portrait tops 203/395/588/781
+        // (block step 192.5) and +80 for the second portrait. Values below = portraitTop + 9, so
+        // that after the layout's bottom-anchoring (−RefLabelUp) each label lands 4px inside the
+        // TOP of its own portrait (user-chosen; rounds 1-2 sat ~36px low, i.e. near the bottom).
         private static readonly double[] DuosRefSlotLeft = { 245.0, 245.0, 242.0, 242.0, 239.0, 239.0, 236.0, 236.0 };
-        private static readonly double[] DuosRefSlotTop = { 248.0, 328.0, 440.0, 520.0, 633.0, 713.0, 826.0, 906.0 };
+        private static readonly double[] DuosRefSlotTop = { 212.0, 292.0, 404.0, 484.0, 597.0, 677.0, 790.0, 870.0 };
         // Label grew 5px UPWARD from the original 28px (bottom edge stays put on the portrait) to fit
         // a larger, readable font. Without names it's a single line, so it shrinks to RefLabelH1 —
         // still bottom-anchored, so the rating sits where it always did.
