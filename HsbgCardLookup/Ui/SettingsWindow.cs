@@ -317,6 +317,14 @@ namespace HsbgCardLookup.Ui
         {
             var stack = NewPage("Trinket HUD", sub: true);
 
+            stack.Children.Add(PowerRow("Show during a match", () => _config.ShowTrinkets, v =>
+            {
+                _config.ShowTrinkets = v;
+                _status.Text = v ? "Trinket HUD on." : "Trinket HUD off.";
+                Changed();
+                UpdateArrangeRow();
+            }));
+
             stack.Children.Add(new TextBlock
             {
                 Text = "A box appears for each trinket you are actually holding. That is usually two, but "
@@ -344,6 +352,14 @@ namespace HsbgCardLookup.Ui
         {
             var stack = NewPage("Anomaly HUD", sub: true);
 
+            stack.Children.Add(PowerRow("Show during a match", () => _config.ShowAnomaly, v =>
+            {
+                _config.ShowAnomaly = v;
+                _status.Text = v ? "Anomaly HUD on." : "Anomaly HUD off.";
+                Changed();
+                UpdateArrangeRow();
+            }));
+
             stack.Children.Add(HudPreviewBlock(isAnomaly: true));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.Anomaly, "Position the anomaly box"));
@@ -361,6 +377,14 @@ namespace HsbgCardLookup.Ui
         private void BuildMmr()
         {
             var stack = NewPage("Opponents' MMR", sub: true);
+
+            stack.Children.Add(PowerRow("Show during a match", () => _config.ShowOpponentMmr, v =>
+            {
+                _config.ShowOpponentMmr = v;
+                _status.Text = v ? "Opponents' MMR on." : "Opponents' MMR off.";
+                Changed();
+                UpdateArrangeRow();
+            }));
 
             stack.Children.Add(new TextBlock
             {
@@ -392,7 +416,7 @@ namespace HsbgCardLookup.Ui
                 Changed();
                 UpdateArrangeRow();
                 foreach (var r in _modeRefresh) r();   // the tier cycler skips panel options while it is off
-            }));
+            }, get: () => _config.ShowMmrPanel));
 
             // ── What ───────────────────────────────────────────────────────────────────────────
             stack.Children.Add(GroupHeader("What it shows"));
@@ -455,22 +479,33 @@ namespace HsbgCardLookup.Ui
             // A real panel, at the size it renders in game, over a live frame of the game when it is
             // running. Sized to the page width so the crop stays 16:9.
             _mmrPreview = new MmrPanelPreview(_config, 394, 222);
-            _pageRefresh = () => _mmrPreview?.Refresh();
             stack.Children.Add(TabSwitch(new[] { "Solo", "Duos" }, 0, i => _mmrPreview?.SetDuos(i == 1)));
-            stack.Children.Add(_mmrPreview.Root);
+            stack.Children.Add(PreviewBlock(_mmrPreview.Root, () => _mmrPreview?.Refresh(),
+                () => _config.ShowOpponentMmr && _config.ShowMmrPanel,
+                () =>
+                {
+                    // "Make this live" — the panel needs its own surface AND the feature above it.
+                    _config.ShowOpponentMmr = true;
+                    _config.ShowMmrPanel = true;
+                    AfterEnable("Opponents' MMR on, standings panel on.");
+                }));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.MmrPanel, "Position the side panel"));
 
             ShowPage(stack);
         }
 
-        // The live HUD preview block: real cards at their real size, plus a shrunk game screen showing
-        // where they sit. Sized to the page width so the map keeps the game's aspect.
+        // The live HUD preview block: one real card at its real size, sized to the page width.
         private UIElement HudPreviewBlock(bool isAnomaly)
         {
             _hudPreview = new HudPreview(_config, _store, isAnomaly, 394);
-            _pageRefresh = () => _hudPreview?.Refresh();
-            return _hudPreview.Root;
+            return PreviewBlock(_hudPreview.Root, () => _hudPreview?.Refresh(),
+                isAnomaly ? (Func<bool>)(() => _config.ShowAnomaly) : () => _config.ShowTrinkets,
+                () =>
+                {
+                    if (isAnomaly) { _config.ShowAnomaly = true; AfterEnable("Anomaly HUD on."); }
+                    else { _config.ShowTrinkets = true; AfterEnable("Trinket HUD on."); }
+                });
         }
 
         // With the panel surface off, the panel-involving tier modes make no sense — snap them to the
@@ -489,6 +524,14 @@ namespace HsbgCardLookup.Ui
         private void BuildDarkGifts()
         {
             var stack = NewPage("Dark Gifts", sub: true);
+
+            stack.Children.Add(PowerRow("Show during a match", () => _config.ShowDarkGifts, v =>
+            {
+                _config.ShowDarkGifts = v;
+                _status.Text = v ? "Dark Gift list on." : "Dark Gift list off.";
+                Changed();
+                UpdateArrangeRow();
+            }));
 
             stack.Children.Add(new TextBlock
             {
@@ -509,12 +552,13 @@ namespace HsbgCardLookup.Ui
             // The real panel, in the selected mode. The turn is the one thing a preview cannot know and
             // the thing that changes the panel most, so it is a switch rather than a fixed guess.
             _giftPreview = new DarkGiftPreview(_config, _store, 394);
-            _pageRefresh = () => _giftPreview?.Refresh();
             var turns = DarkGiftPreview.SampleTurns;
             var turnLabels = new string[turns.Length];
             for (int i = 0; i < turns.Length; i++) turnLabels[i] = "Turn " + turns[i];
             stack.Children.Add(TabSwitch(turnLabels, 1, i => _giftPreview?.SetTurn(turns[i])));
-            stack.Children.Add(_giftPreview.Root);
+            stack.Children.Add(PreviewBlock(_giftPreview.Root, () => _giftPreview?.Refresh(),
+                () => _config.ShowDarkGifts,
+                () => { _config.ShowDarkGifts = true; AfterEnable("Dark Gift list on."); }));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.DarkGifts, "Position the Dark Gift panel"));
 
@@ -840,8 +884,166 @@ namespace HsbgCardLookup.Ui
             return row;
         }
 
+        // ---- Master switch + the visual key that ties it to its preview ----------------------
+
+        /// <summary>
+        /// The feature's own master switch, on the feature's own page. It used to live only on the
+        /// main page, so a switched-off feature could be previewed here but not switched on — and
+        /// nothing on the page said which of the identical-looking controls would bring the dimmed
+        /// preview to life.
+        ///
+        /// So this row is deliberately not shaped like the content toggles under it: it is a bordered
+        /// card carrying a gold power key, and while the feature is off it wears a dashed gold
+        /// outline. The preview it governs wears the same key and the same outline, and nothing else
+        /// in this window does — which is what says "this one turns that one on" without a sentence.
+        /// </summary>
+        private UIElement PowerRow(string title, Func<bool> get, Action<bool> set)
+        {
+            var dock = new DockPanel { LastChildFill = true };
+
+            var pill = TogglePill(get(), set, width: ControlW, get: get);
+            pill.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(pill, Dock.Right);
+            dock.Children.Add(pill);
+
+            var key = PowerKey(20);
+            key.Margin = new Thickness(0, 0, 11, 0);
+            key.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(key, Dock.Left);
+            dock.Children.Add(key);
+
+            dock.Children.Add(new TextBlock
+            {
+                Text = title, Foreground = UiKit.TextPrimary, FontSize = 15.5,
+                FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var card = new Border
+            {
+                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 9, 10, 9), Child = dock
+            };
+            var dashes = DashedKey(8);
+            var grid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+            grid.Children.Add(card);
+            grid.Children.Add(dashes);
+
+            Action repaint = () =>
+            {
+                bool on = get();
+                card.Background = UiKit.Br(on ? UiKit.PanelActive : UiKit.RowBg);
+                card.BorderBrush = on ? UiKit.AccentBrush : UiKit.StrokeBrush;
+                dashes.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+            };
+            repaint();
+            _modeRefresh.Add(repaint);
+            return grid;
+        }
+
+        /// <summary>
+        /// A live preview wrapped in its switched-off treatment. Off doesn't blank it — it still
+        /// answers "what would this look like" — but it dims, wears the power key and the dashed
+        /// outline from its master switch, and becomes clickable: the dimmed thing IS the switch,
+        /// which is the shortest way there is to say what turns it back on.
+        /// </summary>
+        private UIElement PreviewBlock(FrameworkElement preview, Action refresh, Func<bool> live, Action enable)
+        {
+            // The viewport is a fixed width inside a wider page, so a stretched overlay would frame
+            // the page instead of the preview. Match its box exactly.
+            var dashes = DashedKey(8);
+            dashes.Margin = preview.Margin;
+            if (!double.IsNaN(preview.Width)) dashes.Width = preview.Width;
+
+            // The key is a SIBLING of the preview, not a child: it has to stay bright while the thing
+            // under it dims, or the one element inviting a click would be the faintest on the page.
+            var key = PowerKey(42);
+            key.Margin = preview.Margin;
+            key.HorizontalAlignment = HorizontalAlignment.Center;
+            key.VerticalAlignment = VerticalAlignment.Center;
+            key.IsHitTestVisible = false;
+
+            var grid = new Grid();
+            grid.Children.Add(preview);
+            grid.Children.Add(dashes);
+            grid.Children.Add(key);
+
+            Action repaint = () =>
+            {
+                bool on = live();
+                preview.Opacity = on ? 1.0 : 0.4;
+                dashes.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+                key.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+                grid.Cursor = on ? Cursors.Arrow : Cursors.Hand;
+            };
+            repaint();
+            _modeRefresh.Add(repaint);
+            // Set here rather than by the page, so a preview can never be added without its own
+            // off-state repaint following every settings change.
+            _pageRefresh = () => { try { refresh(); } catch { } repaint(); };
+
+            grid.MouseLeftButtonUp += (s, e) =>
+            {
+                if (live()) return;   // a live preview is for looking at, not a hidden off switch
+                e.Handled = true;
+                enable();
+            };
+            return grid;
+        }
+
+        /// <summary>Tail of every "switch it on from the preview" click: repaint the page's live
+        /// controls (the master pill, and on the MMR page the surface toggle the click flipped too),
+        /// then persist and re-apply exactly as a pill click would.</summary>
+        private void AfterEnable(string status)
+        {
+            foreach (var r in _modeRefresh) r();
+            _status.Text = status;
+            Changed();
+            UpdateArrangeRow();
+        }
+
+        /// <summary>The power key: a ring with a bar through it, DRAWN rather than typed — no font on
+        /// the machine has to carry U+23FB for it to render. It marks a feature's master switch and
+        /// the preview that switch controls, and appears nowhere else in this window.</summary>
+        private static FrameworkElement PowerKey(double size)
+        {
+            var disc = UiKit.Br(UiKit.FieldBg);
+            var g = new Grid { Width = size, Height = size };
+            g.Children.Add(new System.Windows.Shapes.Ellipse
+            {
+                Stroke = UiKit.AccentBrush, StrokeThickness = Math.Max(1.4, size * 0.085),
+                Fill = disc, Margin = new Thickness(size * 0.1)
+            });
+            // Punch the ring open at the top, then run the bar down through the gap.
+            g.Children.Add(new System.Windows.Shapes.Rectangle
+            {
+                Width = size * 0.26, Height = size * 0.42, Fill = disc,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, size * 0.03, 0, 0)
+            });
+            g.Children.Add(new System.Windows.Shapes.Rectangle
+            {
+                Width = Math.Max(1.6, size * 0.09), Height = size * 0.36, Fill = UiKit.AccentBrush,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, size * 0.08, 0, 0)
+            });
+            return g;
+        }
+
+        /// <summary>The dashed gold outline that means "switched off — and this is what switches it
+        /// on". A WPF Border can't be dashed, so it is a Rectangle laid over whatever it marks.</summary>
+        private static System.Windows.Shapes.Rectangle DashedKey(double radius) =>
+            new System.Windows.Shapes.Rectangle
+            {
+                Stroke = UiKit.AccentBrush, StrokeThickness = 1.6,
+                StrokeDashArray = new DoubleCollection { 4, 3 },
+                RadiusX = radius, RadiusY = radius,
+                IsHitTestVisible = false
+            };
+
         // The On/Off pill by itself (marks its click Handled so a category row doesn't also open).
-        private Border TogglePill(bool initial, Action<bool> onToggle, double width)
+        // `get` (optional) makes the pill re-read the config on repaint instead of trusting the state
+        // it cached — needed wherever something OTHER than this pill can flip the same setting.
+        private Border TogglePill(bool initial, Action<bool> onToggle, double width, Func<bool> get = null)
         {
             bool state = initial;
             var lbl = new TextBlock { FontSize = 14, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -852,13 +1054,17 @@ namespace HsbgCardLookup.Ui
             };
             Action apply = () =>
             {
+                if (get != null) state = get();
                 pill.Background = state ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
                 pill.BorderBrush = state ? UiKit.AccentBrush : UiKit.StrokeBrush;
                 lbl.Foreground = state ? UiKit.AccentBrush : UiKit.TextPrimary;
                 lbl.Text = state ? "On" : "Off";
             };
             apply();
-            pill.MouseLeftButtonUp += (s, e) => { e.Handled = true; state = !state; apply(); onToggle(state); };
+            if (get != null) _modeRefresh.Add(apply);
+            // onToggle BEFORE apply: a getter-backed pill has to repaint from the value the handler
+            // just wrote, not from the one it is replacing.
+            pill.MouseLeftButtonUp += (s, e) => { e.Handled = true; state = !state; onToggle(state); apply(); };
             return pill;
         }
 
@@ -890,11 +1096,11 @@ namespace HsbgCardLookup.Ui
             return dock;
         }
 
-        private UIElement ToggleRow(string label, bool initial, Action<bool> onToggle)
+        private UIElement ToggleRow(string label, bool initial, Action<bool> onToggle, Func<bool> get = null)
         {
             var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
 
-            var pill = TogglePill(initial, onToggle, width: ControlW);
+            var pill = TogglePill(initial, onToggle, width: ControlW, get: get);
             DockPanel.SetDock(pill, Dock.Right);
             dock.Children.Add(pill);
 

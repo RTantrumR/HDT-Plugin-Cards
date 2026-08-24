@@ -27,7 +27,6 @@ namespace HsbgCardLookup.Ui
         private const double MinViewH = 120, MaxViewH = 340;
 
         private readonly PluginConfig _config;
-        private readonly bool _isAnomaly;
         private readonly double _viewW;
 
         private readonly Canvas _stage;
@@ -40,7 +39,6 @@ namespace HsbgCardLookup.Ui
         public HudPreview(PluginConfig config, CardStore store, bool isAnomaly, double viewW)
         {
             _config = config;
-            _isAnomaly = isAnomaly;
             _viewW = viewW;
 
             PreviewStage.ResolveSize(out double cw, out double ch);
@@ -116,11 +114,6 @@ namespace HsbgCardLookup.Ui
                 if (wf <= 0 && p != null && p.Set && p.W > 0)
                     HudCanvasCard.LegacyToFrac(p.X, p.Y, p.W, out xf, out yf, out wf);
                 _card.ShowAt(xf, yf, wf);
-
-                // A switched-off feature doesn't blank the preview - it still answers "what would this
-                // look like" - but it shouldn't read as live either.
-                bool on = _isAnomaly ? _config.ShowAnomaly : _config.ShowTrinkets;
-                _viewport.Opacity = on ? 1.0 : 0.45;
 
                 _viewport.Dispatcher.BeginInvoke(new Action(UpdateCrop),
                     System.Windows.Threading.DispatcherPriority.Loaded);

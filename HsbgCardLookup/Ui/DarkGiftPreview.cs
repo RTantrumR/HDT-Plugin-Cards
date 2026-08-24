@@ -105,10 +105,6 @@ namespace HsbgCardLookup.Ui
 
                 _engine.RenderInto(_panel, _turn, SampleTribe, duos: false, mode: _config.DarkGiftMode);
 
-                // Switched off doesn't blank the preview - it still answers "what would this look
-                // like" - but it shouldn't read as live either.
-                _viewport.Opacity = _config.ShowDarkGifts ? 1.0 : 0.45;
-
                 _viewport.Dispatcher.BeginInvoke(new Action(UpdateFit),
                     System.Windows.Threading.DispatcherPriority.Loaded);
             }

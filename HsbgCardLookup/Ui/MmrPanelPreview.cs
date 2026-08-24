@@ -105,10 +105,6 @@ namespace HsbgCardLookup.Ui
 
                 _panel.SetStandings(MmrSidePanel.SampleRows(_duos));
 
-                // The panel surface being switched off doesn't blank the preview — it still answers
-                // "what would it look like" — but it shouldn't read as live either.
-                _viewport.Opacity = _config.ShowMmrPanel ? 1.0 : 0.45;
-
                 // Re-frame after the panel has laid out, so its real size is known.
                 _viewport.Dispatcher.BeginInvoke(new Action(UpdateCrop),
                     System.Windows.Threading.DispatcherPriority.Loaded);
