@@ -13,8 +13,9 @@ This product bundles third-party components:
     System.Text.Encoding.CodePages) — © .NET Foundation, MIT License.
 
 Hearthstone Deck Tracker assemblies (HearthstoneDeckTracker.exe, HearthDb.dll,
-Newtonsoft.Json.dll) are referenced at build time only and are NOT redistributed
-with this plugin's source.
+HearthMirror.dll, Newtonsoft.Json.dll) are referenced at build time only and are
+NOT redistributed with this plugin's source. Contributors copy them out of their
+own HDT install with setup.ps1.
 
 Adapted third-party code
 ------------------------

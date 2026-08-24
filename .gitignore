@@ -9,15 +9,16 @@
 *.userosscache
 *.sln.docstates
 
-# Third-party HDT reference assemblies — copied locally, not redistributed.
-# See README for how to populate libs/.
-libs/
+# HDT's own assemblies — referenced at build time only, not redistributed.
+# Run .\setup.ps1 to copy them out of your local HDT install. Everything else in libs/
+# (the WebP decoder closure) IS committed, because the plugin bundles it at runtime.
+libs/HearthstoneDeckTracker.exe
+libs/HearthDb.dll
+libs/HearthMirror.dll
+libs/Newtonsoft.Json.dll
 
 # Plugin bundle staging
 dist/
-
-# Bundled card snapshot — derived from the web-app repo, copied locally (see README).
-HsbgCardLookup/data/
 
 # Local-only documentation (internal notes / rationale / research, not published).
 docs/

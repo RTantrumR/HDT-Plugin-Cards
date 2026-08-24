@@ -22,7 +22,15 @@ namespace HsbgCardLookup.Net
             try { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12; }
             catch { }
 
-            var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true })
+            // AutomaticDecompression makes the handler advertise Accept-Encoding and inflate the
+            // response transparently. Without it every launch pulls /api/cards uncompressed
+            // (~1.3 MB vs ~165 KB gzipped). Nothing here reads Content-Length — which reports the
+            // compressed size while the stream is longer — so no caller is affected.
+            var client = new HttpClient(new HttpClientHandler
+            {
+                AllowAutoRedirect = true,
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            })
             {
                 Timeout = TimeSpan.FromSeconds(30)
             };
