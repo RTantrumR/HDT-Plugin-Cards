@@ -80,33 +80,30 @@ focused.
 `dotnet` CLI can't run the WPF markup compiler for net472. The project is a classic-style `.csproj`
 on purpose (SDK-style `<UseWPF>` is a .NET Core feature, unreliable on net472).
 
-Two sets of files are **not** committed and must be placed in `libs\` once (they're third-party /
-large):
-
 ```powershell
-# 1. HDT's own assemblies — referenced, not redistributed (Private=False).
-$src = "$env:LOCALAPPDATA\HearthstoneDeckTracker\app-<newest version>"
-Copy-Item "$src\HearthstoneDeckTracker.exe" .\libs\
-Copy-Item "$src\HearthDb.dll" .\libs\
-Copy-Item "$src\Newtonsoft.Json.dll" .\libs\
-
-# 2. The WebP decoder closure (bundled with the plugin, Private=True).
-#    Build a throwaway net472 project that references SixLabors.ImageSharp 2.1.11 and copy its
-#    output DLLs into libs\: SixLabors.ImageSharp.dll, System.Buffers.dll, System.Memory.dll,
-#    System.Numerics.Vectors.dll, System.Runtime.CompilerServices.Unsafe.dll,
-#    System.Text.Encoding.CodePages.dll
-```
-
-The bundled card snapshot `HsbgCardLookup\data\cards.json` is also gitignored — drop in any
-`{ patch, cardCount, cards: [...] }` snapshot (the plugin refreshes it from the API at runtime
-anyway).
-
-```powershell
+git clone https://github.com/RTantrumR/HDT-Plugin-Cards.git
+cd HDT-Plugin-Cards
+.\setup.ps1                  # one-time: pulls HDT's assemblies out of your local HDT install
 .\deploy.ps1                 # build Release + copy into HDT's Plugins folder (auto-restarts HDT)
-.\package.ps1                 # build + dist\HsbgCardLookup-v<ver>.zip (version auto-read from Plugin.cs; -Version overrides)
 ```
 
-AnyCPU loaded into HDT's x86 process → the `MSB3270` arch-mismatch warning is expected and harmless.
+`setup.ps1` is the only manual step. HDT's own assemblies — `HearthstoneDeckTracker.exe`,
+`HearthDb.dll`, `HearthMirror.dll`, `Newtonsoft.Json.dll` — are the host application's binaries,
+referenced at build time only (`Private=False`) and never shipped with this plugin, so they are not
+in this repo. The script copies them from `%LOCALAPPDATA%\HearthstoneDeckTracker\app-<newest>`; pass
+`-AppDir <path>` to pick a different install, `-Force` to refresh them after an HDT update. You need
+HDT installed to run the plugin anyway.
+
+Everything else is committed and needs no setup: the WebP-decoder closure in `libs\`
+(`SixLabors.ImageSharp.dll` 2.1.11 + its `System.*` support assemblies — the plugin *does* bundle
+these, see [NOTICE](NOTICE)) and the card snapshot `HsbgCardLookup\data\cards.json` plus the
+tier/tribe icons. The card snapshot is only a floor: the plugin refreshes it from the API at runtime.
+
+```powershell
+.\package.ps1                # build + dist\HsbgCardLookup-v<ver>.zip (version auto-read from Plugin.cs; -Version overrides)
+```
+
+AnyCPU loaded into HDT's process → the `MSB3270` arch-mismatch warning is expected and harmless.
 
 ## License
 

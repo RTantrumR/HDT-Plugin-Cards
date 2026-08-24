@@ -82,31 +82,29 @@
 CLI `dotnet` не вміє запускати WPF-компілятор розмітки для net472. Проєкт навмисно класичного стилю
 `.csproj` (SDK-стиль `<UseWPF>` — це функція .NET Core, ненадійна на net472).
 
-Два набори файлів **не** комітяться й мають бути покладені в `libs\` один раз (вони сторонні / великі):
-
 ```powershell
-# 1. Власні збірки HDT — на них посилаємось, не розповсюджуємо (Private=False).
-$src = "$env:LOCALAPPDATA\HearthstoneDeckTracker\app-<найновіша версія>"
-Copy-Item "$src\HearthstoneDeckTracker.exe" .\libs\
-Copy-Item "$src\HearthDb.dll" .\libs\
-Copy-Item "$src\Newtonsoft.Json.dll" .\libs\
-
-# 2. Замикання декодера WebP (бандлиться з плагіном, Private=True).
-#    Зберіть тимчасовий net472-проєкт із посиланням на SixLabors.ImageSharp 2.1.11 і скопіюйте його
-#    вихідні DLL у libs\: SixLabors.ImageSharp.dll, System.Buffers.dll, System.Memory.dll,
-#    System.Numerics.Vectors.dll, System.Runtime.CompilerServices.Unsafe.dll,
-#    System.Text.Encoding.CodePages.dll
-```
-
-Вбудований знімок карт `HsbgCardLookup\data\cards.json` теж у gitignore — покладіть будь-який знімок
-формату `{ patch, cardCount, cards: [...] }` (плагін усе одно оновлює його з API під час роботи).
-
-```powershell
+git clone https://github.com/RTantrumR/HDT-Plugin-Cards.git
+cd HDT-Plugin-Cards
+.\setup.ps1                  # разово: бере збірки HDT із вашої локальної інсталяції HDT
 .\deploy.ps1                 # збірка Release + копія в теку Plugins HDT (автоперезапуск HDT)
-.\package.ps1                 # збірка + dist\HsbgCardLookup-v<ver>.zip (версія читається з Plugin.cs; -Version перевизначає)
 ```
 
-AnyCPU у x86-процесі HDT → попередження `MSB3270` про невідповідність архітектури очікуване й безпечне.
+`setup.ps1` — єдиний ручний крок. Власні збірки HDT — `HearthstoneDeckTracker.exe`, `HearthDb.dll`,
+`HearthMirror.dll`, `Newtonsoft.Json.dll` — це бінарники хост-застосунку: на них лише посилаються під
+час збірки (`Private=False`) і ніколи не розповсюджують разом із плагіном, тому їх немає в репозиторії.
+Скрипт копіює їх із `%LOCALAPPDATA%\HearthstoneDeckTracker\app-<найновіша>`; `-AppDir <шлях>` вибирає
+іншу інсталяцію, `-Force` оновлює їх після апдейту HDT. HDT усе одно потрібен, щоб запускати плагін.
+
+Решта закомічена й не потребує налаштування: замикання декодера WebP у `libs\`
+(`SixLabors.ImageSharp.dll` 2.1.11 + його допоміжні збірки `System.*` — плагін *таки* бандлить їх,
+див. [NOTICE](NOTICE)) і знімок карт `HsbgCardLookup\data\cards.json` разом з іконками тавернових
+рівнів і рас. Знімок карт — лише нижня межа: під час роботи плагін оновлює його з API.
+
+```powershell
+.\package.ps1                # збірка + dist\HsbgCardLookup-v<ver>.zip (версія читається з Plugin.cs; -Version перевизначає)
+```
+
+AnyCPU у процесі HDT → попередження `MSB3270` про невідповідність архітектури очікуване й безпечне.
 
 ## Ліцензія
 
