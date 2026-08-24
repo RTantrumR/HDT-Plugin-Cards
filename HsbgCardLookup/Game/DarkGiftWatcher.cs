@@ -346,26 +346,30 @@ namespace HsbgCardLookup.Game
                 c.Header = BuildHeader(targetTurn);
             }
 
-            // Pool renders (left column): up to 10 card arts, sole-enablers first; a bigger pool shows
-            // its first 10 + a "+N more" note (never hidden entirely — the early >8 → skip rule meant
-            // e.g. Mech pools never rendered at all).
+            // Pool renders (left column): the caption whenever a pool exists at all, then as many
+            // card arts as the user asked for, sole-enablers first; the rest become a "+N more" note.
+            // At 0 the caption is the whole showing — which tribe is guaranteed, and how big its pool
+            // is, without the wall of renders.
             if (mode != "gifts" && pa != null && pa.Pool.Count > 0)
             {
                 c.PoolTotal = pa.Pool.Count;
                 c.PoolCaption = $"Guaranteed {tribe} — Tier {(wmax > wmin ? wmin + "–" + wmax : wmin.ToString())} ({c.PoolTotal})";
-                c.Minions = pa.Pool
-                    .OrderByDescending(m => pa.Sole.Contains(m))
-                    .ThenBy(m => m.Tier ?? 9).ThenBy(m => m.Name, StringComparer.Ordinal)
-                    .Take(10)
-                    .Select(m => new DarkGiftPanel.MinionArt { Card = m, Emph = pa.Sole.Contains(m) ? 2 : 1 })
-                    .ToList();
+                int show = _config.DarkGiftPoolCount;   // the config property clamps to 0..Max
+                if (show > 0)
+                    c.Minions = pa.Pool
+                        .OrderByDescending(m => pa.Sole.Contains(m))
+                        .ThenBy(m => m.Tier ?? 9).ThenBy(m => m.Name, StringComparer.Ordinal)
+                        .Take(show)
+                        .Select(m => new DarkGiftPanel.MinionArt { Card = m, Emph = pa.Sole.Contains(m) ? 2 : 1 })
+                        .ToList();
             }
 
             if (mode == "minions")
             {
-                // Minions-only: the art column alone; without a pool the panel shows nothing at all
-                // (user-chosen over falling back to the list).
-                if (c.Minions == null) { c.Rows = null; c.Suppress = true; }
+                // Minions-only: the art column alone, so no pool at all means no panel (user-chosen
+                // over falling back to the list). Keyed on the CAPTION, not the renders — with the
+                // count at 0 there is still a pool, and naming its tribe is exactly what 0 asks for.
+                if (c.PoolCaption == null) { c.Rows = null; c.Suppress = true; }
                 else c.Rows = new List<DarkGiftPanel.Row>();
             }
             return c;

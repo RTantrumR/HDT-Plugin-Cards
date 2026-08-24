@@ -385,6 +385,26 @@ namespace HsbgCardLookup.Ui
                 _artColumn.Visibility = Visibility.Visible;
                 artWidth = _artWrap.Width + 10;                  // + column right margin
             }
+            else if (!string.IsNullOrEmpty(poolCaption))
+            {
+                // Renders switched off (count 0): the tribe still gets named, as one line. The column
+                // has to be measured rather than derived from the grid, since there is no grid — and
+                // the panel's width is set explicitly here, so an unmeasured caption would be clipped.
+                _artWrap.Width = double.NaN;
+                _artCaption.Text = poolCaption;
+                _artCaption.MaxWidth = double.PositiveInfinity;
+                _artCaption.Visibility = Visibility.Visible;
+                _artMore.Visibility = Visibility.Collapsed;
+                _artColumn.Visibility = Visibility.Visible;
+                double capW = 150;
+                try
+                {
+                    _artCaption.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    if (_artCaption.DesiredSize.Width > 0) capW = _artCaption.DesiredSize.Width;
+                }
+                catch { }
+                artWidth = capW + 10;
+            }
             else _artColumn.Visibility = Visibility.Collapsed;
 
             _root.Width = (giftsShown ? ContentWidth : 0) + 22 + artWidth;

@@ -576,6 +576,16 @@ namespace HsbgCardLookup.Ui
             stack.Children.Add(ModeRow("Minions", "Minion pool only",
                 "Only the guaranteed-type minion arts; the panel stays hidden when no pool applies."));
 
+            stack.Children.Add(SliderRow("Minions to show", PluginConfig.MaxDarkGiftPool,
+                () => _config.DarkGiftPoolCount,
+                v => _config.DarkGiftPoolCount = v,
+                v => v == 0 ? "Tribe only" : v.ToString(),
+                v => v == 0
+                    ? "The guaranteed tribe is named; none of its minions are drawn."
+                    : $"Up to {v} of the guaranteed tribe's minions, sole gift-enablers first.",
+                // The gift list on its own never draws the pool, so there is nothing for this to size.
+                () => !string.Equals(_config.DarkGiftMode, "Gifts", StringComparison.OrdinalIgnoreCase)));
+
             stack.Children.Add(Separator());
 
             // The real panel, in the selected mode. The turn is the one thing a preview cannot know and
@@ -911,6 +921,125 @@ namespace HsbgCardLookup.Ui
                 row.MouseLeftButtonUp += (s, e) => open();   // the pill marks its clicks Handled
             }
             return row;
+        }
+
+
+        /// <summary>
+        /// An integer slider: label and live value on one line, the track under it. The value caption
+        /// carries the meaning of the ends (0 reads "Tribe only", not "0"), so the row needs no
+        /// sentence explaining itself — the hint goes to the status line on change, like every other
+        /// row here.
+        ///
+        /// Committing is deliberately NOT on every tick: ValueChanged fires continuously through a
+        /// drag, and each commit writes config to disk and re-renders the live preview. The label
+        /// follows the thumb, the setting lands when the drag ends (a track click, which changes the
+        /// value with no drag, commits immediately).
+        /// </summary>
+        private UIElement SliderRow(string label, int max, Func<int> get, Action<int> set,
+                                    Func<int, string> caption, Func<int, string> hint, Func<bool> enabled)
+        {
+            var valueLbl = new TextBlock
+            {
+                Foreground = UiKit.AccentBrush, FontSize = 13.5, FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Right,
+                MinWidth = 70
+            };
+            var head = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(valueLbl, Dock.Right);
+            head.Children.Add(valueLbl);
+            head.Children.Add(new TextBlock
+            {
+                Text = label, Foreground = UiKit.TextPrimary, FontSize = 15,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var slider = new Slider
+            {
+                Minimum = 0, Maximum = max,
+                SmallChange = 1, LargeChange = 1,
+                TickFrequency = 1, IsSnapToTickEnabled = true,
+                Margin = new Thickness(0, 6, 0, 0),
+                Focusable = false          // the window routes keys elsewhere; this is a mouse control
+            };
+            try { slider.Style = SliderStyle(); } catch { }
+            slider.Value = Clamp(get(), 0, max);
+
+            var row = new StackPanel { Margin = new Thickness(0, 2, 0, 10) };
+            row.Children.Add(head);
+            row.Children.Add(slider);
+
+            bool suppress = false, dragging = false;
+            Action commit = () =>
+            {
+                int v = (int)Math.Round(slider.Value);
+                if (v == get()) return;
+                set(v);
+                _status.Text = hint(v);
+                Changed();
+            };
+            Action repaint = () =>
+            {
+                suppress = true;
+                int v = Clamp(get(), 0, max);
+                if (Math.Abs(slider.Value - v) > 0.01) slider.Value = v;
+                suppress = false;
+                valueLbl.Text = caption(v);
+                bool on = enabled == null || enabled();
+                row.Opacity = on ? 1.0 : 0.45;
+                row.IsEnabled = on;
+            };
+            slider.ValueChanged += (s, e) =>
+            {
+                // A repaint assigning Value must not commit: commit calls Changed(), which repaints,
+                // which would assign Value again.
+                if (suppress) return;
+                valueLbl.Text = caption((int)Math.Round(slider.Value));
+                if (!dragging) commit();
+            };
+            slider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragStartedEvent,
+                new System.Windows.Controls.Primitives.DragStartedEventHandler((s, e) => dragging = true));
+            slider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
+                new System.Windows.Controls.Primitives.DragCompletedEventHandler((s, e) => { dragging = false; commit(); }));
+
+            repaint();
+            _modeRefresh.Add(repaint);
+            return row;
+        }
+
+        private static int Clamp(int v, int lo, int hi) => v < lo ? lo : (v > hi ? hi : v);
+
+        /// <summary>Slider chrome in this window's palette — the stock Windows track and thumb are the
+        /// wrong colours entirely against a dark panel. Same technique as UiKit.ThinScrollBarStyle:
+        /// the template is parsed from XAML, which is far shorter than assembling it in code. Kept
+        /// here rather than in UiKit because settings is the only place with a slider.</summary>
+        private static Style SliderStyle()
+        {
+            string xaml =
+                "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' " +
+                "xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Slider'>" +
+                "<Setter Property='Height' Value='22'/>" +
+                "<Setter Property='Template'><Setter.Value>" +
+                "<ControlTemplate TargetType='Slider'>" +
+                "<Grid Background='Transparent'>" +
+                "<Border Height='4' CornerRadius='2' Background='#0A0D14' BorderBrush='#39475E' " +
+                "BorderThickness='1' VerticalAlignment='Center'/>" +
+                "<Track Name='PART_Track'>" +
+                "<Track.DecreaseRepeatButton><RepeatButton Command='Slider.DecreaseLarge'>" +
+                "<RepeatButton.Template><ControlTemplate TargetType='RepeatButton'>" +
+                "<Border Background='Transparent'>" +
+                "<Border Height='4' CornerRadius='2' Background='#E8B54B' VerticalAlignment='Center'/>" +
+                "</Border></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>" +
+                "<Track.IncreaseRepeatButton><RepeatButton Command='Slider.IncreaseLarge'>" +
+                "<RepeatButton.Template><ControlTemplate TargetType='RepeatButton'>" +
+                "<Border Background='Transparent'/></ControlTemplate></RepeatButton.Template>" +
+                "</RepeatButton></Track.IncreaseRepeatButton>" +
+                "<Track.Thumb><Thumb>" +
+                "<Thumb.Template><ControlTemplate TargetType='Thumb'>" +
+                "<Grid Width='16' Height='16'><Ellipse Fill='#E8B54B' Stroke='#12161E' StrokeThickness='2'/></Grid>" +
+                "</ControlTemplate></Thumb.Template></Thumb></Track.Thumb>" +
+                "</Track></Grid></ControlTemplate>" +
+                "</Setter.Value></Setter></Style>";
+            return (Style)System.Windows.Markup.XamlReader.Parse(xaml);
         }
 
         // ---- The switched-off marker -------------------------------------------------------

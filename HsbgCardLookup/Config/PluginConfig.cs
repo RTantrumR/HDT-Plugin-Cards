@@ -95,6 +95,18 @@ namespace HsbgCardLookup.Config
         // (pool only — panel hidden entirely when no pool applies). Right-click the panel cycles;
         // also settable in the Dark Gifts settings sub-menu.
         public string DarkGiftMode { get; set; } = "Both";
+        /// <summary>How many minions from the guaranteed-tribe pool the panel renders. 0 names the
+        /// tribe and draws none of them — the pool is a wall of card art, and a player who only wants
+        /// to know WHICH tribe is coming shouldn't have to give up half the screen for it. The setter
+        /// clamps, so a hand-edited config can't put an absurd number here and no caller has to
+        /// re-check.</summary>
+        public const int MaxDarkGiftPool = 12;
+        private int _darkGiftPoolCount = 10;
+        public int DarkGiftPoolCount
+        {
+            get { return _darkGiftPoolCount; }
+            set { _darkGiftPoolCount = value < 0 ? 0 : (value > MaxDarkGiftPool ? MaxDarkGiftPool : value); }
+        }
         public HudPlacement DarkGiftHud { get; set; } = new HudPlacement();
 
         // Opt-in match recorder: capture the player's board + context at each combat boundary and write a
