@@ -60,6 +60,13 @@ namespace HsbgCardLookup.Search
             new AliasEntry("spellcraft", "category", new[] { "spellcraft" }),
             new AliasEntry("battlecruiser", "category", new[] { "battlecruiser" }),
             new AliasEntry("darkmoon", "category", new[] { "darkmoon", "dark moon" }),
+            // Season 14 Dark Gifts (43 cards, all spells, categories:["darkgift"]). Deliberately NOT
+            // aliased on a bare "gift": that word is a hard category filter here, and it would then
+            // hide the pool cards actually named Gacha Gift / Sacred Gift / Gift of the Golden Kobold.
+            // Kept AFTER darkmoon so a bare "dark" still prefix-resolves to darkmoon as before (the
+            // prefix pass takes the first shortest-remaining alias, and "darkgift"/"darkmoon" tie).
+            new AliasEntry("darkgift", "category", new[]
+                { "dark gift", "dark gifts", "darkgift", "darkgifts", "темний дар", "темні дари" }),
             // Trinket tiers (only filter when a trinket card type is also present)
             new AliasEntry("lesser", "trinket_tier", new[] { "lesser", "менший" }),
             new AliasEntry("greater", "trinket_tier", new[] { "greater", "більший" }),
