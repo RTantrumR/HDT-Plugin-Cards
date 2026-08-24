@@ -588,13 +588,10 @@ namespace HsbgCardLookup.Ui
             stack.Children.Add(TabSwitch(turnLabels, 1, i => _giftPreview?.SetTurn(turns[i])));
             stack.Children.Add(_giftPreview.Root);
 
-            stack.Children.Add(ArrangeHudRow(ArrangeTarget.DarkGifts, "Position the Dark Gift panel"));
-
             stack.Children.Add(new TextBlock
             {
-                Text = "In match: drag the panel to move it, drag its top-right corner to resize, and "
-                     + "right-click it to cycle these modes. Until you move it, it appears beside the "
-                     + "Dark Discovery button.",
+                Text = "In match: the panel appears beside the Dark Discovery button while you hover it. "
+                     + "Scroll it with the wheel; right-click it to cycle these modes.",
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1205,7 +1202,6 @@ namespace HsbgCardLookup.Ui
                 case ArrangeTarget.Trinkets: return _config.ShowTrinkets;
                 case ArrangeTarget.Anomaly: return _config.ShowAnomaly;
                 case ArrangeTarget.MmrPanel: return _config.ShowOpponentMmr && _config.ShowMmrPanel;
-                case ArrangeTarget.DarkGifts: return _config.ShowDarkGifts;
                 default: return false;
             }
         }

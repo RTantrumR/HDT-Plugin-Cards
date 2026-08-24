@@ -99,10 +99,6 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
-                // Pin it to the stage origin at the user's own scale; the fit transform does the rest.
-                var hud = _config.DarkGiftHud;
-                _panel.Place(0, 0, hud != null ? hud.WF : 0);
-
                 _engine.RenderInto(_panel, _turn, SampleTribe, duos: false, mode: _config.DarkGiftMode);
 
                 _viewport.Dispatcher.BeginInvoke(new Action(UpdateFit),
@@ -143,10 +139,8 @@ namespace HsbgCardLookup.Ui
                 double wantH = Clamp(b.Height * s, MinViewH, MaxViewH);
                 if (Changed(_viewport.Height, wantH)) _viewport.Height = wantH;
 
-                // Centre the PANEL in the box - not the stage. The panel sits wherever its own
-                // placement puts it on the 1920x1080 stage (an unarranged one centres itself there), so
-                // the stage has to be offset by that position, scaled, or the preview frames empty
-                // canvas next to the panel instead of the panel.
+                // Centre the PANEL in the box - not the stage. It sits at the stage's origin, but the
+                // offset stays general so the framing follows the panel wherever it lands.
                 double ox = (_viewW - b.Width * s) / 2.0 - b.X * s;
                 double oy = (wantH - b.Height * s) / 2.0 - b.Y * s;
                 if (Changed(Canvas.GetLeft(_stage), ox)) Canvas.SetLeft(_stage, ox);

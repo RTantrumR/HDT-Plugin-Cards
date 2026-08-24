@@ -53,7 +53,6 @@ namespace HsbgCardLookup.Game
         private volatile string _lastSig;
         private bool _visibleNow;
         private volatile bool _lastHadPool;   // a pool was rendered on the last content build (mode cycling)
-        private volatile bool _arranging;     // the panel is pinned up for positioning
         private readonly bool _preview;       // a detached instance driving a settings preview
         private DarkGiftPanel _panel;
 
@@ -101,7 +100,7 @@ namespace HsbgCardLookup.Game
         {
             try
             {
-                if (_preview || _arranging) return;   // arrange mode / the preview own the panel
+                if (_preview) return;   // a preview instance renders on demand, never on the poll
                 if (!_config.ShowDarkGifts || !ArrangeSession.AllowsDarkGifts) { HideIfShown(); return; }
 
                 // New-match reset. Primary signal: HDT's OnGameStart event (a fast requeue can go
@@ -139,9 +138,7 @@ namespace HsbgCardLookup.Game
                     if ((now - _hoverSince).TotalMilliseconds >= ShowDelayMs) _dwellMet = true;
                 }
 
-                // A drag also counts as "still using it": the hover that summoned the panel is long
-                // over by then, and hiding it mid-gesture is the one thing that makes it unpositionable.
-                bool panelUnderMouse = _panel != null && (_panel.IsUnderMouse || _panel.IsGesturing);
+                bool panelUnderMouse = _panel != null && _panel.IsUnderMouse;
                 bool lingering = (now - _lastHoverUtc).TotalMilliseconds < LingerMs;
                 if (!lingering && !panelUnderMouse) _dwellMet = false;   // hover ended → re-dwell next time
                 bool show = _dwellMet;
@@ -375,8 +372,7 @@ namespace HsbgCardLookup.Game
         }
 
         /// <summary>Render a given turn into a caller-owned panel, off game. Used by the settings
-        /// preview and by arrange mode, both of which need the real thing on screen with no match to
-        /// read state from. Everything obtainable outside a match stays REAL — the gift list, the tier
+        /// preview, which needs the real thing on screen with no match to read state from. Everything obtainable outside a match stays REAL — the gift list, the tier
         /// windows, the pool and its sole-enabler analysis all come from live card data; only the
         /// per-match facts that cannot exist (turn, the player's top tribe, the lobby's tribe set,
         /// Duos) are supplied by the caller.</summary>
@@ -400,47 +396,6 @@ namespace HsbgCardLookup.Game
             }
             catch (Exception ex) { try { _log?.Invoke("[DarkGifts] RenderInto error: " + ex.Message); } catch { } }
         }
-
-        /// <summary>Enter/exit arrange mode. While on, the panel is pinned on screen with sample content
-        /// (and its own toggle ignored, so it can be positioned before being switched on) so the user
-        /// can drag and scale it without hovering the button mid-match.</summary>
-        internal void SetArrange(ArrangeTarget target)
-        {
-            bool on = target == ArrangeTarget.DarkGifts;
-            if (!on && !_arranging) return;
-            _arranging = on;
-            Marshal(() =>
-            {
-                try
-                {
-                    if (!on)
-                    {
-                        _panel?.ClearEditChrome();
-                        _lastSig = null;      // next poll decides afresh whether it should be up
-                        HideIfShown();
-                        return;
-                    }
-                    EnsurePanel();
-                    // No hovered button to anchor to here, so ask for the middle of the screen when the
-                    // panel has no saved spot yet — otherwise it has no position at all, which pins it
-                    // to the canvas origin and makes it undraggable.
-                    _panel.CentreInCanvas();
-                    RenderInto(_panel, ArrangeTurn, ArrangeTribe, false, _config.DarkGiftMode);
-                    // Minions-only genuinely renders nothing when no pool applies. That is correct in
-                    // play and useless here — there would be nothing on screen to drag — so arrange
-                    // falls back to the full panel rather than leaving an invisible session running.
-                    if (!_panel.IsVisible) RenderInto(_panel, ArrangeTurn, ArrangeTribe, false, "Both");
-                    _panel.SetEditChrome();
-                    _lastSig = null;
-                }
-                catch { }
-            });
-        }
-
-        // Sample state for arrange mode: turn 7 is past the turn-6 guaranteed-type rule, so both the
-        // gift list and the minion pool have something to show — which is what has to be positioned.
-        private const int ArrangeTurn = 7;
-        private const string ArrangeTribe = "Beast";
 
         private List<DarkGiftPanel.Row> BuildRows(int targetTurn, PoolAnalysis pa)
         {
@@ -688,22 +643,11 @@ namespace HsbgCardLookup.Game
             catch (Exception ex) { try { _log?.Invoke("[DarkGifts] ApplyUi error: " + ex.Message); } catch { } }
         }
 
-        // Create the panel on first use, restoring the saved placement BEFORE it is ever shown (an
-        // unarranged panel has wf == 0, which leaves summons cursor-anchored).
         private void EnsurePanel()
         {
             if (_panel != null) return;
             _panel = new DarkGiftPanel();
             _panel.ModeCycleRequested += CycleMode;
-            var hud = _config.DarkGiftHud;
-            if (hud != null) _panel.Place(hud.XF, hud.YF, hud.WF);
-            _panel.GeometryChanged = (xf, yf, wf) =>
-            {
-                var p = _config.DarkGiftHud;
-                if (p == null) return;
-                p.Set = true; p.XF = xf; p.YF = yf; p.WF = wf;
-                try { _config.Save(); } catch { }
-            };
         }
 
         private void HideIfShown()

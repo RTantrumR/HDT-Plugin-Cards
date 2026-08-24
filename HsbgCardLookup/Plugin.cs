@@ -454,7 +454,6 @@ namespace HsbgCardLookup
             }
             _bgHud?.SetArrange(target);
             _bgMmr?.SetArrange(target);
-            _darkGifts?.SetArrange(target);
             ReapplyFeatures();
 
             // A Done button on the overlay itself: clicking back into the settings window would take
