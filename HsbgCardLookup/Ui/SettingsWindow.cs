@@ -955,10 +955,21 @@ namespace HsbgCardLookup.Ui
         private void SetArrange(ArrangeTarget target)
         {
             // Nothing draws outside the game, so entering arrange without Hearthstone up would show an
-            // empty screen and no reason why.
+            // empty screen and no reason why. This refusal gets its own modal dialog rather than the
+            // shared status line: that line carries every ordinary "setting applied" message, so a
+            // refusal written there reads as one more passing tip and gets skipped. A MessageBox is
+            // safe on THIS path specifically — it steals OS foreground, which normally makes HDT hide
+            // its entire overlay, but the condition for showing it is that Hearthstone is not running,
+            // so there is no overlay to lose.
             if (target != ArrangeTarget.None && !HearthstoneIsRunning())
             {
-                _status.Text = "Start Hearthstone first — these only draw over the game.";
+                _status.Text = "Hearthstone isn't running.";
+                MessageBox.Show(this,
+                    "Hearthstone isn't running.\n\n"
+                    + "This draws on top of the game, so there is nothing to position yet. "
+                    + "Start Hearthstone, then click Arrange again.",
+                    "HSBG Card Lookup — Arrange",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
