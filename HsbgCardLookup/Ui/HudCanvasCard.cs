@@ -72,10 +72,20 @@ namespace HsbgCardLookup.Ui
         /// can never capture a live in-match card's attach (and vice versa).</summary>
         private Canvas Host => _host ?? Core.OverlayCanvas;
 
-        /// <summary>The card's current on-canvas size, in canvas units — what it will really measure in
-        /// game. NaN until the first layout pass.</summary>
-        public double LayoutWidth => _root.Width;
-        public double LayoutHeight => _root.Height;
+        /// <summary>Where the card currently sits in its canvas, at the size it will really measure in
+        /// game. Zero-size until the first layout pass.</summary>
+        public Rect Bounds
+        {
+            get
+            {
+                double x = Canvas.GetLeft(_root), y = Canvas.GetTop(_root);
+                if (double.IsNaN(x)) x = 0;
+                if (double.IsNaN(y)) y = 0;
+                double w = double.IsNaN(_root.Width) ? 0 : _root.Width;
+                double h = double.IsNaN(_root.Height) ? 0 : _root.Height;
+                return new Rect(x, y, w, h);
+            }
+        }
 
         public HudCanvasCard(int index, bool isAnomaly) : this(index, isAnomaly, null) { }
 

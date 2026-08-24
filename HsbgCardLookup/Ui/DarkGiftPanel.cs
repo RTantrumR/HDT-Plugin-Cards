@@ -71,6 +71,7 @@ namespace HsbgCardLookup.Ui
         private bool _attached;
 
         private bool _hasPos;                      // the panel has been arranged at least once
+        private bool _autoCentre;                  // no saved spot and no cursor to anchor to (arrange)
         private double _xf, _yf, _wf;              // saved placement (canvas fractions)
         private double _nominalW = RefW;           // what Layout turns into the scale factor
         private bool _editing;
@@ -410,6 +411,7 @@ namespace HsbgCardLookup.Ui
             Layout();
             if (_hasPos) return;   // Layout has already put it back on its saved fractions
 
+            _autoCentre = false;   // there is a cursor to anchor to; the centring request is off
             double contentW = Math.Min(cw, ch * (16.0 / 9.0));
             double offset = 350.0 * contentW / 1920.0;
 
@@ -461,19 +463,45 @@ namespace HsbgCardLookup.Ui
         }
 
         /// <summary>Keep an arranged panel on its saved fractions and inside the canvas. A panel that
-        /// has never been arranged owns its own position (the cursor put it there), so this leaves it
-        /// alone.</summary>
+        /// has never been arranged owns its own position (the cursor put it there), so this only
+        /// guarantees it HAS one.</summary>
         private void ClampPosition()
         {
-            if (!_hasPos || _dragging || _resizing) return;
+            if (_dragging || _resizing) return;
             var canvas = Host;
             if (canvas == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
             double w = RenderedW, h = RenderedH;
             if (w <= 0) w = _nominalW;
-            Canvas.SetLeft(_root, Clamp(_xf * cw, 0, Math.Max(0, cw - w)));
-            Canvas.SetTop(_root, Clamp(_yf * ch, 0, Math.Max(0, ch - Math.Max(80, h))));
+
+            if (_hasPos)
+            {
+                Canvas.SetLeft(_root, Clamp(_xf * cw, 0, Math.Max(0, cw - w)));
+                Canvas.SetTop(_root, Clamp(_yf * ch, 0, Math.Max(0, ch - Math.Max(80, h))));
+                return;
+            }
+
+            // Never arranged. The cursor rule owns the position whenever there IS a cursor to anchor
+            // to; arrange mode has none and asks to be centred instead. Either way the position must
+            // never be left UNSET: an unset Canvas.Left/Top reads back as NaN, which draws the panel
+            // at the canvas origin AND makes it undraggable — BeginGesture has nothing to offset from
+            // and refuses. That is exactly what arrange mode hit: the panel sat in the top-left corner
+            // and neither moved nor resized.
+            if (!_autoCentre && !double.IsNaN(Canvas.GetLeft(_root)) && !double.IsNaN(Canvas.GetTop(_root))) return;
+            Canvas.SetLeft(_root, Clamp((cw - w) / 2, 0, Math.Max(0, cw - w)));
+            Canvas.SetTop(_root, Clamp((ch - h) / 2, 0, Math.Max(0, ch - h)));
+            // The height is only real after a layout pass, so the first centring is provisional — hold
+            // the request open until one has run and Show's deferred pass can correct it.
+            if (h > 0) _autoCentre = false;
+        }
+
+        /// <summary>Centre the panel on the next layout pass. For arrange mode, which puts the panel up
+        /// with no hovered button to anchor it to.</summary>
+        public void CentreInCanvas()
+        {
+            if (_hasPos) return;   // an arranged panel already has a spot of its own
+            _autoCentre = true;
         }
 
         // ── Move / resize gestures ───────────────────────────────────────────────────────────────

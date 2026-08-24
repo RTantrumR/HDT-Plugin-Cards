@@ -35,11 +35,10 @@ namespace HsbgCardLookup.Game
     public sealed class BgHud
     {
         private const int TrinketSlots = 4;           // the most trinkets a player can hold at once
-        /// <summary>Slot labels, shared with the settings preview so both name the boxes the same.
-        /// Boxes 1 and 2 keep their familiar names even though the fill is positional: in the ordinary
-        /// match that IS what lands in them, and a transform putting a second greater in box 1 is
-        /// exactly the case the player needs to notice.</summary>
-        internal static readonly string[] TrinketLabels =
+        // Arrange-mode slot labels. Boxes 1 and 2 keep their familiar names even though the fill is
+        // positional: in the ordinary match that IS what lands in them, and a transform putting a
+        // second greater in box 1 is exactly the case the player needs to notice.
+        private static readonly string[] TrinketLabels =
             { "Lesser Trinket", "Greater Trinket", "Trinket 3", "Trinket 4" };
 
         private readonly CardStore _store;

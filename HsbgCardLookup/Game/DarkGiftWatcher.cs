@@ -421,6 +421,10 @@ namespace HsbgCardLookup.Game
                         return;
                     }
                     EnsurePanel();
+                    // No hovered button to anchor to here, so ask for the middle of the screen when the
+                    // panel has no saved spot yet — otherwise it has no position at all, which pins it
+                    // to the canvas origin and makes it undraggable.
+                    _panel.CentreInCanvas();
                     RenderInto(_panel, ArrangeTurn, ArrangeTribe, false, _config.DarkGiftMode);
                     // Minions-only genuinely renders nothing when no pool applies. That is correct in
                     // play and useless here — there would be nothing on screen to drag — so arrange

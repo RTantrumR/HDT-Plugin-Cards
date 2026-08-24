@@ -147,11 +147,14 @@ namespace HsbgCardLookup.Ui
                 double wantH = Clamp(b.Height * s, MinViewH, MaxViewH);
                 if (Changed(_viewport.Height, wantH)) _viewport.Height = wantH;
 
-                // Centre what is left over, so a narrow gift-only panel doesn't hug the left edge.
-                if (Changed(Canvas.GetLeft(_stage), (_viewW - b.Width * s) / 2.0))
-                    Canvas.SetLeft(_stage, (_viewW - b.Width * s) / 2.0);
-                if (Changed(Canvas.GetTop(_stage), (wantH - b.Height * s) / 2.0))
-                    Canvas.SetTop(_stage, (wantH - b.Height * s) / 2.0);
+                // Centre the PANEL in the box - not the stage. The panel sits wherever its own
+                // placement puts it on the 1920x1080 stage (an unarranged one centres itself there), so
+                // the stage has to be offset by that position, scaled, or the preview frames empty
+                // canvas next to the panel instead of the panel.
+                double ox = (_viewW - b.Width * s) / 2.0 - b.X * s;
+                double oy = (wantH - b.Height * s) / 2.0 - b.Y * s;
+                if (Changed(Canvas.GetLeft(_stage), ox)) Canvas.SetLeft(_stage, ox);
+                if (Changed(Canvas.GetTop(_stage), oy)) Canvas.SetTop(_stage, oy);
             }
             catch { }
         }
