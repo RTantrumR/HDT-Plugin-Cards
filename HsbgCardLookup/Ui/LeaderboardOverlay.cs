@@ -37,17 +37,32 @@ namespace HsbgCardLookup.Ui
         private static readonly double[] RefSlotLeft = { 255.00, 252.14, 249.29, 246.43, 243.57, 240.71, 237.86, 235.00 };
         private static readonly double[] RefSlotTop = { 168.0, 260.0, 355.0, 445.0, 540.0, 633.0, 727.0, 822.0 };
         // Duos: each team is ONE 156px block holding two glued 78px player cells; a player's health
-        // bar straddles the split between them. Solved 2026-08-23 (round 4) on a full-screen 1080p
-        // capture, from nine mutually-consistent landmarks — the blue/red block frames' top and
-        // bottom borders plus the mid-block health bars — which all fit: block tops 165/360/555/750
-        // (team pitch 195), cell = block + {0, 78}. Earlier rounds were wrong in the PITCH as well
-        // as the offset (192.5/80, inherited from the reference plugin's older-UI tables), so every
-        // shift-only fix still drifted the labels down onto each portrait's lower edge.
-        // Values below = cellTop + 13, i.e. after the layout's bottom-anchoring (−RefLabelUp) each
-        // label lands 8px inside its own portrait's TOP — clearing the block's frame border on the
-        // upper cell and the health bar on the lower one.
+        // bar straddles the split between them. Values below = cellTop + 13 on the LOWER cell of each
+        // team (odd indices) and cellTop + 9 on the UPPER one (even indices) — so after the layout's
+        // bottom-anchoring (−RefLabelUp) the lower label lands 8px inside its cell's top and the
+        // upper one 4px higher still. The pair is deliberately NOT symmetric (user direction): the
+        // upper cell's top edge is the block's outer frame border, which is thicker than the internal
+        // split below it, so an equal numeric inset reads as the top label sitting lower.
+        //
+        // Round 5 (2026-08-24) — block tops 162.6 / 356.1 / 549.6 / 743.1, TEAM PITCH 193.5.
+        // Round 4 shipped pitch 195, which drifted the labels ~2px lower per team — barely visible on
+        // team 1, ~7px onto the portrait by team 4. Method, and why it beats rounds 1-4:
+        //   * The measurement no longer trusts ANY assumed coordinate. Our own 8 plates render at
+        //     known ref positions and measured exactly 90px wide (= RefLabelW), which proves the
+        //     capture is 1:1 with the 1080p reference AND solves the crop origin: ref_y = crop_y +
+        //     118.6, consistent to 1px across all 8. The +30 offset that showed up on plates 0-1 is
+        //     the current-opponent shift, an independent check that the fit is real.
+        //   * Pitch was fitted BEFORE the offset (the rule rounds 1-3 broke), by matched-filtering
+        //     three independent landmark families down the column — health bar, block top border,
+        //     block bottom border — rather than eyeballing one edge. All three agree: 193.5 / 192.5 /
+        //     195.0, mean 193.6. The health bar is the strongest signal (correlation 0.65-1.00) and
+        //     gives 193.5 on its own.
+        //   * Team 1 is EXCLUDED from the fit: it was the current opponent, whose tile the game draws
+        //     enlarged, and it sits +2px off the line the other three define. Fitting it in would bake
+        //     a transient distortion into the permanent geometry.
+        // Health-bar residuals against the shipped numbers: +0.5 / -1.0 / +0.5 on teams 2-4.
         private static readonly double[] DuosRefSlotLeft = { 245.0, 245.0, 242.0, 242.0, 239.0, 239.0, 236.0, 236.0 };
-        private static readonly double[] DuosRefSlotTop = { 178.0, 256.0, 373.0, 451.0, 568.0, 646.0, 763.0, 841.0 };
+        private static readonly double[] DuosRefSlotTop = { 171.6, 253.6, 365.1, 447.1, 558.6, 640.6, 752.1, 834.1 };
         // Label grew 5px UPWARD from the original 28px (bottom edge stays put on the portrait) to fit
         // a larger, readable font. Without names it's a single line, so it shrinks to RefLabelH1 —
         // still bottom-anchored, so the rating sits where it always did.
@@ -82,7 +97,15 @@ namespace HsbgCardLookup.Ui
         /// <summary>Duos layout: teamed slot geometry (rows arrive team-ordered from BgMmr).</summary>
         public bool IsDuos { get; set; }
 
-        private bool TwoLines => ShowNames && (ShowRating || ShowDeltas);
+        // A delta arrow only renders when that player actually moved today (and isn't dimmed), so
+        // ShowDeltas being ON does NOT mean a second line exists: with the rating hidden and a lobby
+        // full of players below the leaderboard cutoff, every delta is 0 and the reserved line stays
+        // empty — the name then floats centred in a box sized for content that never arrives.
+        // _anyDelta records whether the last fill actually put an arrow on screen, so the box is only
+        // two lines tall when there really are two. Set from SetStandings, read here.
+        private bool _anyDelta;
+
+        private bool TwoLines => ShowNames && (ShowRating || _anyDelta);
         private bool BoxVisible => ShowNames || ShowRating || ShowDeltas;
 
         private static readonly Brush LabelBg = Frozen(Color.FromArgb(0xDC, 0x0A, 0x0D, 0x14));
@@ -176,6 +199,9 @@ namespace HsbgCardLookup.Ui
         {
             if (!_attached) Attach();
             int n = rows?.Count ?? 0;
+            // Recomputed over the whole fill, then used by TwoLines: one height for all 8 plates, so
+            // the column can't go ragged just because a single player happens to have moved today.
+            _anyDelta = false;
             for (int i = 0; i < MaxSlots; i++)
             {
                 if (i >= n) { HideSlot(i); continue; }
@@ -194,6 +220,7 @@ namespace HsbgCardLookup.Ui
                     _arrows[i].Text = (r.Delta > 0 ? "▲" : "▼") + Math.Abs(r.Delta);
                     _arrows[i].Foreground = r.Delta > 0 ? Up : Down;
                     _arrows[i].Visibility = Visibility.Visible;
+                    _anyDelta = true;
                 }
                 else _arrows[i].Visibility = Visibility.Collapsed;
 
@@ -250,6 +277,9 @@ namespace HsbgCardLookup.Ui
             for (int i = 0; i < MaxSlots; i++)
             {
                 var b = _labels[i];
+                // Width stays fixed for every slot on purpose — a column of equal-width plates reads
+                // better than one that ragged-edges itself to each battletag. Only the HEIGHT follows
+                // the content (see TwoLines).
                 b.Width = RefLabelW * scale;
                 b.Height = refH * scale;
                 b.CornerRadius = new CornerRadius(4.0 * scale);
