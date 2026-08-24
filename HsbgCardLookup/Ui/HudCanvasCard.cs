@@ -41,6 +41,7 @@ namespace HsbgCardLookup.Ui
 
         private readonly int _index;         // trinket slot index (drives the default stack position)
         private readonly bool _isAnomaly;
+        private readonly Canvas _host;       // null = HDT's overlay canvas
         private readonly Grid _root;
         private readonly Image _img;
         private readonly Border _handle;
@@ -66,10 +67,26 @@ namespace HsbgCardLookup.Ui
         private Point _startCursor;          // canvas units at gesture start
         private double _startLeft, _startTop, _startW;
 
-        public HudCanvasCard(int index, bool isAnomaly)
+        /// <summary>The canvas this card lives in: HDT's game overlay by default, or a caller's own
+        /// canvas for an off-game preview. Held per instance rather than swapped globally, so a preview
+        /// can never capture a live in-match card's attach (and vice versa).</summary>
+        private Canvas Host => _host ?? Core.OverlayCanvas;
+
+        /// <summary>The card's current on-canvas size, in canvas units — what it will really measure in
+        /// game. NaN until the first layout pass.</summary>
+        public double LayoutWidth => _root.Width;
+        public double LayoutHeight => _root.Height;
+
+        public HudCanvasCard(int index, bool isAnomaly) : this(index, isAnomaly, null) { }
+
+        /// <param name="host">Render into this canvas instead of HDT's overlay. A hosted card is a
+        /// passive preview: no overlay hit-testing, no drag/resize gestures (so it can never install
+        /// the global mouse hook) and no right-click menu.</param>
+        public HudCanvasCard(int index, bool isAnomaly, Canvas host)
         {
             _index = index;
             _isAnomaly = isAnomaly;
+            _host = host;
 
             _img = new Image { Stretch = Stretch.Fill };   // the root box holds the native aspect
             RenderOptions.SetBitmapScalingMode(_img, BitmapScalingMode.HighQuality);
@@ -137,17 +154,21 @@ namespace HsbgCardLookup.Ui
                 if (!_editing && !_resizing) _handle.Visibility = Visibility.Collapsed;
             };
 
-            _handle.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: true, e); };
-            _root.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: false, e); };
-            _root.MouseRightButtonUp += (s, e) =>
+            if (_host == null)
             {
-                e.Handled = true;
-                if (!_dragging && !_resizing) { try { RightClicked?.Invoke(); } catch { } }
-            };
-            _root.MouseMove += (s, e) => PokeHandle();
+                _handle.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: true, e); };
+                _root.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: false, e); };
+                _root.MouseRightButtonUp += (s, e) =>
+                {
+                    e.Handled = true;
+                    if (!_dragging && !_resizing) { try { RightClicked?.Invoke(); } catch { } }
+                };
+                _root.MouseMove += (s, e) => PokeHandle();
 
-            // Register with HDT's hover loop so the overlay window becomes clickable over this card.
-            try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+                // Registers with HDT's hover loop so the overlay window becomes clickable over this
+                // card. Meaningless for a preview, which is not in HDT's overlay at all.
+                try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+            }
         }
 
         public bool IsVisible => _attached && _root.Visibility == Visibility.Visible;
@@ -157,7 +178,7 @@ namespace HsbgCardLookup.Ui
         private bool Attach()
         {
             if (_attached) return true;
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return false;
             canvas.Children.Add(_root);
             canvas.SizeChanged += OnCanvasSizeChanged;
@@ -186,7 +207,7 @@ namespace HsbgCardLookup.Ui
             EndGesture(persist: false);
             try
             {
-                var canvas = Core.OverlayCanvas;
+                var canvas = Host;
                 if (canvas != null)
                 {
                     canvas.SizeChanged -= OnCanvasSizeChanged;
@@ -232,7 +253,7 @@ namespace HsbgCardLookup.Ui
 
         private void Layout()
         {
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
@@ -299,8 +320,9 @@ namespace HsbgCardLookup.Ui
 
         private void BeginGesture(bool resize, MouseButtonEventArgs e)
         {
+            if (_host != null) return;   // preview: never install the global mouse hook
             if (!_attached || _dragging || _resizing) return;
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return;
             try { _startCursor = e.GetPosition(canvas); } catch { return; }
             _startLeft = Canvas.GetLeft(_root);
@@ -315,7 +337,7 @@ namespace HsbgCardLookup.Ui
 
         private void OnGestureMove()
         {
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) { EndGesture(persist: false); return; }
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
@@ -359,7 +381,7 @@ namespace HsbgCardLookup.Ui
             RemoveHook();
             if (!persist || !_moved) return;
 
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;

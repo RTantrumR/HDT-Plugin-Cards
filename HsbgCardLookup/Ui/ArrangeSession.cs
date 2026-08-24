@@ -6,7 +6,8 @@
         None,
         Trinkets,
         Anomaly,
-        MmrPanel
+        MmrPanel,
+        DarkGifts
     }
 
     /// <summary>
@@ -51,7 +52,7 @@
         public static bool AllowsAnomaly => !IsActive || Active == ArrangeTarget.Anomaly;
         public static bool AllowsMmrPanel => !IsActive || Active == ArrangeTarget.MmrPanel;
         public static bool AllowsMmrLabels => !IsActive;   // fixed to the portraits; never arrangeable
-        public static bool AllowsDarkGifts => !IsActive;
+        public static bool AllowsDarkGifts => !IsActive || Active == ArrangeTarget.DarkGifts;
         public static bool AllowsSearchButton => !IsActive;
     }
 }

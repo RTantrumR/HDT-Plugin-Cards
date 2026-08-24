@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
@@ -20,9 +21,13 @@ namespace HsbgCardLookup.Ui
     /// (see <see cref="Game.DarkGiftWatcher"/>). It is NOT a window: the whole panel
     /// lives inside HDT's own overlay canvas (<c>Core.OverlayCanvas</c>), registered with
     /// <c>OverlayExtensions.SetIsOverlayHitTestVisible</c> so HDT drops <c>WS_EX_TRANSPARENT</c> while
-    /// the cursor is on it — real wheel/right-click reach us while the overlay window stays
-    /// <c>WS_EX_NOACTIVATE</c>, so Hearthstone never loses foreground. Placement is cursor-anchored,
-    /// well left of the hovered button, so the button stays clickable and its tooltip readable.
+    /// the cursor is on it — real wheel/right-click/drag reach us while the overlay window stays
+    /// <c>WS_EX_NOACTIVATE</c>, so Hearthstone never loses foreground.
+    ///
+    /// Placement: left-drag moves the panel and the top-right grabber scales it, and once either has
+    /// happened the saved spot wins every summon. Until then the original cursor-anchored rule stands —
+    /// the panel lands well left of the hovered button, so the button stays clickable and its tooltip
+    /// readable — which is what a player who never touches it keeps getting.
     ///
     /// Rows per the design sketch: a rounded container per gift — name | separator line | effect text —
     /// stacked vertically, each sized to its text. Gifts offerable THIS turn glow (accent border + soft
@@ -38,6 +43,11 @@ namespace HsbgCardLookup.Ui
     public sealed class DarkGiftPanel
     {
         private const double ContentWidth = 450;   // gift-list column width (panel width = this + art column)
+        // Scale: _wf is a NOMINAL width fraction of the canvas (the same idea as MmrSidePanel), turned
+        // into one uniform LayoutTransform. RefW is the design width, so an unarranged panel comes out
+        // at exactly 1.0 whatever the resolution — identical to how it has always rendered.
+        private const double RefW = ContentWidth + 22;
+        private const double MinNomW = 300, MaxNomW = 940;   // scale ≈ 0.64 … 2.0
         // Minion-art grid (left column): full card renders auto-fit into ≤4 columns — 200px wide for a
         // small pool, shrinking (never below ~110) as the pool grows so everything stays visible with
         // no scrolling. Card aspect ≈ the production full renders (404×558).
@@ -52,7 +62,46 @@ namespace HsbgCardLookup.Ui
         private readonly TextBlock _artCaption;
         private readonly WrapPanel _artWrap;
         private readonly TextBlock _artMore;
+        private readonly Canvas _host;             // null = HDT's overlay canvas
+        private readonly ScaleTransform _scale = new ScaleTransform(1, 1);
+        private readonly Border _handle;           // top-right resize grabber
+        private readonly Rectangle _editOutline;
+        private readonly Border _editLabel;
+        private readonly DispatcherTimer _handleHide;
         private bool _attached;
+
+        private bool _hasPos;                      // the panel has been arranged at least once
+        private double _xf, _yf, _wf;              // saved placement (canvas fractions)
+        private double _nominalW = RefW;           // what Layout turns into the scale factor
+        private bool _editing;
+        private bool _dragging, _resizing, _moved;
+        private Point _startCursor;
+        private double _startLeft, _startTop, _startW;
+
+        /// <summary>The canvas this panel lives in: HDT's game overlay by default, or a caller's own
+        /// canvas for an off-game preview. Held per instance rather than swapped globally, so a preview
+        /// can never capture the live in-match panel's attach (and vice versa).</summary>
+        private Canvas Host => _host ?? Core.OverlayCanvas;
+
+        /// <summary>A move/resize gesture ended — receives the new placement fractions (xf, yf, wf).</summary>
+        public Action<double, double, double> GeometryChanged;
+
+        /// <summary>True while the panel is being dragged or resized. The watcher keeps it up for the
+        /// duration: the hover signal that summoned it is long gone by then, and having the panel
+        /// vanish out from under a drag is the one thing that would make it unpositionable.</summary>
+        public bool IsGesturing => _dragging || _resizing;
+
+        /// <summary>The rendered size, i.e. after the scale transform — what the panel really occupies
+        /// on the canvas, and so what every clamp has to be measured against.
+        ///
+        /// Width comes from <c>_root.Width</c>, not ActualWidth, and that matters: SetContent assigns
+        /// the new width and the cursor-anchored placement runs in the SAME pass, before WPF has
+        /// measured — ActualWidth would still be the previous content's width and the panel would land
+        /// offset by the difference. Height has no explicit value, so it can only be read back after a
+        /// layout pass (hence the deferred correction in PlaceForSummon).</summary>
+        private double RenderedW =>
+            (double.IsNaN(_root.Width) ? (_root.ActualWidth > 0 ? _root.ActualWidth : _nominalW) : _root.Width) * _scale.ScaleX;
+        private double RenderedH => _root.ActualHeight * _scale.ScaleY;
 
         // The panel's on-screen box in DEVICE pixels, refreshed after every placement/layout. Read from
         // the OnUpdate thread (IsUnderMouse) and the mouse hook, so it's swapped as one immutable object
@@ -93,8 +142,14 @@ namespace HsbgCardLookup.Ui
         private static readonly Brush TribeBrush = Frozen(TribeColor);
         private static readonly Brush UniqueBrush = Frozen(UniqueColor);
 
-        public DarkGiftPanel()
+        public DarkGiftPanel() : this(null) { }
+
+        /// <param name="host">Render into this canvas instead of HDT's overlay. A hosted panel is a
+        /// passive preview: no overlay hit-testing, no drag/resize gestures (so it can never install
+        /// the global mouse hook) and no geometry written back to config.</param>
+        public DarkGiftPanel(Canvas host)
         {
+            _host = host;
             var header = new DockPanel { LastChildFill = true, Margin = new Thickness(2, 0, 2, 7) };
             var title = new TextBlock
             {
@@ -152,6 +207,49 @@ namespace HsbgCardLookup.Ui
             outer.Children.Add(_artColumn);
             outer.Children.Add(_giftColumn);
 
+            var arrowPath = new Path
+            {
+                Data = Geometry.Parse("M3 9 L9 3 M9 3 L9 6 M9 3 L6 3"),
+                Stroke = Brushes.White, StrokeThickness = 1.6, Stretch = Stretch.Uniform, Margin = new Thickness(4)
+            };
+            _handle = new Border
+            {
+                Width = 18, Height = 18,
+                CornerRadius = new CornerRadius(5),
+                Background = new SolidColorBrush(Color.FromArgb(0xCC, 0x00, 0x00, 0x00)),
+                BorderBrush = UiKit.AccentBrush, BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Visibility = Visibility.Collapsed,
+                Cursor = Cursors.SizeNESW,
+                Child = arrowPath
+            };
+            _editOutline = new Rectangle
+            {
+                Stroke = UiKit.AccentBrush, StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection { 4, 3 },
+                Fill = Brushes.Transparent, RadiusX = 6, RadiusY = 6,
+                IsHitTestVisible = false, Visibility = Visibility.Collapsed
+            };
+            _editLabel = new Border
+            {
+                Background = UiKit.AccentBrush, CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                IsHitTestVisible = false, Visibility = Visibility.Collapsed,
+                Child = new TextBlock
+                {
+                    Text = "Dark Gifts",
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E)),
+                    FontSize = 12, FontWeight = FontWeights.SemiBold
+                }
+            };
+
+            var stack = new Grid();
+            stack.Children.Add(outer);
+            stack.Children.Add(_editOutline);
+            stack.Children.Add(_editLabel);
+            stack.Children.Add(_handle);
+
             _root = new Border
             {
                 Background = PanelBg,
@@ -161,69 +259,161 @@ namespace HsbgCardLookup.Ui
                 Padding = new Thickness(10, 8, 10, 9),
                 Width = ContentWidth + 22,          // content + padding/border; SetContent adjusts
                 Visibility = Visibility.Collapsed,
-                Child = outer
+                LayoutTransform = _scale,
+                Child = stack
             };
             try { _root.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = UiKit.ThinScrollBarStyle(); } catch { }
 
+            // The panel's width changes with content (a mode switch collapses a whole column), so a
+            // saved placement has to be re-clamped whenever that happens — but never mid-gesture, which
+            // would fight the cursor.
+            _root.SizeChanged += (s, e) => { if (!_dragging && !_resizing) { ClampPosition(); UpdateBox(); } };
+
+            _handleHide = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+            _handleHide.Tick += (s, e) =>
+            {
+                _handleHide.Stop();
+                if (!_editing && !_resizing) _handle.Visibility = Visibility.Collapsed;
+            };
+
             _root.MouseRightButtonUp += (s, e) => { e.Handled = true; try { ModeCycleRequested?.Invoke(); } catch { } };
 
-            // Ask HDT to treat this element as clickable: its 60Hz hover loop drops WS_EX_TRANSPARENT
-            // from the overlay window while the cursor is inside us, so wheel/right-click land here.
-            try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+            if (_host == null)
+            {
+                _handle.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: true, e); };
+                _root.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginGesture(resize: false, e); };
+                _root.MouseMove += (s, e) =>
+                {
+                    _handle.Visibility = Visibility.Visible;
+                    _handleHide.Stop(); _handleHide.Start();
+                };
+
+                // Ask HDT to treat this element as clickable: its 60Hz hover loop drops WS_EX_TRANSPARENT
+                // from the overlay window while the cursor is inside us, so wheel/right-click land here.
+                // Meaningless for a preview, which is not in HDT's overlay at all.
+                try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+            }
         }
 
-        /// <summary>Show the panel (adding it to HDT's overlay canvas on first use). Canvas thread.</summary>
+        /// <summary>Restore the saved placement (call before the first show). <paramref name="wf"/> &lt;= 0
+        /// means the panel has never been arranged, and summons stay cursor-anchored.</summary>
+        public void Place(double xf, double yf, double wf)
+        {
+            if (wf <= 0) return;
+            _xf = xf; _yf = yf; _wf = wf; _hasPos = true;
+        }
+
+        public bool IsVisible => _attached && _root.Visibility == Visibility.Visible;
+
+        /// <summary>Where the panel currently sits in its canvas, at rendered (post-scale) size.
+        /// Zero-size until it has been laid out.</summary>
+        public Rect Bounds
+        {
+            get
+            {
+                double x = Canvas.GetLeft(_root), y = Canvas.GetTop(_root);
+                if (double.IsNaN(x)) x = 0;
+                if (double.IsNaN(y)) y = 0;
+                return new Rect(x, y, RenderedW, RenderedH);
+            }
+        }
+
+        /// <summary>Arrange mode: dashed outline, name tag and a pinned grabber.</summary>
+        public void SetEditChrome()
+        {
+            _editing = true;
+            _editOutline.Visibility = Visibility.Visible;
+            _editLabel.Visibility = Visibility.Visible;
+            _handle.Visibility = Visibility.Visible;
+        }
+
+        public void ClearEditChrome()
+        {
+            _editing = false;
+            _editOutline.Visibility = Visibility.Collapsed;
+            _editLabel.Visibility = Visibility.Collapsed;
+            _handle.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>Show the panel (adding it to the canvas on first use). Canvas thread.</summary>
         public void Show()
         {
-            var canvas = Core.OverlayCanvas;
-            if (canvas == null) return;
-            if (!_attached)
-            {
-                canvas.Children.Add(_root);
-                _attached = true;
-            }
+            if (!Attach()) return;
             _root.Visibility = Visibility.Visible;
-            InstallWheelHook();
-            // Content changes resize the panel, so refresh the hover box after this layout pass too —
-            // not only on a fresh summon (a stale box would make the panel vanish under the cursor).
-            _root.Dispatcher.BeginInvoke(new Action(UpdateBox), DispatcherPriority.Loaded);
+            if (_host == null) InstallMouseHook();   // a settings preview must never hook the mouse
+            Layout();
+            // Content changes resize the panel, so re-clamp and refresh the hover box after this layout
+            // pass too — not only on a fresh summon (a stale box makes the panel vanish under the cursor).
+            _root.Dispatcher.BeginInvoke(new Action(() => { ClampPosition(); UpdateBox(); }), DispatcherPriority.Loaded);
+        }
+
+        private bool Attach()
+        {
+            if (_attached) return true;
+            var canvas = Host;
+            if (canvas == null) return false;
+            canvas.Children.Add(_root);
+            canvas.SizeChanged += OnCanvasSizeChanged;
+            _attached = true;
+            return true;
+        }
+
+        private void OnCanvasSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (_root.Visibility == Visibility.Visible) Layout();
         }
 
         /// <summary>Hide the panel but keep it attached for the next summon. Canvas thread.</summary>
         public void Hide()
         {
+            EndGesture(persist: false);
             _root.Visibility = Visibility.Collapsed;
             _box = null;
-            RemoveWheelHook();
+            RemoveMouseHook();
         }
 
-        /// <summary>Remove the panel from HDT's canvas (plugin unload). Canvas thread.</summary>
+        /// <summary>Remove the panel from its canvas (plugin unload). Canvas thread.</summary>
         public void Close()
         {
-            RemoveWheelHook();
+            EndGesture(persist: false);
+            RemoveMouseHook();
             _box = null;
-            try { Core.OverlayCanvas?.Children.Remove(_root); } catch { /* HDT may be tearing down */ }
+            try
+            {
+                var canvas = Host;
+                if (canvas != null)
+                {
+                    canvas.SizeChanged -= OnCanvasSizeChanged;
+                    canvas.Children.Remove(_root);
+                }
+            }
+            catch { /* HDT may be tearing down */ }
             _attached = false;
         }
 
-        /// <summary>Summon placement, in canvas coordinates. Horizontal: the CURSOR is the reference
-        /// point (it sits on the hovered button) — the panel's right edge lands ~350px left of it,
-        /// scaled by the canvas' 16:9 content width (350 tuned at 1920×1080 → about-centered), so the
-        /// button and the game's own tooltip stay clear. Vertical: centered (height isn't known until
-        /// layout → corrected right after the next layout pass). Fully clamped inside the canvas.</summary>
+        /// <summary>Summon placement, in canvas coordinates. Once the panel has been ARRANGED, the
+        /// saved spot wins outright — being able to rely on where it appears is the whole point of
+        /// making it positionable.
+        ///
+        /// Until then the original rule stands: the CURSOR is the reference point (it sits on the
+        /// hovered button) — the panel's right edge lands ~350px left of it, scaled by the canvas'
+        /// 16:9 content width (350 tuned at 1920×1080 → about-centered), so the button and the game's
+        /// own tooltip stay clear. Vertical: centered (height isn't known until layout → corrected
+        /// right after the next layout pass). Fully clamped inside the canvas.</summary>
         public void PlaceForSummon()
         {
-            var canvas = Core.OverlayCanvas;
+            var canvas = Host;
             if (canvas == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;
 
+            Layout();
+            if (_hasPos) return;   // Layout has already put it back on its saved fractions
+
             double contentW = Math.Min(cw, ch * (16.0 / 9.0));
             double offset = 350.0 * contentW / 1920.0;
-            // Keep the list inside the game window on short canvases (the panel is centered vertically).
-            _scroll.MaxHeight = Math.Min(500, Math.Max(200, ch - 120));
 
-            double w = double.IsNaN(_root.Width) ? ContentWidth + 22 : _root.Width;
+            double w = RenderedW;
             var cursor = new Point(cw / 2, ch / 2);
             try
             {
@@ -239,12 +429,127 @@ namespace HsbgCardLookup.Ui
             {
                 try
                 {
-                    double h = _root.ActualHeight;
+                    double h = RenderedH;
                     if (h > 0) Canvas.SetTop(_root, Clamp((ch - h) / 2, 0, Math.Max(0, ch - h)));
                     UpdateBox();
                 }
                 catch { }
             }), DispatcherPriority.Loaded);
+        }
+
+        /// <summary>Resolve the scale from the saved nominal width and re-clamp. Canvas thread.</summary>
+        private void Layout()
+        {
+            var canvas = Host;
+            if (canvas == null) return;
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            if (cw <= 0 || ch <= 0) return;
+
+            // An unarranged panel derives its fraction from the CURRENT canvas, so it always resolves
+            // to scale 1.0 — exactly how it rendered before it was scalable. Only a saved _wf makes the
+            // panel track the resolution.
+            double wf = _wf > 0 ? _wf : RefW / cw;
+            _nominalW = Clamp(wf * cw, MinNomW, MaxNomW);
+            double s = _nominalW / RefW;
+            if (Math.Abs(_scale.ScaleX - s) > 0.001) { _scale.ScaleX = s; _scale.ScaleY = s; }
+
+            // The list cap is in UNSCALED units — the transform multiplies it back up, so a scaled-up
+            // panel would otherwise run off the bottom of the game window.
+            _scroll.MaxHeight = Math.Min(500, Math.Max(160, (ch - 120 * s) / s));
+
+            ClampPosition();
+        }
+
+        /// <summary>Keep an arranged panel on its saved fractions and inside the canvas. A panel that
+        /// has never been arranged owns its own position (the cursor put it there), so this leaves it
+        /// alone.</summary>
+        private void ClampPosition()
+        {
+            if (!_hasPos || _dragging || _resizing) return;
+            var canvas = Host;
+            if (canvas == null) return;
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            if (cw <= 0 || ch <= 0) return;
+            double w = RenderedW, h = RenderedH;
+            if (w <= 0) w = _nominalW;
+            Canvas.SetLeft(_root, Clamp(_xf * cw, 0, Math.Max(0, cw - w)));
+            Canvas.SetTop(_root, Clamp(_yf * ch, 0, Math.Max(0, ch - Math.Max(80, h))));
+        }
+
+        // ── Move / resize gestures ───────────────────────────────────────────────────────────────
+        // No hook of its own: the low-level mouse hook is already up for the whole time the panel is
+        // visible (it forwards the wheel), which is exactly the window in which a gesture can happen.
+
+        private void BeginGesture(bool resize, MouseButtonEventArgs e)
+        {
+            if (_host != null) return;   // preview: never drag, never write geometry
+            if (!_attached || _dragging || _resizing) return;
+            // The hook is what ends the gesture. Without it a drag would latch on forever, and since a
+            // live gesture keeps the panel from hiding, the panel would never go away again.
+            if (_mouseHook == IntPtr.Zero) return;
+            var canvas = Host;
+            if (canvas == null) return;
+            try { _startCursor = e.GetPosition(canvas); } catch { return; }
+            _startLeft = Canvas.GetLeft(_root);
+            _startTop = Canvas.GetTop(_root);
+            _startW = _nominalW;
+            if (double.IsNaN(_startLeft) || double.IsNaN(_startTop) || _startW <= 0) return;
+            _moved = false;
+            _dragging = !resize;
+            _resizing = resize;
+        }
+
+        private void OnGestureMove()
+        {
+            var canvas = Host;
+            if (canvas == null) { EndGesture(persist: false); return; }
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            if (cw <= 0 || ch <= 0) return;
+
+            Point cur;
+            try
+            {
+                GetCursorPos(out POINT p);
+                cur = canvas.PointFromScreen(new Point(p.X, p.Y));
+            }
+            catch { return; }
+            double dx = cur.X - _startCursor.X, dy = cur.Y - _startCursor.Y;
+            if (Math.Abs(dx) + Math.Abs(dy) > 1) _moved = true;
+
+            if (_dragging)
+            {
+                double w = RenderedW, h = RenderedH;
+                Canvas.SetLeft(_root, Clamp(_startLeft + dx, 0, Math.Max(0, cw - w)));
+                Canvas.SetTop(_root, Clamp(_startTop + dy, 0, Math.Max(0, ch - h)));
+            }
+            else if (_resizing)
+            {
+                // Drag right to scale up: this drives the nominal width Layout turns into the scale.
+                _wf = Clamp(_startW + dx, MinNomW, MaxNomW) / cw;
+                Layout();
+            }
+            // The panel is moving without a fresh layout pass, so the cached hover box would go stale
+            // and the watcher would decide the cursor had left — hiding the panel mid-drag.
+            UpdateBox();
+        }
+
+        private void EndGesture(bool persist = true)
+        {
+            if (!_dragging && !_resizing) return;
+            _dragging = _resizing = false;
+            if (!persist || !_moved) return;
+
+            var canvas = Host;
+            if (canvas == null) return;
+            double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
+            if (cw <= 0 || ch <= 0) return;
+            double left = Canvas.GetLeft(_root), top = Canvas.GetTop(_root);
+            if (double.IsNaN(left) || double.IsNaN(top)) return;
+            _xf = left / cw;
+            _yf = top / ch;
+            _wf = _nominalW / cw;
+            _hasPos = true;   // from here on the panel summons where the user put it, not at the cursor
+            try { GeometryChanged?.Invoke(_xf, _yf, _wf); } catch { }
         }
 
         // Cache the panel's screen box (device px) for the cross-thread hover test + the wheel hook.
@@ -435,49 +740,61 @@ namespace HsbgCardLookup.Ui
             if (pos < text.Length) tb.Inlines.Add(new Run(text.Substring(pos)));
         }
 
-        // ── Wheel forwarding (low-level mouse hook, active only while visible) ──────────────────────
-        // The cursor sits on the game's button while the panel is up, so WPF never receives the wheel.
-        // The hook watches WM_MOUSEWHEEL globally, scrolls our list, and NEVER swallows the event; when
-        // the cursor IS over the panel, native WPF wheel handling takes over instead (no double-scroll).
-        private IntPtr _wheelHook = IntPtr.Zero;
-        private LowLevelMouseProc _wheelProc;    // keep the delegate alive while hooked
+        // ── Low-level mouse hook (active only while the panel is visible) ───────────────────────────
+        // Two duties, one hook, because both need exactly the same lifetime:
+        //   • wheel forwarding — the cursor sits on the game's button while the panel is up, so WPF
+        //     never receives the wheel. The hook watches WM_MOUSEWHEEL globally and scrolls our list;
+        //     when the cursor IS over the panel, native WPF wheel handling takes over (no double-scroll).
+        //   • move/resize — WPF mouse capture can't be trusted on HDT's overlay: the instant the cursor
+        //     outruns the panel, HDT re-enables click-through and the window stops receiving input.
+        // It NEVER swallows an event.
+        private IntPtr _mouseHook = IntPtr.Zero;
+        private LowLevelMouseProc _hookProc;    // keep the delegate alive while hooked
 
-        private void InstallWheelHook()
+        private void InstallMouseHook()
         {
-            if (_wheelHook != IntPtr.Zero) return;
+            if (_mouseHook != IntPtr.Zero) return;
             try
             {
-                _wheelProc = WheelHookProc;
-                _wheelHook = SetWindowsHookEx(WH_MOUSE_LL, _wheelProc, GetModuleHandle(null), 0);
+                _hookProc = MouseHookProc;
+                _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _hookProc, GetModuleHandle(null), 0);
             }
-            catch { _wheelHook = IntPtr.Zero; _wheelProc = null; }
+            catch { _mouseHook = IntPtr.Zero; _hookProc = null; }
         }
 
-        private void RemoveWheelHook()
+        private void RemoveMouseHook()
         {
-            if (_wheelHook == IntPtr.Zero) return;
-            try { UnhookWindowsHookEx(_wheelHook); } catch { }
-            _wheelHook = IntPtr.Zero;
-            _wheelProc = null;
+            if (_mouseHook == IntPtr.Zero) return;
+            try { UnhookWindowsHookEx(_mouseHook); } catch { }
+            _mouseHook = IntPtr.Zero;
+            _hookProc = null;
         }
 
-        private IntPtr WheelHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+        private IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && wParam == (IntPtr)WM_MOUSEWHEEL && !IsUnderMouse)
+            if (nCode >= 0)
             {
-                try
+                if (wParam == (IntPtr)WM_MOUSEWHEEL && !IsUnderMouse)
                 {
-                    // MSLLHOOKSTRUCT: POINT pt (8 bytes) then DWORD mouseData — wheel delta in the high word.
-                    int mouseData = Marshal.ReadInt32(lParam, 8);
-                    int delta = (short)((mouseData >> 16) & 0xFFFF);
-                    _root.Dispatcher.BeginInvoke(new Action(() =>
+                    try
                     {
-                        try { _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - delta / 120.0 * 64.0); } catch { }
-                    }));
+                        // MSLLHOOKSTRUCT: POINT pt (8 bytes) then DWORD mouseData — wheel delta in the high word.
+                        int mouseData = Marshal.ReadInt32(lParam, 8);
+                        int delta = (short)((mouseData >> 16) & 0xFFFF);
+                        _root.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            try { _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - delta / 120.0 * 64.0); } catch { }
+                        }));
+                    }
+                    catch { }
                 }
-                catch { }
+                else if (_dragging || _resizing)
+                {
+                    if (wParam == (IntPtr)WM_MOUSEMOVE) { try { OnGestureMove(); } catch { } }
+                    else if (wParam == (IntPtr)WM_LBUTTONUP) { try { EndGesture(); } catch { } }
+                }
             }
-            return CallNextHookEx(_wheelHook, nCode, wParam, lParam);
+            return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
         }
 
         private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
@@ -486,6 +803,8 @@ namespace HsbgCardLookup.Ui
 
         private const int WH_MOUSE_LL = 14;
         private const int WM_MOUSEWHEEL = 0x020A;
+        private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_LBUTTONUP = 0x0202;
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);

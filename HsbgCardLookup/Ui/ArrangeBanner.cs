@@ -99,6 +99,7 @@ namespace HsbgCardLookup.Ui
                 case ArrangeTarget.Trinkets: return "trinket boxes";
                 case ArrangeTarget.Anomaly: return "anomaly box";
                 case ArrangeTarget.MmrPanel: return "opponents' MMR panel";
+                case ArrangeTarget.DarkGifts: return "Dark Gift panel";
                 default: return "";
             }
         }

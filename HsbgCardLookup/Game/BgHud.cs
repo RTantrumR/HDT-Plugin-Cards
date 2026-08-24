@@ -18,8 +18,9 @@ namespace HsbgCardLookup.Game
     /// right-click without Hearthstone ever losing foreground; window tracking, foreground gating and
     /// DPI come from HDT). Joins are pure <c>entity.CardId → our card</c> (CardStore.Lookup) — no
     /// HearthDb, no dbfId:
-    ///   • trinkets — <c>Player.Trinkets</c>, mapped to up to four boxes (lesser, greater, + 2 overflow,
-    ///     since an anomaly can grant more than the usual pair);
+    ///   • trinkets — <c>Player.Trinkets</c>, filling up to four boxes positionally (a box appears
+    ///     for each trinket actually held: usually two, but transforms and anomalies make other
+    ///     counts real);
     ///   • anomaly  — the one entity in <c>Game.Entities</c> whose CardId maps to a <c>CardType=="anomaly"</c>.
     /// Driven by IPlugin.OnUpdate (throttled). Pure read — never mutates the game. State is read on the
     /// OnUpdate thread (defensively, collections mutate on HDT threads); all canvas work is marshalled
@@ -33,8 +34,12 @@ namespace HsbgCardLookup.Game
     /// </summary>
     public sealed class BgHud
     {
-        private const int TrinketSlots = 4;           // lesser + greater + two overflow boxes
-        private static readonly string[] TrinketLabels =
+        private const int TrinketSlots = 4;           // the most trinkets a player can hold at once
+        /// <summary>Slot labels, shared with the settings preview so both name the boxes the same.
+        /// Boxes 1 and 2 keep their familiar names even though the fill is positional: in the ordinary
+        /// match that IS what lands in them, and a transform putting a second greater in box 1 is
+        /// exactly the case the player needs to notice.</summary>
+        internal static readonly string[] TrinketLabels =
             { "Lesser Trinket", "Greater Trinket", "Trinket 3", "Trinket 4" };
 
         private readonly CardStore _store;
@@ -98,7 +103,7 @@ namespace HsbgCardLookup.Game
 
                 var d = _desired;
                 string sig = d.InMatch
-                    ? "1|" + _config.ShowTrinkets + "|" + _config.ShowExtraTrinkets + "|" + _config.ShowAnomaly + "|"
+                    ? "1|" + _config.ShowTrinkets + "|" + _config.ShowAnomaly + "|"
                         + string.Join(",", d.Trinkets.Select(c => c?.ExternalId)) + "|" + d.Anomaly?.ExternalId + "|"
                         + string.Concat(_trinkets.Select(s => s.Suppressed ? '1' : '0')) + (_anomaly.Suppressed ? '1' : '0')
                     : "0";
@@ -158,22 +163,22 @@ namespace HsbgCardLookup.Game
         }
 
         // Show placeholders for the slots being arranged (canvas thread). The feature's own on/off
-        // toggle is deliberately ignored — you can position a HUD before switching it on — but
-        // ShowExtraTrinkets still applies, because that is a COUNT, not an on/off: arranging two boxes
-        // the user has chosen not to have would just be clutter.
+        // toggle is deliberately ignored — you can position a HUD before switching it on. All four
+        // boxes are shown: in play a box only exists while a trinket occupies it, so arranging is the
+        // one moment the 3rd and 4th have to be placed, before the match that fills them.
         private void EnterEdit(Desired d = null)
         {
             if (d == null) d = ReadDesired();
             bool trinkets = _arrange == ArrangeTarget.Trinkets;
             for (int i = 0; i < _trinkets.Length; i++)
             {
-                if (trinkets && (i < 2 || _config.ShowExtraTrinkets))
+                if (trinkets)
                     EnterEditSlot(_trinkets[i], d.InMatch ? d.Trinkets[i] : null,
-                                  RepresentativeTrinket(greater: i == 1), TrinketLabels[i]);
+                                  SampleTrinket(_store, greater: i == 1), TrinketLabels[i]);
                 else _trinkets[i].Hide();
             }
             if (_arrange == ArrangeTarget.Anomaly)
-                EnterEditSlot(_anomaly, d.InMatch ? d.Anomaly : null, RepresentativeAnomaly(), "Anomaly");
+                EnterEditSlot(_anomaly, d.InMatch ? d.Anomaly : null, SampleAnomaly(_store), "Anomaly");
             else _anomaly.Hide();
         }
 
@@ -203,20 +208,22 @@ namespace HsbgCardLookup.Game
             catch { }
         }
 
-        private BgCard RepresentativeTrinket(bool greater)
+        /// <summary>A stand-in card for an empty box — arrange mode and the settings preview both use
+        /// it, so a box looks the same wherever you are laying it out.</summary>
+        internal static BgCard SampleTrinket(CardStore store, bool greater)
         {
             try
             {
-                return _store.All?.FirstOrDefault(c => greater
+                return store?.All?.FirstOrDefault(c => greater
                     ? IsGreater(c)
                     : (!string.IsNullOrEmpty(c.TrinketTier) && !IsGreater(c)));
             }
             catch { return null; }
         }
 
-        private BgCard RepresentativeAnomaly()
+        internal static BgCard SampleAnomaly(CardStore store)
         {
-            try { return _store.All?.FirstOrDefault(c => string.Equals(c.CardType, "anomaly", StringComparison.OrdinalIgnoreCase)); }
+            try { return store?.All?.FirstOrDefault(c => string.Equals(c.CardType, "anomaly", StringComparison.OrdinalIgnoreCase)); }
             catch { return null; }
         }
 
@@ -284,22 +291,19 @@ namespace HsbgCardLookup.Game
 
                 try
                 {
-                    // Resolve every trinket entity, then map: first lesser → slot 0, first greater →
-                    // slot 1, any extras (anomaly cases) fill the overflow slots in order.
-                    var resolved = new List<BgCard>();
-                    foreach (var e in Snapshot(g.Player?.Trinkets))
+                    // Fill the boxes POSITIONALLY, in the order the trinkets were created (entity
+                    // id ascending — a transform keeps its entity, so a card already in a box never
+                    // gets reshuffled out of it). The old mapping reserved box 0 for a lesser and
+                    // box 1 for a greater, which drops a trinket the moment the pair isn't one of
+                    // each — and several lessers exist precisely to break that pairing: Souvenir
+                    // Stand / Rune of Transmutation / Trip Vouchers all end up as a SECOND GREATER,
+                    // and Mysterious Orb as a second LESSER. In each of those a real trinket landed
+                    // in an overflow box while box 0 or box 1 sat empty.
+                    int next = 0;
+                    foreach (var e in Snapshot(g.Player?.Trinkets).OrderBy(x => x?.Id ?? int.MaxValue))
                     {
                         var c = _store.Lookup(StripGold(e?.CardId));
-                        if (c != null) resolved.Add(c);
-                    }
-                    BgCard lesser = resolved.FirstOrDefault(c => !IsGreater(c));
-                    BgCard greater = resolved.FirstOrDefault(IsGreater);
-                    d.Trinkets[0] = lesser;
-                    d.Trinkets[1] = greater;
-                    int next = 2;
-                    foreach (var c in resolved)
-                    {
-                        if (ReferenceEquals(c, lesser) || ReferenceEquals(c, greater)) continue;
+                        if (c == null) continue;
                         if (next >= d.Trinkets.Length) break;
                         d.Trinkets[next++] = c;
                     }
@@ -322,17 +326,17 @@ namespace HsbgCardLookup.Game
             return d;
         }
 
-        // Lesser/greater (0,1) follow ShowTrinkets; the two overflow boxes (2,3) also require the
-        // opt-in ShowExtraTrinkets flag (off by default — some people only want the usual pair).
-        private bool TrinketSlotEnabled(int i) =>
-            _config.ShowTrinkets && ArrangeSession.AllowsTrinkets && (i < 2 || _config.ShowExtraTrinkets);
+        // Every box follows the one ShowTrinkets toggle. There is no separate opt-in for the 3rd/4th:
+        // a box is only ever drawn when a trinket is actually in it, so extra boxes can't be clutter —
+        // they are the difference between seeing a trinket you hold and not seeing it.
+        private bool TrinketsEnabled => _config.ShowTrinkets && ArrangeSession.AllowsTrinkets;
 
         // ── Apply to canvas cards (canvas thread) ────────────────────────────────────────────────
         private void Apply(Desired d)
         {
             if (_editing) return;   // arrange mode owns the cards; poll updates wait until it exits
             for (int i = 0; i < _trinkets.Length; i++)
-                ReconcileSlot(_trinkets[i], TrinketSlotEnabled(i) && d.InMatch && !_trinkets[i].Suppressed ? d.Trinkets[i] : null);
+                ReconcileSlot(_trinkets[i], TrinketsEnabled && d.InMatch && !_trinkets[i].Suppressed ? d.Trinkets[i] : null);
             ReconcileSlot(_anomaly, _config.ShowAnomaly && ArrangeSession.AllowsAnomaly
                 && d.InMatch && !_anomaly.Suppressed ? d.Anomaly : null);
         }

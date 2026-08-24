@@ -53,6 +53,8 @@ namespace HsbgCardLookup.Game
         private volatile string _lastSig;
         private bool _visibleNow;
         private volatile bool _lastHadPool;   // a pool was rendered on the last content build (mode cycling)
+        private volatile bool _arranging;     // the panel is pinned up for positioning
+        private readonly bool _preview;       // a detached instance driving a settings preview
         private DarkGiftPanel _panel;
 
         // Live state (refreshed on the throttle; read on the OnUpdate thread only).
@@ -81,10 +83,17 @@ namespace HsbgCardLookup.Game
 #endif
 
         public DarkGiftWatcher(CardStore store, PluginConfig config, Dispatcher ui, Action<string> log)
+            : this(store, config, ui, log, preview: false) { }
+
+        /// <param name="preview">A detached instance that only ever renders into a caller's own panel
+        /// (see <see cref="RenderInto"/>). It must NOT hook HDT's game events: those route through a
+        /// static "current" pointer, so a second hooked instance would steal them from the live
+        /// watcher and kill the in-match panel.</param>
+        internal DarkGiftWatcher(CardStore store, PluginConfig config, Dispatcher ui, Action<string> log, bool preview)
         {
-            _store = store; _config = config; _ui = ui; _log = log;
+            _store = store; _config = config; _ui = ui; _log = log; _preview = preview;
             try { _ownPid = Process.GetCurrentProcess().Id; } catch { _ownPid = -1; }
-            HookGameEvents();
+            if (!preview) HookGameEvents();
         }
 
         // ── Poll (OnUpdate thread, ~100ms — hover must feel instant) ────────────────────────────────
@@ -92,6 +101,7 @@ namespace HsbgCardLookup.Game
         {
             try
             {
+                if (_preview || _arranging) return;   // arrange mode / the preview own the panel
                 if (!_config.ShowDarkGifts || !ArrangeSession.AllowsDarkGifts) { HideIfShown(); return; }
 
                 // New-match reset. Primary signal: HDT's OnGameStart event (a fast requeue can go
@@ -129,7 +139,9 @@ namespace HsbgCardLookup.Game
                     if ((now - _hoverSince).TotalMilliseconds >= ShowDelayMs) _dwellMet = true;
                 }
 
-                bool panelUnderMouse = _panel != null && _panel.IsUnderMouse;
+                // A drag also counts as "still using it": the hover that summoned the panel is long
+                // over by then, and hiding it mid-gesture is the one thing that makes it unpositionable.
+                bool panelUnderMouse = _panel != null && (_panel.IsUnderMouse || _panel.IsGesturing);
                 bool lingering = (now - _lastHoverUtc).TotalMilliseconds < LingerMs;
                 if (!lingering && !panelUnderMouse) _dwellMet = false;   // hover ended → re-dwell next time
                 bool show = _dwellMet;
@@ -170,47 +182,13 @@ namespace HsbgCardLookup.Game
                 string header = null, poolCaption = null;
                 if (show)
                 {
-                    // Effective offered-tier window: the button's live tags when available (anomaly-
-                    // proof), else the published table for the current turn.
-                    int wmin, wmax;
-                    if (_buttonFound && _tierMin > 0) { wmin = _tierMin; wmax = Math.Max(_tierMin, _tierMax); }
-                    else TierWindow(targetTurn, out wmin, out wmax);
-
-                    // Guaranteed-tribe pool: only when the turn-6+ rule is live AND the top type is
-                    // unambiguous (a tie means we can't know which type the game guarantees).
-                    PoolAnalysis pa = null;
-                    string tribe = targetTurn >= 6 && _topTribes.Count == 1 ? _topTribes[0] : null;
-                    if (tribe != null) pa = AnalyzePool(BuildPool(tribe, wmin, wmax));
-                    _lastHadPool = pa != null && pa.Pool.Count > 0;
-
-                    if (mode != "minions")
-                    {
-                        rows = BuildRows(targetTurn, pa);
-                        header = BuildHeader(targetTurn);
-                    }
-
-                    // Pool renders (left column): up to 10 card arts, sole-enablers first; a bigger
-                    // pool shows its first 10 + a "+N more" note (never hidden entirely — the early
-                    // >8 → skip rule meant e.g. Mech pools never rendered at all).
-                    if (mode != "gifts" && pa != null && pa.Pool.Count > 0)
-                    {
-                        poolTotal = pa.Pool.Count;
-                        poolCaption = $"Guaranteed {tribe} — Tier {(wmax > wmin ? wmin + "–" + wmax : wmin.ToString())} ({poolTotal})";
-                        minions = pa.Pool
-                            .OrderByDescending(m => pa.Sole.Contains(m))
-                            .ThenBy(m => m.Tier ?? 9).ThenBy(m => m.Name, StringComparer.Ordinal)
-                            .Take(10)
-                            .Select(m => new DarkGiftPanel.MinionArt { Card = m, Emph = pa.Sole.Contains(m) ? 2 : 1 })
-                            .ToList();
-                    }
-
-                    if (mode == "minions")
-                    {
-                        // Minions-only: the art column alone; without a pool the panel shows nothing
-                        // at all (user-chosen over falling back to the list).
-                        if (minions == null) { rows = null; _visibleNow = false; }
-                        else rows = new List<DarkGiftPanel.Row>();
-                    }
+                    var content = BuildContent(targetTurn, mode);
+                    rows = content.Rows;
+                    header = content.Header;
+                    poolCaption = content.PoolCaption;
+                    minions = content.Minions;
+                    poolTotal = content.PoolTotal;
+                    if (content.Suppress) _visibleNow = false;
                 }
 
 #if DEBUG
@@ -336,6 +314,130 @@ namespace HsbgCardLookup.Game
                 : (cardId.EndsWith("_G", StringComparison.Ordinal) ? cardId.Substring(0, cardId.Length - 2) : cardId);
 
         // ── Content (OnUpdate thread; pure functions of the read state) ─────────────────────────────
+        /// <summary>Everything the panel renders for one (turn, mode). Split out of Poll so the
+        /// settings preview and arrange mode run the PRODUCTION computation instead of a copy of it —
+        /// a change to what the panel shows belongs here, where every caller sees it.</summary>
+        private sealed class PanelContent
+        {
+            public List<DarkGiftPanel.Row> Rows;
+            public List<DarkGiftPanel.MinionArt> Minions;
+            public string Header, PoolCaption;
+            public int PoolTotal;
+            public bool Suppress;   // minions-only with no pool: the panel shows nothing at all
+        }
+
+        private PanelContent BuildContent(int targetTurn, string mode)
+        {
+            var c = new PanelContent();
+
+            // Effective offered-tier window: the button's live tags when available (anomaly-proof),
+            // else the published table for the current turn.
+            int wmin, wmax;
+            if (_buttonFound && _tierMin > 0) { wmin = _tierMin; wmax = Math.Max(_tierMin, _tierMax); }
+            else TierWindow(targetTurn, out wmin, out wmax);
+
+            // Guaranteed-tribe pool: only when the turn-6+ rule is live AND the top type is
+            // unambiguous (a tie means we can't know which type the game guarantees).
+            PoolAnalysis pa = null;
+            string tribe = targetTurn >= 6 && _topTribes.Count == 1 ? _topTribes[0] : null;
+            if (tribe != null) pa = AnalyzePool(BuildPool(tribe, wmin, wmax));
+            _lastHadPool = pa != null && pa.Pool.Count > 0;
+
+            if (mode != "minions")
+            {
+                c.Rows = BuildRows(targetTurn, pa);
+                c.Header = BuildHeader(targetTurn);
+            }
+
+            // Pool renders (left column): up to 10 card arts, sole-enablers first; a bigger pool shows
+            // its first 10 + a "+N more" note (never hidden entirely — the early >8 → skip rule meant
+            // e.g. Mech pools never rendered at all).
+            if (mode != "gifts" && pa != null && pa.Pool.Count > 0)
+            {
+                c.PoolTotal = pa.Pool.Count;
+                c.PoolCaption = $"Guaranteed {tribe} — Tier {(wmax > wmin ? wmin + "–" + wmax : wmin.ToString())} ({c.PoolTotal})";
+                c.Minions = pa.Pool
+                    .OrderByDescending(m => pa.Sole.Contains(m))
+                    .ThenBy(m => m.Tier ?? 9).ThenBy(m => m.Name, StringComparer.Ordinal)
+                    .Take(10)
+                    .Select(m => new DarkGiftPanel.MinionArt { Card = m, Emph = pa.Sole.Contains(m) ? 2 : 1 })
+                    .ToList();
+            }
+
+            if (mode == "minions")
+            {
+                // Minions-only: the art column alone; without a pool the panel shows nothing at all
+                // (user-chosen over falling back to the list).
+                if (c.Minions == null) { c.Rows = null; c.Suppress = true; }
+                else c.Rows = new List<DarkGiftPanel.Row>();
+            }
+            return c;
+        }
+
+        /// <summary>Render a given turn into a caller-owned panel, off game. Used by the settings
+        /// preview and by arrange mode, both of which need the real thing on screen with no match to
+        /// read state from. Everything obtainable outside a match stays REAL — the gift list, the tier
+        /// windows, the pool and its sole-enabler analysis all come from live card data; only the
+        /// per-match facts that cannot exist (turn, the player's top tribe, the lobby's tribe set,
+        /// Duos) are supplied by the caller.</summary>
+        internal void RenderInto(DarkGiftPanel panel, int turn, string topTribe, bool duos, string mode)
+        {
+            if (panel == null) return;
+            try
+            {
+                if (_gifts == null) _gifts = DarkGifts.Resolve(_store);
+                _turn = turn;
+                _duos = duos;
+                _buttonFound = false;        // no button entity off game → use the published tier table
+                _topTribes.Clear();
+                if (!string.IsNullOrEmpty(topTribe)) _topTribes.Add(topTribe);
+                _lobbyTribes.Clear();        // empty = "lobby unknown", which suppresses no gift
+
+                var c = BuildContent(turn, NormMode(mode));
+                if (c.Rows == null) { panel.Hide(); return; }
+                panel.SetContent(c.Header, c.Rows, c.PoolCaption, c.Minions, c.PoolTotal);
+                panel.Show();
+            }
+            catch (Exception ex) { try { _log?.Invoke("[DarkGifts] RenderInto error: " + ex.Message); } catch { } }
+        }
+
+        /// <summary>Enter/exit arrange mode. While on, the panel is pinned on screen with sample content
+        /// (and its own toggle ignored, so it can be positioned before being switched on) so the user
+        /// can drag and scale it without hovering the button mid-match.</summary>
+        internal void SetArrange(ArrangeTarget target)
+        {
+            bool on = target == ArrangeTarget.DarkGifts;
+            if (!on && !_arranging) return;
+            _arranging = on;
+            Marshal(() =>
+            {
+                try
+                {
+                    if (!on)
+                    {
+                        _panel?.ClearEditChrome();
+                        _lastSig = null;      // next poll decides afresh whether it should be up
+                        HideIfShown();
+                        return;
+                    }
+                    EnsurePanel();
+                    RenderInto(_panel, ArrangeTurn, ArrangeTribe, false, _config.DarkGiftMode);
+                    // Minions-only genuinely renders nothing when no pool applies. That is correct in
+                    // play and useless here — there would be nothing on screen to drag — so arrange
+                    // falls back to the full panel rather than leaving an invisible session running.
+                    if (!_panel.IsVisible) RenderInto(_panel, ArrangeTurn, ArrangeTribe, false, "Both");
+                    _panel.SetEditChrome();
+                    _lastSig = null;
+                }
+                catch { }
+            });
+        }
+
+        // Sample state for arrange mode: turn 7 is past the turn-6 guaranteed-type rule, so both the
+        // gift list and the minion pool have something to show — which is what has to be positioned.
+        private const int ArrangeTurn = 7;
+        private const string ArrangeTribe = "Beast";
+
         private List<DarkGiftPanel.Row> BuildRows(int targetTurn, PoolAnalysis pa)
         {
             bool tribeRule = targetTurn >= 6 && _topTribes.Count > 0;   // a guaranteed top-type offer exists
@@ -574,12 +676,30 @@ namespace HsbgCardLookup.Game
             try
             {
                 if (rows == null) { _panel?.Hide(); return; }
-                if (_panel == null) { _panel = new DarkGiftPanel(); _panel.ModeCycleRequested += CycleMode; }
+                EnsurePanel();
                 _panel.SetContent(header, rows, poolCaption, minions, poolTotal);   // sets window width…
                 if (fresh) _panel.PlaceForSummon();   // …which the cursor-referenced placement uses
                 _panel.Show();
             }
             catch (Exception ex) { try { _log?.Invoke("[DarkGifts] ApplyUi error: " + ex.Message); } catch { } }
+        }
+
+        // Create the panel on first use, restoring the saved placement BEFORE it is ever shown (an
+        // unarranged panel has wf == 0, which leaves summons cursor-anchored).
+        private void EnsurePanel()
+        {
+            if (_panel != null) return;
+            _panel = new DarkGiftPanel();
+            _panel.ModeCycleRequested += CycleMode;
+            var hud = _config.DarkGiftHud;
+            if (hud != null) _panel.Place(hud.XF, hud.YF, hud.WF);
+            _panel.GeometryChanged = (xf, yf, wf) =>
+            {
+                var p = _config.DarkGiftHud;
+                if (p == null) return;
+                p.Set = true; p.XF = xf; p.YF = yf; p.WF = wf;
+                try { _config.Save(); } catch { }
+            };
         }
 
         private void HideIfShown()

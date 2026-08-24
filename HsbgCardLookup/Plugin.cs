@@ -454,6 +454,7 @@ namespace HsbgCardLookup
             }
             _bgHud?.SetArrange(target);
             _bgMmr?.SetArrange(target);
+            _darkGifts?.SetArrange(target);
             ReapplyFeatures();
 
             // A Done button on the overlay itself: clicking back into the settings window would take
@@ -516,7 +517,7 @@ namespace HsbgCardLookup
             // Show(), not just Activate(): the window hides itself while a HUD is being arranged, and
             // Activate() alone would do nothing visible.
             if (_settings != null) { _settings.Show(); _settings.Activate(); return; }
-            _settings = new SettingsWindow(_config, _hotkey, ApplySettings, SetArrangeMode,
+            _settings = new SettingsWindow(_config, _store, _hotkey, ApplySettings, SetArrangeMode,
             Version.ToString(), CheckForUpdatesInteractive,
             n => OpenDownloadPage(n?.Url), SkipVersion);
             _settings.Closed += (s, e) => _settings = null;

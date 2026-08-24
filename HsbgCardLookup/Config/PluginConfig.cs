@@ -42,15 +42,12 @@ namespace HsbgCardLookup.Config
         // Always-on HUD: read the player's current trinkets / lobby anomaly from HDT's live state and
         // show each as a floating card. Off by default (opt-in). Each slot's placement+size persists.
         public bool ShowTrinkets { get; set; } = false;
-        // Opt-in to the two OVERFLOW trinket boxes (3rd/4th) on top of the usual lesser+greater pair —
-        // only relevant in rare anomaly cases; off by default since most players only ever hold two.
-        public bool ShowExtraTrinkets { get; set; } = false;
         public bool ShowAnomaly { get; set; } = false;
         public HudPlacement LesserTrinketHud { get; set; } = new HudPlacement();
         public HudPlacement GreaterTrinketHud { get; set; } = new HudPlacement();
-        // Overflow trinket boxes: an anomaly can grant more than the usual lesser+greater pair, so the
-        // HUD supports up to four independently-placed trinket boxes. Added after the original two →
-        // old configs deserialize the first two and default these (XML back-compat).
+        // Boxes 3 and 4: transforms and anomalies can leave a player holding more than the usual pair,
+        // so the HUD supports up to four independently-placed trinket boxes. Added after the original
+        // two → old configs deserialize the first two and default these (XML back-compat).
         public HudPlacement Trinket3Hud { get; set; } = new HudPlacement();
         public HudPlacement Trinket4Hud { get; set; } = new HudPlacement();
         public HudPlacement AnomalyHud { get; set; } = new HudPlacement();

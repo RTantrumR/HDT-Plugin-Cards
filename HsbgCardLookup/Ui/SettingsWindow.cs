@@ -28,6 +28,7 @@ namespace HsbgCardLookup.Ui
         private const string Unbound = "None";
 
         private readonly PluginConfig _config;
+        private readonly Data.CardStore _store;   // the previews render real cards
         private readonly HotkeyManager _hotkey;
         private readonly Action _onChanged;
         private readonly Action<ArrangeTarget> _onArrange;   // enter/exit arrange for one feature
@@ -47,6 +48,8 @@ namespace HsbgCardLookup.Ui
 
         private Action _pageRefresh;         // page-local: re-render whatever live preview this page shows
         private MmrPanelPreview _mmrPreview; // page-local: the live MMR side-panel preview
+        private HudPreview _hudPreview;      // page-local: the live trinket / anomaly HUD preview
+        private DarkGiftPreview _giftPreview; // page-local: the live Dark Gift panel preview
         private TextBlock _arrangeBtnLabel;
         private readonly List<Action> _modeRefresh = new List<Action>();   // Dark-Gift mode row repaints
 
@@ -58,11 +61,13 @@ namespace HsbgCardLookup.Ui
         private bool _onUpdatesPage;
         private StackPanel _updateActionsHost;  // repainted in place, no full page rebuild needed
 
-        internal SettingsWindow(PluginConfig config, HotkeyManager hotkey, Action onChanged, Action<ArrangeTarget> onArrange,
+        internal SettingsWindow(PluginConfig config, Data.CardStore store, HotkeyManager hotkey,
+            Action onChanged, Action<ArrangeTarget> onArrange,
             string currentVersion, Action checkForUpdates, Action<UpdateNotice> openDownloadPage,
             Action<string> skipUpdate)
         {
             _config = config;
+            _store = store;
             _hotkey = hotkey;
             _onChanged = onChanged;
             _onArrange = onArrange;
@@ -110,6 +115,8 @@ namespace HsbgCardLookup.Ui
                 _hotkey.KeyCaptured -= OnKeyCaptured;
                 if (_arranging != ArrangeTarget.None) { _arranging = ArrangeTarget.None; try { _onArrange?.Invoke(ArrangeTarget.None); } catch { } }
                 _mmrPreview?.Close(); _mmrPreview = null;
+                _hudPreview?.Close(); _hudPreview = null;
+                _giftPreview?.Close(); _giftPreview = null;
             };
         }
 
@@ -126,6 +133,8 @@ namespace HsbgCardLookup.Ui
             // otherwise the mode strands with no visible Done button anywhere.
             if (_arranging != ArrangeTarget.None) SetArrange(ArrangeTarget.None);
             _mmrPreview?.Close(); _mmrPreview = null;
+            _hudPreview?.Close(); _hudPreview = null;
+            _giftPreview?.Close(); _giftPreview = null;
             _arrangeBtn = null; _arrangeBtnLabel = null;
             _arrangeTargetOnPage = ArrangeTarget.None;
             _pageRefresh = null;   // page-local; rebuilt when its page shows
@@ -308,14 +317,16 @@ namespace HsbgCardLookup.Ui
         {
             var stack = NewPage("Trinket HUD", sub: true);
 
-            stack.Children.Add(ToggleRow("Show extra trinket boxes (3rd/4th)", _config.ShowExtraTrinkets, v =>
+            stack.Children.Add(new TextBlock
             {
-                _config.ShowExtraTrinkets = v;
-                _status.Text = v
-                    ? "Extra trinket boxes show when an anomaly grants more than two."
-                    : "Extra trinket boxes off (just lesser + greater).";
-                Changed();
-            }));
+                Text = "A box appears for each trinket you are actually holding. That is usually two, but "
+                     + "several lesser trinkets end up as a second greater one, and anomalies can hand out "
+                     + "more — so up to four boxes are available to position.",
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            stack.Children.Add(HudPreviewBlock(isAnomaly: false));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.Trinkets, "Position the trinket boxes"));
 
@@ -332,6 +343,8 @@ namespace HsbgCardLookup.Ui
         private void BuildAnomaly()
         {
             var stack = NewPage("Anomaly HUD", sub: true);
+
+            stack.Children.Add(HudPreviewBlock(isAnomaly: true));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.Anomaly, "Position the anomaly box"));
 
@@ -451,6 +464,15 @@ namespace HsbgCardLookup.Ui
             ShowPage(stack);
         }
 
+        // The live HUD preview block: real cards at their real size, plus a shrunk game screen showing
+        // where they sit. Sized to the page width so the map keeps the game's aspect.
+        private UIElement HudPreviewBlock(bool isAnomaly)
+        {
+            _hudPreview = new HudPreview(_config, _store, isAnomaly, 394);
+            _pageRefresh = () => _hudPreview?.Refresh();
+            return _hudPreview.Root;
+        }
+
         // With the panel surface off, the panel-involving tier modes make no sense — snap them to the
         // equivalent panel-less choice ("Both"→"Portraits", "Panel"→"Off") so the selection always
         // sits on an option that's actually selectable.
@@ -481,6 +503,29 @@ namespace HsbgCardLookup.Ui
                 "Never show the minion-art column."));
             stack.Children.Add(ModeRow("Minions", "Minion pool only",
                 "Only the guaranteed-type minion arts; the panel stays hidden when no pool applies."));
+
+            stack.Children.Add(Separator());
+
+            // The real panel, in the selected mode. The turn is the one thing a preview cannot know and
+            // the thing that changes the panel most, so it is a switch rather than a fixed guess.
+            _giftPreview = new DarkGiftPreview(_config, _store, 394);
+            _pageRefresh = () => _giftPreview?.Refresh();
+            var turns = DarkGiftPreview.SampleTurns;
+            var turnLabels = new string[turns.Length];
+            for (int i = 0; i < turns.Length; i++) turnLabels[i] = "Turn " + turns[i];
+            stack.Children.Add(TabSwitch(turnLabels, 1, i => _giftPreview?.SetTurn(turns[i])));
+            stack.Children.Add(_giftPreview.Root);
+
+            stack.Children.Add(ArrangeHudRow(ArrangeTarget.DarkGifts, "Position the Dark Gift panel"));
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "In match: drag the panel to move it, drag its top-right corner to resize, and "
+                     + "right-click it to cycle these modes. Until you move it, it appears beside the "
+                     + "Dark Discovery button.",
+                Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
 
             ShowPage(stack);
         }
@@ -1012,6 +1057,7 @@ namespace HsbgCardLookup.Ui
                 case ArrangeTarget.Trinkets: return _config.ShowTrinkets;
                 case ArrangeTarget.Anomaly: return _config.ShowAnomaly;
                 case ArrangeTarget.MmrPanel: return _config.ShowOpponentMmr && _config.ShowMmrPanel;
+                case ArrangeTarget.DarkGifts: return _config.ShowDarkGifts;
                 default: return false;
             }
         }

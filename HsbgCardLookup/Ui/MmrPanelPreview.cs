@@ -2,7 +2,6 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using Hearthstone_Deck_Tracker.API;                 // Core.OverlayCanvas
 using HsbgCardLookup.Config;
 
 namespace HsbgCardLookup.Ui
@@ -21,7 +20,6 @@ namespace HsbgCardLookup.Ui
     /// </summary>
     internal sealed class MmrPanelPreview
     {
-        private const double FallbackW = 1920, FallbackH = 1080;
         private const double FramePad = 14;                    // breathing room around the panel
         private const double MinViewH = 120, MaxViewH = 360;   // the page has a ScrollViewer, but stay sane
 
@@ -44,7 +42,7 @@ namespace HsbgCardLookup.Ui
             _viewW = viewW;
             _viewH = viewH;
 
-            ResolveStageSize();
+            PreviewStage.ResolveSize(out _cw, out _ch);
 
             _stage = new Canvas { Width = _cw, Height = _ch, IsHitTestVisible = false };
 
@@ -121,31 +119,6 @@ namespace HsbgCardLookup.Ui
         public void Close()
         {
             try { _panel.Close(); } catch { }
-        }
-
-        /// <summary>The stage must match the LOGICAL size of the live overlay canvas, because that is
-        /// what the panel scales against. HDT's canvas is the exact coordinate space when it is up;
-        /// otherwise the game's client rect in DIPs (never raw pixels — at 125% scaling a pixel-sized
-        /// stage would render every font a quarter too small relative to the game).</summary>
-        private void ResolveStageSize()
-        {
-            try
-            {
-                var canvas = Core.OverlayCanvas;
-                if (canvas != null && canvas.ActualWidth > 0 && canvas.ActualHeight > 0)
-                {
-                    _cw = canvas.ActualWidth; _ch = canvas.ActualHeight;
-                    return;
-                }
-            }
-            catch { }
-            try
-            {
-                var r = Hearthstone_Deck_Tracker.User32.GetHearthstoneRect(true);   // true = DIPs
-                if (r.Width > 0 && r.Height > 0) { _cw = r.Width; _ch = r.Height; return; }
-            }
-            catch { }
-            _cw = FallbackW; _ch = FallbackH;
         }
 
         /// <summary>
