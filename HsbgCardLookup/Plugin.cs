@@ -155,6 +155,20 @@ namespace HsbgCardLookup
                 if (!_config.RecordMatchHistory) return;
                 _matchHistory.Load();
                 _matchHistory.ImportFromHdt();
+#if DEBUG
+                // SCAFFOLDING (Debug only, remove once the panel is wired to a real surface):
+                // render the newest stored match so the layout can be inspected without playing.
+                var newest = _matchHistory.All.FirstOrDefault();
+                if (newest != null)
+                {
+                    _ui?.BeginInvoke(new Action(() =>
+                    {
+                        var png = System.IO.Path.Combine(PluginConfig.DataDir, "final-board-debug.png");
+                        Ui.FinalBoard.FinalBoardExport.RenderAsync(newest, png,
+                            written => Log("[FinalBoard] debug render: " + (written ?? "FAILED")));
+                    }));
+                }
+#endif
             }
             catch (Exception ex) { Log("LoadMatchHistory error: " + ex.Message); }
         }

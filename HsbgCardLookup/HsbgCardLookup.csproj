@@ -108,6 +108,10 @@
     <Compile Include="Game\FinalBoard\FinalBoardRecord.cs" />
     <Compile Include="Game\FinalBoard\FinalBoardStore.cs" />
     <Compile Include="Game\FinalBoard\FinalBoardCapture.cs" />
+    <Compile Include="Game\FinalBoard\MatchStats.cs" />
+    <Compile Include="Game\FinalBoard\MatchStatsTracker.cs" />
+    <Compile Include="Ui\FinalBoard\FinalBoardPanel.cs" />
+    <Compile Include="Ui\FinalBoard\FinalBoardExport.cs" />
     <Compile Include="Game\DarkGifts.cs" />
     <Compile Include="Game\DarkGiftWatcher.cs" />
     <Compile Include="Ui\DarkGiftPanel.cs" />

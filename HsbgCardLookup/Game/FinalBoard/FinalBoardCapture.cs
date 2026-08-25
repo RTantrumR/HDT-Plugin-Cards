@@ -36,6 +36,7 @@ namespace HsbgCardLookup.Game.FinalBoard
         private readonly PluginConfig _config;
         private readonly FinalBoardStore _store;
         private readonly Action<string> _log;
+        private readonly MatchStatsTracker _tracker;
 
         // GameEvents is an ActionList (Add only, no Remove), so handlers route through a static and
         // a plugin reload cannot end up with two live subscribers.
@@ -54,6 +55,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             _config = config;
             _store = store;
             _log = log;
+            _tracker = new MatchStatsTracker(log);
             HookGameEvents();
         }
 
@@ -68,6 +70,7 @@ namespace HsbgCardLookup.Game.FinalBoard
                 if (_startFlag)
                 {
                     _startFlag = false;
+                    _tracker.Reset();
                     _endedAt = null;
                     _finished = false;
                     _pending = null;
@@ -84,6 +87,8 @@ namespace HsbgCardLookup.Game.FinalBoard
                         _pending = ReadExtras();     // entities are still alive at this point
                     }
                 }
+
+                if (_config.RecordMatchHistory) _tracker.Poll();
 
                 if (_finished || !_endedAt.HasValue) return;
                 if ((now - _endedAt.Value).TotalSeconds > CaptureWindowSeconds)
@@ -132,6 +137,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             rec.AnomalyCardId = x.AnomalyCardId;
             rec.PlayerName = x.PlayerName;
             rec.Turns = x.Turns;
+            rec.Stats = _tracker.TakeSnapshot();
             if (string.IsNullOrEmpty(rec.HeroName)) rec.HeroName = HeroNameOf(rec.HeroCardId);
 
             _store.Save(rec);
@@ -316,6 +322,13 @@ namespace HsbgCardLookup.Game.FinalBoard
             _hooked = true;
             try { Hearthstone_Deck_Tracker.API.GameEvents.OnGameStart.Add(new Action(() => { if (_current != null) _current._startFlag = true; })); } catch { }
             try { Hearthstone_Deck_Tracker.API.GameEvents.OnGameEnd.Add(new Action(() => { if (_current != null) _current._endFlag = true; })); } catch { }
+            try
+            {
+                Hearthstone_Deck_Tracker.API.GameEvents.OnEntityWillTakeDamage.Add(
+                    new Action<Hearthstone_Deck_Tracker.API.PredamageInfo>(
+                        info => { if (_current != null) _current._tracker.HandlePredamage(info); }));
+            }
+            catch { }
         }
 
         private void Log(string msg)

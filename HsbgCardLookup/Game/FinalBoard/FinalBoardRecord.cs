@@ -60,6 +60,9 @@ namespace HsbgCardLookup.Game.FinalBoard
         public List<MinionRecord> Board { get; set; }
 
         // ── tier B: only present when we watched the match end ──────────────────────────────────
+        /// <summary>What the player DID — null for any match we did not watch, including every import.</summary>
+        public MatchStats Stats { get; set; }
+
         public string HeroPowerCardId { get; set; }
         public List<MinionRecord> Trinkets { get; set; }
         public int AnomalyDbfId { get; set; }
