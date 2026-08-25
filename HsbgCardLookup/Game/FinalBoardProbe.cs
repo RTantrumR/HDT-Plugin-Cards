@@ -108,7 +108,7 @@ namespace HsbgCardLookup.Game
                 {
                     LogDecay(now - _endedAt.Value);
                     LogGameStats();
-                    if (!_dumpedHeroPowers) { _dumpedHeroPowers = true; DumpHeroPowerCandidates(); }
+                    if (!_dumpedHeroPowers) { _dumpedHeroPowers = true; DumpHeroPowerCandidates(); DumpPowerLogShape(); }
                 }
                 if (_lastStoreCount != StoreCount()) DumpStore("changed");
 
@@ -218,6 +218,59 @@ namespace HsbgCardLookup.Game
                     shown, me, SafeTag(g.PlayerEntity, GameTag.HERO_POWER_ENTITY)));
             }
             catch (Exception ex) { Write("HEROPOWER EX: " + ex.Message); }
+        }
+
+        /// <summary>
+        /// What is actually inside HDT's Core.Game.PowerLog. Hearthstone's own Power.log writes each
+        /// block into TWO sections (GameState.DebugPrintPower and PowerTaskList.DebugPrintPower)
+        /// with identical PLAY-block counts, so if HDT keeps both, every shop-action count doubles.
+        /// Measured here against the same match's on-disk log rather than guessed.
+        /// </summary>
+        private void DumpPowerLogShape()
+        {
+            try
+            {
+                var log = Core.Game != null ? Core.Game.PowerLog : null;
+                if (log == null) { Write("POWERLOG | null"); return; }
+                var lines = new List<string>(log);
+
+                int gameState = 0, taskList = 0, neither = 0;
+                foreach (var l in lines)
+                {
+                    if (l == null) { neither++; continue; }
+                    if (l.IndexOf("GameState.DebugPrintPower", StringComparison.Ordinal) >= 0) gameState++;
+                    else if (l.IndexOf("PowerTaskList.DebugPrintPower", StringComparison.Ordinal) >= 0) taskList++;
+                    else neither++;
+                }
+                Write(string.Format("POWERLOG | lines={0} | GameState={1} PowerTaskList={2} other={3}",
+                    lines.Count, gameState, taskList, neither));
+
+                foreach (var id in new[] { "TB_BaconShop_DragSell", "TB_BaconShop_8p_Reroll_Button",
+                                           "TB_BaconShop_1p_Reroll_Button", "TB_BaconShopLockAll_Button",
+                                           "TB_BaconShop_Triples_01", "TB_BaconShop_DragBuy" })
+                {
+                    int play = 0, all = 0;
+                    foreach (var l in lines)
+                    {
+                        if (l == null) continue;
+                        if (l.IndexOf("BLOCK_START", StringComparison.Ordinal) < 0) continue;
+                        if (l.IndexOf("cardId=" + id, StringComparison.Ordinal) < 0) continue;
+                        all++;
+                        if (l.IndexOf("BlockType=PLAY", StringComparison.Ordinal) >= 0) play++;
+                    }
+                    if (all > 0) Write(string.Format("  POWERLOG | {0} | PLAY={1} allBlocks={2}", id, play, all));
+                }
+
+                for (int i = 0; i < lines.Count && i < 2; i++)
+                    Write("  POWERLOG sample: " + Trim(lines[i]));
+            }
+            catch (Exception ex) { Write("POWERLOG EX: " + ex.Message); }
+        }
+
+        private static string Trim(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Length <= 160 ? s : s.Substring(0, 160) + "...";
         }
 
         private static int SafeTag(Entity e, GameTag tag)

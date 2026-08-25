@@ -321,9 +321,15 @@ namespace HsbgCardLookup.Game.FinalBoard
         ///
         /// Only NEW lines are read, and the cursor resets if the log ever shrinks (a new game).
         /// Selling, rolling, freezing and tripling leave no usable trace in entity state — a sold
-        /// minion and a tripled one both simply leave the board — but each opens a POWER block
-        /// sourced from the button's own pseudo-card, which is unambiguous. Card ids per HearthSim's
-        /// replay converter, which Firestone also relies on.
+        /// minion and a tripled one both simply leave the board — but each opens a block sourced
+        /// from the button's own pseudo-card. Card ids per HearthSim's replay converter.
+        ///
+        /// ONLY BlockType=PLAY counts, and that was measured rather than assumed. In a real 13-turn
+        /// match the reroll button produced 40 PLAY blocks but 120 POWER and 53 TRIGGER ones: a
+        /// single manual roll emits one PLAY plus several POWER/TRIGGER blocks at the same
+        /// timestamp, and the tavern's automatic turn-start refresh emits a lone TRIGGER. PLAY is
+        /// the one that means "the player pressed this". Counting POWER would have tripled rolls
+        /// and counting every block would have inflated all five.
         /// </summary>
         private void ScanPowerLog()
         {
@@ -341,6 +347,7 @@ namespace HsbgCardLookup.Game.FinalBoard
                 try { line = log[i]; } catch { break; }
                 if (string.IsNullOrEmpty(line)) continue;
                 if (line.IndexOf("BLOCK_START", StringComparison.Ordinal) < 0) continue;
+                if (line.IndexOf("BlockType=PLAY", StringComparison.Ordinal) < 0) continue;
 
                 if (Mentions(line, SellCardId))
                 {
