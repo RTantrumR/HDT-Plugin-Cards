@@ -33,6 +33,7 @@ namespace HsbgCardLookup
         private FloatingCardManager _floating;
         private Game.BgHud _bgHud;                               // always-on trinkets/anomaly HUD
         private Game.FinalBoard.FinalBoardStore _matchHistory;  // local JSON history of finished BG matches
+        private Game.FinalBoard.FinalBoardCapture _finalBoardCapture;
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
         private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
@@ -113,6 +114,8 @@ namespace HsbgCardLookup
             _floating = new FloatingCardManager(_config);
             _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating, OpenSettings, CheckForUpdatesInteractive, Version.ToString());
             _bgHud = new Game.BgHud(_store, _config, _ui);
+            _matchHistory = new Game.FinalBoard.FinalBoardStore(Log);
+            _finalBoardCapture = new Game.FinalBoard.FinalBoardCapture(_config, _matchHistory, Log);
             _recorder = new Game.MatchRecorder(_store, _config, Log);
             _bgMmr = new Game.BgMmr(_config, _ui, Log);
             _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
@@ -150,10 +153,8 @@ namespace HsbgCardLookup
             try
             {
                 if (!_config.RecordMatchHistory) return;
-                var store = new Game.FinalBoard.FinalBoardStore(Log);
-                store.Load();
-                store.ImportFromHdt();
-                _matchHistory = store;
+                _matchHistory.Load();
+                _matchHistory.ImportFromHdt();
             }
             catch (Exception ex) { Log("LoadMatchHistory error: " + ex.Message); }
         }
@@ -556,6 +557,7 @@ namespace HsbgCardLookup
 #endif
             _bgHud?.Poll();      // throttled read of trinkets/anomaly → always-on HUD
             _recorder?.Poll();   // opt-in per-match board snapshots → CSV at match end
+            _finalBoardCapture?.Poll();  // merges our hero power/trinkets/anomaly onto HDT's record of the match
             _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
             _darkGifts?.Poll();  // opt-in Dark Gift list (shows while hovering the Dark Discovery button)
             _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
