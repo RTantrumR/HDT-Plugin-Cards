@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Hotkey;
 using HsbgCardLookup.Update;
@@ -49,6 +50,8 @@ namespace HsbgCardLookup.Ui
         private StackPanel _pageRoot;        // page-local: what ShowPage renders (header + status + body)
         private Func<bool> _pageMaster;      // page-local: the master switch gating this page, if any
         private Action _pageRefresh;         // page-local: re-render whatever live preview this page shows
+        private DispatcherTimer _applyDebounce;   // see ChangedLive
+        private bool _applyPending;
         private MmrPanelPreview _mmrPreview; // page-local: the live MMR side-panel preview
         private HudPreview _hudPreview;      // page-local: the live trinket / anomaly HUD preview
         private DarkGiftPreview _giftPreview; // page-local: the live Dark Gift panel preview
@@ -112,6 +115,7 @@ namespace HsbgCardLookup.Ui
             // arranging them over it.)
             Closed += (s, e) =>
             {
+                FlushPending();
                 _hotkey.EndCapture();
                 _hotkey.Suppress(false);
                 _hotkey.KeyCaptured -= OnKeyCaptured;
@@ -137,6 +141,7 @@ namespace HsbgCardLookup.Ui
         private StackPanel NewPage(string title, bool sub, Func<bool> master, Action<bool> setMaster)
         {
             EndKeyCapture();              // navigating away cancels a pending key capture
+            FlushPending();               // ...but a pending setting still has to land
             _onSubPage = sub;
             _onMainPage = !sub;
             _onUpdatesPage = false; _updateActionsHost = null;   // page-local; rebuilt when its page shows
@@ -712,6 +717,44 @@ namespace HsbgCardLookup.Ui
             try { _pageRefresh?.Invoke(); } catch { }
         }
 
+        /// <summary>
+        /// Apply a change that arrives in BURSTS — a slider drag, or a held click on a slider track,
+        /// which repeats its step several times a second until the thumb reaches the cursor.
+        ///
+        /// The two halves of <see cref="Changed"/> have very different costs, so they are split rather
+        /// than throttled together. Repainting the page and its live preview is a few milliseconds and
+        /// runs on EVERY tick, which is what makes the control feel live. Persisting is not: one
+        /// _onChanged is a config write to disk plus a whole ApplySettings, which re-runs the F3
+        /// overlay's pool and re-applies every feature. Doing that per step is what made the window
+        /// stutter for seconds while Hearthstone was starting and the disk was already busy — so it is
+        /// debounced to the END of the burst, and only the last value is ever written.
+        /// </summary>
+        private void ChangedLive()
+        {
+            foreach (var r in _modeRefresh) { try { r(); } catch { } }
+            try { _pageRefresh?.Invoke(); } catch { }
+
+            if (_applyDebounce == null)
+            {
+                _applyDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                _applyDebounce.Tick += (s, e) => FlushPending();
+            }
+            _applyPending = true;
+            _applyDebounce.Stop();
+            _applyDebounce.Start();   // restart on every tick: the timer fires once the burst settles
+        }
+
+        /// <summary>Persist a pending live change now. Everything that ends a burst or walks away from
+        /// one calls this, so a value can never be left unsaved: the drag-release, leaving the page,
+        /// and closing the window.</summary>
+        private void FlushPending()
+        {
+            _applyDebounce?.Stop();
+            if (!_applyPending) return;
+            _applyPending = false;
+            _onChanged();
+        }
+
         /// <summary>Show a built page. The ScrollViewer is a floor against pages outgrowing the screen:
         /// the window is SizeToContent.Height, so without a MaxHeight ON THE SCROLLVIEWER it would be
         /// measured at infinite height, never scroll, and simply run off the bottom.</summary>
@@ -930,10 +973,10 @@ namespace HsbgCardLookup.Ui
         /// sentence explaining itself — the hint goes to the status line on change, like every other
         /// row here.
         ///
-        /// Committing is deliberately NOT on every tick: ValueChanged fires continuously through a
-        /// drag, and each commit writes config to disk and re-renders the live preview. The label
-        /// follows the thumb, the setting lands when the drag ends (a track click, which changes the
-        /// value with no drag, commits immediately).
+        /// The value applies AS IT MOVES — a drag and a held track click behave the same, which they
+        /// did not when only the drag deferred. What keeps that affordable is <see cref="ChangedLive"/>:
+        /// the label and the preview follow every tick, while the config write behind them waits for
+        /// the burst to end.
         /// </summary>
         private UIElement SliderRow(string label, int max, Func<int> get, Action<int> set,
                                     Func<int, string> caption, Func<int, string> hint, Func<bool> enabled)
@@ -968,15 +1011,7 @@ namespace HsbgCardLookup.Ui
             row.Children.Add(head);
             row.Children.Add(slider);
 
-            bool suppress = false, dragging = false;
-            Action commit = () =>
-            {
-                int v = (int)Math.Round(slider.Value);
-                if (v == get()) return;
-                set(v);
-                _status.Text = hint(v);
-                Changed();
-            };
+            bool suppress = false;
             Action repaint = () =>
             {
                 suppress = true;
@@ -990,16 +1025,19 @@ namespace HsbgCardLookup.Ui
             };
             slider.ValueChanged += (s, e) =>
             {
-                // A repaint assigning Value must not commit: commit calls Changed(), which repaints,
+                // A repaint assigning Value must not apply: that calls Changed(), which repaints,
                 // which would assign Value again.
                 if (suppress) return;
-                valueLbl.Text = caption((int)Math.Round(slider.Value));
-                if (!dragging) commit();
+                int v = (int)Math.Round(slider.Value);
+                valueLbl.Text = caption(v);
+                if (v == get()) return;
+                set(v);
+                _status.Text = hint(v);
+                ChangedLive();
             };
-            slider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragStartedEvent,
-                new System.Windows.Controls.Primitives.DragStartedEventHandler((s, e) => dragging = true));
+            // Releasing the thumb inside a cooldown would otherwise leave the final value pending.
             slider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
-                new System.Windows.Controls.Primitives.DragCompletedEventHandler((s, e) => { dragging = false; commit(); }));
+                new System.Windows.Controls.Primitives.DragCompletedEventHandler((s, e) => FlushPending()));
 
             repaint();
             _modeRefresh.Add(repaint);

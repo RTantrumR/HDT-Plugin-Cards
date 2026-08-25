@@ -27,7 +27,10 @@ namespace HsbgCardLookup.Ui
         // a pixel of readability.
         private const double MinViewH = 150, MaxViewH = 460;
         private const string SampleTribe = "Beast";
-        internal static readonly int[] SampleTurns = { 4, 7, 11 };
+        // Turn 9 earns its place: its offered-tier window is 4-6, the widest the game ever gives,
+        // so it is the one sample where a big pool count has anything to render (a tier-4-only turn
+        // like 7 has 4-8 minions per tribe, and the late 5-6 window has 8-11).
+        internal static readonly int[] SampleTurns = { 4, 7, 9, 11 };
 
         private readonly PluginConfig _config;
         private readonly Game.DarkGiftWatcher _engine;
