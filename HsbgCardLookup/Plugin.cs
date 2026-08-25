@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -41,6 +41,7 @@ namespace HsbgCardLookup
 #if DEBUG
         private Game.GameStateProbe _probe;                     // read-only BG state logger (Debug-only diagnostics)
         private Game.DarkGiftProbe _giftProbe;                  // Dark Gift / Dark Discovery capture (Debug-only)
+        private Game.FinalBoardProbe _finalBoardProbe;          // post-match window / session-row click / entity decay (Debug-only)
 #endif
         private Dictionary<Key, OverlayBase> _overlays;         // hotkey -> overlay (rebuilt on rewire)
         private readonly Dictionary<Key, DateTime> _lastToggle = new Dictionary<Key, DateTime>();
@@ -121,6 +122,7 @@ namespace HsbgCardLookup
 #if DEBUG
             _probe = new Game.GameStateProbe(_store);
             _giftProbe = new Game.DarkGiftProbe(_store);
+            _finalBoardProbe = new Game.FinalBoardProbe();
 #endif
 
             RewireHotkeys();
@@ -530,6 +532,7 @@ namespace HsbgCardLookup
 #if DEBUG
             _probe?.Poll();
             _giftProbe?.Poll();
+            _finalBoardProbe?.Poll();
 #endif
             _bgHud?.Poll();      // throttled read of trinkets/anomaly → always-on HUD
             _recorder?.Poll();   // opt-in per-match board snapshots → CSV at match end
