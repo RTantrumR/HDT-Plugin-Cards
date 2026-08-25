@@ -28,6 +28,7 @@ namespace HsbgCardLookup.Game.FinalBoard
         public int TavernUpgrades { get; set; }
         public int Freezes { get; set; }
         public int TriplesCreated { get; set; }
+        public int HeroPowersUsed { get; set; }
         public int MinionsBought { get; set; }
         public int SpellsBought { get; set; }
         public int MinionsSold { get; set; }
@@ -62,9 +63,9 @@ namespace HsbgCardLookup.Game.FinalBoard
         [JsonIgnore] public int ActionCount => Turns != null ? Turns.Sum(t => t.Actions) : 0;
 
         /// <summary>
-        /// Actions per minute across shop time only. Combat is excluded on purpose: nothing can be
-        /// done during it, so counting it would just punish long fights and make a slow player with
-        /// short combats look faster than a fast one with long ones.
+        /// Actions per minute across the whole match's shop time. Combat is excluded on purpose:
+        /// nothing can be done during it, so counting it would punish long fights and flatter a slow
+        /// player whose combats happened to be short.
         /// </summary>
         [JsonIgnore]
         public double ApmAverage
@@ -78,9 +79,9 @@ namespace HsbgCardLookup.Game.FinalBoard
             }
         }
 
-        /// <summary>Busiest single shop turn. Turns shorter than 5s are ignored — they divide into noise.</summary>
+        /// <summary>Best SUSTAINED turn — how fast a whole shop was played. Turns under 5s divide into noise.</summary>
         [JsonIgnore]
-        public double ApmPeak
+        public double ApmPeakTurn
         {
             get
             {
@@ -94,6 +95,36 @@ namespace HsbgCardLookup.Game.FinalBoard
                 }
                 return best;
             }
+        }
+
+        /// <summary>
+        /// Best BURST — the fastest four seconds of the match, which is a different question from
+        /// the best turn and gives a much higher number. Four seconds is Firestone's window, chosen
+        /// so this figure is comparable to the one their in-game widget shows; theirs is live-only
+        /// and resets every turn, so a match-level version does not exist anywhere else.
+        /// </summary>
+        [JsonIgnore]
+        public double ApmPeakBurst => PeakBurst(4.0);
+
+        public double PeakBurst(double windowSeconds)
+        {
+            if (Turns == null || windowSeconds <= 0) return 0;
+            double best = 0;
+            foreach (var t in Turns)
+            {
+                var times = t.ActionTimes;
+                if (times == null || times.Count == 0) continue;
+                // Every window that starts at an action: the busiest window always does.
+                for (int i = 0; i < times.Count; i++)
+                {
+                    int count = 0;
+                    double until = times[i] + windowSeconds * 1000.0;
+                    for (int j = i; j < times.Count && times[j] <= until; j++) count++;
+                    double apm = count / windowSeconds * 60.0;
+                    if (apm > best) best = apm;
+                }
+            }
+            return best;
         }
     }
 
@@ -109,6 +140,19 @@ namespace HsbgCardLookup.Game.FinalBoard
 
         public int Actions { get; set; }
         public double ShopSeconds { get; set; }
+
+        /// <summary>
+        /// When each action happened, in milliseconds from the start of this shop turn.
+        ///
+        /// Storing the timeline rather than only the count is what keeps every APM definition open:
+        /// a rolling-window peak, a sustained per-turn rate, or whatever a later comparison needs.
+        /// A busy match is a few hundred small integers, so the cost is nothing next to being locked
+        /// into whichever formula happened to be written first.
+        /// </summary>
+        public List<int> ActionTimes { get; set; } = new List<int>();
+
+        /// <summary>Parallel to <see cref="ActionTimes"/>: what each action was, for per-turn breakdowns.</summary>
+        public List<string> ActionKinds { get; set; } = new List<string>();
 
         public int GoldSpent { get; set; }
         /// <summary>Gold still in hand when the shop closed.</summary>

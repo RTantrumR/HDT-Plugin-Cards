@@ -261,7 +261,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             if (tech > _prevTechLevel && _prevTechLevel > 0)
             {
                 _stats.TavernUpgrades++;
-                Act();
+                Act("upgrade");
                 Log("tavern upgrade to " + tech + " on turn " + _turn.Turn);
             }
             if (tech > 0) { _prevTechLevel = tech; _turn.TavernTier = tech; }
@@ -273,7 +273,9 @@ namespace HsbgCardLookup.Game.FinalBoard
             foreach (var e in entities)
             {
                 if (e == null || e.Id <= 0) continue;
-                var state = new ZoneState((Zone)Tag(e, GameTag.ZONE), Tag(e, GameTag.CONTROLLER));
+                int cardType = Tag(e, GameTag.CARDTYPE);
+                var state = new ZoneState((Zone)Tag(e, GameTag.ZONE), Tag(e, GameTag.CONTROLLER),
+                                          Tag(e, GameTag.EXHAUSTED) > 0, cardType == (int)CardType.HERO_POWER);
                 current[e.Id] = state;
 
                 bool mine = state.Controller == playerId;
@@ -289,12 +291,20 @@ namespace HsbgCardLookup.Game.FinalBoard
                 ZoneState prev;
                 bool known = _prev.TryGetValue(e.Id, out prev);
 
+                // HERO POWER: its own entity flips EXHAUSTED when used. Watching the tag beats
+                // reading PlayerEntity.HERO_POWER_ENTITY, which the live probe found empty.
+                if (mine && state.IsHeroPower && known && !prev.Exhausted && state.Exhausted)
+                {
+                    _stats.HeroPowersUsed++;
+                    Act("heropower");
+                }
+
                 // BUY: a card we saw in the tavern is now in our hand.
                 if (mine && state.Zone == Zone.HAND && _knownShopIds.Contains(e.Id) && _countedBuys.Add(e.Id))
                 {
                     if (IsTavernSpell(e)) _stats.SpellsBought++;
                     else { _stats.MinionsBought++; _turn.MinionsBought++; }
-                    Act();
+                    Act("buy");
                     Log("bought " + (e.CardId ?? "?") + " on turn " + _turn.Turn);
                 }
 
@@ -303,7 +313,7 @@ namespace HsbgCardLookup.Game.FinalBoard
                 {
                     if (IsTavernSpell(e)) _stats.SpellsPlayed++;
                     else _stats.MinionsPlayed++;
-                    Act();
+                    Act(IsTavernSpell(e) ? "spell" : "play");
                 }
 
             }
@@ -353,19 +363,19 @@ namespace HsbgCardLookup.Game.FinalBoard
                 {
                     _stats.MinionsSold++;
                     if (_turn != null) _turn.MinionsSold++;
-                    Act();
+                    Act("sell");
                     Log("sold a minion on turn " + TurnNo());
                 }
                 else if (Mentions(line, RerollCardId1) || Mentions(line, RerollCardId8))
                 {
                     _stats.TavernRolls++;
                     if (_turn != null) _turn.Rolls++;
-                    Act();
+                    Act("roll");
                 }
                 else if (Mentions(line, FreezeCardId))
                 {
                     _stats.Freezes++;
-                    Act();
+                    Act("freeze");
                 }
                 else if (Mentions(line, TripleCardId))
                 {
@@ -411,7 +421,22 @@ namespace HsbgCardLookup.Game.FinalBoard
             catch { }
         }
 
-        private void Act() { if (_turn != null) _turn.Actions++; }
+        /// <summary>
+        /// Record one player action. The timestamp is what makes any later APM definition possible;
+        /// the kind is what makes a per-turn breakdown possible. Both are cheap.
+        ///
+        /// Which kinds count as "an action" is deliberately NOT decided here — everything the player
+        /// does is recorded, and the formula picks. Firestone counts rerolls, buys, sells, plays,
+        /// spells, discovers, upgrades and hero powers but NOT freezes; keeping the raw stream means
+        /// matching them, or not, stays a display decision rather than a data one.
+        /// </summary>
+        private void Act(string kind)
+        {
+            if (_turn == null) return;
+            _turn.Actions++;
+            _turn.ActionTimes.Add((int)_shopClock.ElapsedMilliseconds);
+            _turn.ActionKinds.Add(kind);
+        }
 
         // ── reads ───────────────────────────────────────────────────────────────────────────────
         private static List<Entity> Snapshot(GameV2 g)
@@ -478,7 +503,16 @@ namespace HsbgCardLookup.Game.FinalBoard
         {
             public readonly Zone Zone;
             public readonly int Controller;
-            public ZoneState(Zone zone, int controller) { Zone = zone; Controller = controller; }
+            public readonly bool Exhausted;
+            public readonly bool IsHeroPower;
+
+            public ZoneState(Zone zone, int controller, bool exhausted, bool isHeroPower)
+            {
+                Zone = zone;
+                Controller = controller;
+                Exhausted = exhausted;
+                IsHeroPower = isHeroPower;
+            }
         }
     }
 }
