@@ -69,6 +69,7 @@ namespace HsbgCardLookup.Game
         private int _lastStoreCount = -1;
         private int _rowsHooked;
         private int _lastRowCount = -1;
+        private bool _dumpedHeroPowers;
 
         public FinalBoardProbe()
         {
@@ -90,6 +91,7 @@ namespace HsbgCardLookup.Game
                 {
                     _startFlag = false;
                     _endedAt = null;
+                    _dumpedHeroPowers = false;
                     _lastDecay = null;
                     _lastStats = null;
                     Write("=== EVENT OnGameStart ===");
@@ -106,6 +108,7 @@ namespace HsbgCardLookup.Game
                 {
                     LogDecay(now - _endedAt.Value);
                     LogGameStats();
+                    if (!_dumpedHeroPowers) { _dumpedHeroPowers = true; DumpHeroPowerCandidates(); }
                 }
                 if (_lastStoreCount != StoreCount()) DumpStore("changed");
 
@@ -184,6 +187,42 @@ namespace HsbgCardLookup.Game
             if (line == _lastDecay) return;
             _lastDecay = line;
             Write(string.Format("t=+{0:0.0}s  ", since.TotalSeconds) + line);
+        }
+
+        // One-shot at match end: HERO_POWER_ENTITY on the PlayerEntity read as empty in the first
+        // live run, so Reign's documented fallback really is needed. Log every hero-power entity in
+        // the game with its controller and zone, so the fallback can be chosen from evidence.
+        private void DumpHeroPowerCandidates()
+        {
+            try
+            {
+                var g = Core.Game;
+                if (g == null || g.Entities == null) return;
+                int me = -1;
+                try { if (g.Player != null) me = g.Player.Id; } catch { }
+
+                int shown = 0;
+                foreach (var e in new List<Entity>(g.Entities.Values))
+                {
+                    if (e == null) continue;
+                    int type = 0, ctrl = 0, zone = 0;
+                    try { type = e.GetTag(GameTag.CARDTYPE); } catch { }
+                    if (type != (int)CardType.HERO_POWER) continue;
+                    try { ctrl = e.GetTag(GameTag.CONTROLLER); } catch { }
+                    try { zone = e.GetTag(GameTag.ZONE); } catch { }
+                    Write(string.Format("  HEROPOWER | id={0} card={1} controller={2}{3} zone={4} exhausted={5}",
+                        e.Id, e.CardId, ctrl, ctrl == me ? " (ME)" : "", (Zone)zone, SafeTag(e, GameTag.EXHAUSTED)));
+                    if (++shown >= 12) break;
+                }
+                Write(string.Format("  HEROPOWER | candidates listed={0} | playerId={1} | HERO_POWER_ENTITY tag={2}",
+                    shown, me, SafeTag(g.PlayerEntity, GameTag.HERO_POWER_ENTITY)));
+            }
+            catch (Exception ex) { Write("HEROPOWER EX: " + ex.Message); }
+        }
+
+        private static int SafeTag(Entity e, GameTag tag)
+        {
+            try { return e != null ? e.GetTag(tag) : -1; } catch { return -1; }
         }
 
         // ── 4a. GameStats — the MMR fields arrive asynchronously after the match ────────────────
@@ -304,8 +343,24 @@ namespace HsbgCardLookup.Game
                     row.AddHandler(UIElement.PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(RowDown), true);
                     row.AddHandler(UIElement.MouseLeftButtonUpEvent, new MouseButtonEventHandler(RowUp), true);
                     row.MouseEnter += RowEnter;
+
+                    // HDT registers these rows HOVER-visible only: UpdateHoverable drives
+                    // SetClickthrough purely off _clickableElements (hit-test-visible), and merely
+                    // SYNTHESISES MouseEnter/Leave for hoverables while the window keeps
+                    // WS_EX_TRANSPARENT. So a click can never land on them as shipped. Opting the row
+                    // into _clickableElements through HDT's own public API is the candidate fix —
+                    // this line is the experiment.
+                    bool promoted = false;
+                    try
+                    {
+                        Hearthstone_Deck_Tracker.Utility.Extensions.OverlayExtensions.SetIsOverlayHitTestVisible(row, true);
+                        promoted = true;
+                    }
+                    catch { }
+
                     _rowsHooked++;
-                    Write("ROW HOOKED #" + _rowsHooked + " | " + Describe(row) + " | " + Registrations(row));
+                    Write("ROW HOOKED #" + _rowsHooked + " | " + Describe(row)
+                        + " | promotedToClickable=" + promoted + " | before: " + Registrations(row));
                 }
             }
             catch (Exception ex) { Write("ROWSCAN EX: " + ex.Message); }
