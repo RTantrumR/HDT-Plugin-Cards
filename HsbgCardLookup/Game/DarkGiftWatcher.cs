@@ -401,6 +401,23 @@ namespace HsbgCardLookup.Game
             catch (Exception ex) { try { _log?.Invoke("[DarkGifts] RenderInto error: " + ex.Message); } catch { } }
         }
 
+        /// <summary>How many minions the guaranteed-tribe pool holds at a given turn — the tier window
+        /// alone, no rendering and no live game state. The settings preview uses it to pick a turn whose
+        /// pool can actually hold the count being previewed. Preview instances only: it writes
+        /// <c>_duos</c>, which the live watcher owns.</summary>
+        internal int PoolSizeFor(int turn, string tribe, bool duos)
+        {
+            if (!_preview) return 0;
+            try
+            {
+                if (_gifts == null) _gifts = DarkGifts.Resolve(_store);
+                _duos = duos;
+                TierWindow(turn, out int wmin, out int wmax);
+                return BuildPool(tribe, wmin, wmax).Count;
+            }
+            catch { return 0; }
+        }
+
         private List<DarkGiftPanel.Row> BuildRows(int targetTurn, PoolAnalysis pa)
         {
             bool tribeRule = targetTurn >= 6 && _topTribes.Count > 0;   // a guaranteed top-type offer exists

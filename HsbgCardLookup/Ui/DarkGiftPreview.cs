@@ -27,10 +27,12 @@ namespace HsbgCardLookup.Ui
         // a pixel of readability.
         private const double MinViewH = 150, MaxViewH = 460;
         private const string SampleTribe = "Beast";
-        // Turn 9 earns its place: its offered-tier window is 4-6, the widest the game ever gives,
-        // so it is the one sample where a big pool count has anything to render (a tier-4-only turn
-        // like 7 has 4-8 minions per tribe, and the late 5-6 window has 8-11).
-        internal static readonly int[] SampleTurns = { 4, 7, 9, 11 };
+        // The turn is NOT a user-facing choice here — it is picked to suit the count being previewed
+        // (see PickTurn). These three are the narrowest, the middle and the widest offer the game
+        // makes: a single-tier turn (4 only), the late window (5-6) and turn 9's 4-6, which is the
+        // widest there is. Measured over live data they hold roughly 4-8, 8-11 and 12-17 minions per
+        // tribe, so between them they can show any count the slider allows.
+        private static readonly int[] CandidateTurns = { 7, 11, 9 };
 
         private readonly PluginConfig _config;
         private readonly Game.DarkGiftWatcher _engine;
@@ -40,7 +42,9 @@ namespace HsbgCardLookup.Ui
         private readonly ScaleTransform _fit = new ScaleTransform(1, 1);
         private readonly double _viewW;
 
-        private int _turn = SampleTurns[1];
+        private int _turn;
+        private readonly int[] _turnsBySize;   // CandidateTurns, smallest pool first
+        private readonly int[] _poolSizes;     // ...and their pool sizes, same order
 
         public FrameworkElement Root => _viewport;
 
@@ -54,6 +58,15 @@ namespace HsbgCardLookup.Ui
             // A DETACHED watcher: it hooks no game events (that would steal them from the live one via
             // the static "current" pointer) and only ever renders into the panel it is handed.
             _engine = new Game.DarkGiftWatcher(store, config, Application.Current?.Dispatcher, null, preview: true);
+
+            // Measured once: pool sizes only move when the card data does, which cannot happen while
+            // this page is open — and PickTurn runs on every tick of a slider drag.
+            _turnsBySize = (int[])CandidateTurns.Clone();
+            _poolSizes = new int[_turnsBySize.Length];
+            for (int i = 0; i < _poolSizes.Length; i++)
+                _poolSizes[i] = _engine.PoolSizeFor(_turnsBySize[i], SampleTribe, false);
+            Array.Sort(_poolSizes, _turnsBySize);
+            _turn = _turnsBySize[0];
 
             _stage = new Canvas
             {
@@ -90,11 +103,15 @@ namespace HsbgCardLookup.Ui
         /// which are still to come, the offered tier window, and whether the turn-6 guaranteed-type
         /// rule (and so the minion pool) applies at all - so it changes the panel more than any other
         /// single fact.</summary>
-        public void SetTurn(int turn)
+        /// <summary>The turn to preview for a given count: the smallest pool that can hold it, or the
+        /// biggest pool there is when none can. The user is asking "what does max N look like" — a turn
+        /// whose pool is smaller than N would quietly show fewer and read as the setting not working,
+        /// which is exactly how the fixed turn tabs this replaced were reported.</summary>
+        private int PickTurn(int count)
         {
-            if (_turn == turn) return;
-            _turn = turn;
-            Refresh();
+            for (int i = 0; i < _turnsBySize.Length; i++)
+                if (_poolSizes[i] >= count) return _turnsBySize[i];
+            return _turnsBySize[_turnsBySize.Length - 1];
         }
 
         /// <summary>Re-render in the current display mode. Called on every settings change.</summary>
@@ -102,6 +119,7 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
+                _turn = PickTurn(_config.DarkGiftPoolCount);
                 _engine.RenderInto(_panel, _turn, SampleTribe, duos: false, mode: _config.DarkGiftMode);
 
                 _viewport.Dispatcher.BeginInvoke(new Action(UpdateFit),

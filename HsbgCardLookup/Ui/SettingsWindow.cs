@@ -581,13 +581,14 @@ namespace HsbgCardLookup.Ui
             stack.Children.Add(ModeRow("Minions", "Minion pool only",
                 "Only the guaranteed-type minion arts; the panel stays hidden when no pool applies."));
 
-            stack.Children.Add(SliderRow("Minions to show", PluginConfig.MaxDarkGiftPool,
+            stack.Children.Add(SliderRow("Max amount of minions to show", PluginConfig.MaxDarkGiftPool,
                 () => _config.DarkGiftPoolCount,
                 v => _config.DarkGiftPoolCount = v,
                 v => v == 0 ? "Tribe only" : v.ToString(),
                 v => v == 0
                     ? "The guaranteed tribe is named; none of its minions are drawn."
-                    : $"Up to {v} of the guaranteed tribe's minions, sole gift-enablers first.",
+                    : $"At most {v} of the guaranteed tribe's minions, sole gift-enablers first. "
+                      + "Fewer when its pool is smaller.",
                 // The gift list on its own never draws the pool, so there is nothing for this to size.
                 () => !string.Equals(_config.DarkGiftMode, "Gifts", StringComparison.OrdinalIgnoreCase)));
 
@@ -596,11 +597,7 @@ namespace HsbgCardLookup.Ui
             // The real panel, in the selected mode. The turn is the one thing a preview cannot know and
             // the thing that changes the panel most, so it is a switch rather than a fixed guess.
             _giftPreview = new DarkGiftPreview(_config, _store, 394);
-            var turns = DarkGiftPreview.SampleTurns;
-            var turnLabels = new string[turns.Length];
-            for (int i = 0; i < turns.Length; i++) turnLabels[i] = "Turn " + turns[i];
             _pageRefresh = () => _giftPreview?.Refresh();
-            stack.Children.Add(TabSwitch(turnLabels, 1, i => _giftPreview?.SetTurn(turns[i])));
             stack.Children.Add(_giftPreview.Root);
 
             stack.Children.Add(new TextBlock
