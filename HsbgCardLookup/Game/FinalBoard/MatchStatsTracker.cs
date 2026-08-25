@@ -28,6 +28,16 @@ namespace HsbgCardLookup.Game.FinalBoard
     {
         private const int PollMs = 200;   // fine enough for APM; the work per tick is a dictionary diff
 
+        // The game's own shop buttons. Pressing one opens a POWER block sourced from these
+        // pseudo-cards, which is how HearthSim's converter and Firestone detect these actions — and
+        // it beats inferring them from state: a sale looks like a triple if you only watch minions
+        // leave the board, and Bob reshuffling looks like a roll if you only diff the shop.
+        private const string SellCardId = "TB_BaconShop_DragSell";
+        private const string RerollCardId1 = "TB_BaconShop_1p_Reroll_Button";
+        private const string RerollCardId8 = "TB_BaconShop_8p_Reroll_Button";
+        private const string FreezeCardId = "TB_BaconShopLockAll_Button";
+        private const string TripleCardId = "TB_BaconShop_Triples_01";
+
         private readonly Action<string> _log;
 
         private DateTime _lastPoll = DateTime.MinValue;
@@ -43,12 +53,12 @@ namespace HsbgCardLookup.Game.FinalBoard
         private readonly HashSet<int> _knownShopIds = new HashSet<int>();
         private readonly HashSet<int> _countedBuys = new HashSet<int>();
         private readonly HashSet<int> _countedPlays = new HashSet<int>();
-        private HashSet<int> _lastShopIds = new HashSet<int>();
 
         private int _prevResourcesUsed;
         private int _prevTechLevel;
         private int _combatDealt, _combatTaken;
         private bool _turnClosed;
+        private int _logIndex;
 
         public MatchStatsTracker(Action<string> log) { _log = log; }
 
@@ -72,10 +82,10 @@ namespace HsbgCardLookup.Game.FinalBoard
             _knownShopIds.Clear();
             _countedBuys.Clear();
             _countedPlays.Clear();
-            _lastShopIds = new HashSet<int>();
             _prevResourcesUsed = 0;
             _prevTechLevel = 0;
             _turnClosed = false;
+            _logIndex = 0;
             _combatDealt = _combatTaken = 0;
         }
 
@@ -138,7 +148,6 @@ namespace HsbgCardLookup.Game.FinalBoard
             // read of the new turn would be counted as a full turn's spending.
             _prevResourcesUsed = Math.Max(0, Tag(g.PlayerEntity, GameTag.RESOURCES_USED));
             _prevTechLevel = _turn.TavernTier;
-            _lastShopIds = new HashSet<int>();
         }
 
         private void CloseTurn()
@@ -240,7 +249,6 @@ namespace HsbgCardLookup.Game.FinalBoard
             // Gold: RESOURCES_USED only ever climbs within a turn. A DROP is a refund (a sale) or a
             // turn reset -- never spending -- so it just becomes the new baseline. Reign's rule.
             int used = Math.Max(0, Tag(g.PlayerEntity, GameTag.RESOURCES_USED));
-            bool refunded = used < _prevResourcesUsed;
             if (used > _prevResourcesUsed)
             {
                 int delta = used - _prevResourcesUsed;
@@ -298,36 +306,74 @@ namespace HsbgCardLookup.Game.FinalBoard
                     Act();
                 }
 
-                // SELL: one of our minions left the board while gold came back in the same tick.
-                // The refund is what separates a sale from a triple, which also removes minions from
-                // play but pays nothing. Unverified against a live triple yet -- hence the log line.
-                if (known && prev.Controller == playerId && prev.Zone == Zone.PLAY
-                    && state.Zone != Zone.PLAY && refunded && IsMinion(e))
-                {
-                    _stats.MinionsSold++;
-                    _turn.MinionsSold++;
-                    Act();
-                    Log("sold " + (e.CardId ?? "?") + " on turn " + _turn.Turn);
-                }
             }
 
-            // ROLL: the offering was replaced outright. Comparing whole sets rather than counting
-            // arrivals keeps a single card being bought (which also changes the set) from reading as
-            // a refresh.
-            if (_lastShopIds.Count > 0 && shopIds.Count > 0 && !shopIds.Overlaps(_lastShopIds))
-            {
-                _stats.TavernRolls++;
-                _turn.Rolls++;
-                Act();
-                Log("tavern roll #" + _stats.TavernRolls + " on turn " + _turn.Turn);
-            }
-            if (shopIds.Count > 0) _lastShopIds = shopIds;
+            ScanPowerLog();
 
             TrackBoardPeaks(g, playerId);
 
             _prev.Clear();
             foreach (var kv in current) _prev[kv.Key] = kv.Value;
         }
+
+        /// <summary>
+        /// Count the shop-button presses by walking the new lines of HDT's Power.log.
+        ///
+        /// Only NEW lines are read, and the cursor resets if the log ever shrinks (a new game).
+        /// Selling, rolling, freezing and tripling leave no usable trace in entity state — a sold
+        /// minion and a tripled one both simply leave the board — but each opens a POWER block
+        /// sourced from the button's own pseudo-card, which is unambiguous. Card ids per HearthSim's
+        /// replay converter, which Firestone also relies on.
+        /// </summary>
+        private void ScanPowerLog()
+        {
+            List<string> log;
+            try { log = Core.Game != null ? Core.Game.PowerLog : null; } catch { return; }
+            if (log == null) return;
+
+            int count;
+            try { count = log.Count; } catch { return; }
+            if (count < _logIndex) _logIndex = 0;
+
+            for (int i = _logIndex; i < count; i++)
+            {
+                string line;
+                try { line = log[i]; } catch { break; }
+                if (string.IsNullOrEmpty(line)) continue;
+                if (line.IndexOf("BLOCK_START", StringComparison.Ordinal) < 0) continue;
+
+                if (Mentions(line, SellCardId))
+                {
+                    _stats.MinionsSold++;
+                    if (_turn != null) _turn.MinionsSold++;
+                    Act();
+                    Log("sold a minion on turn " + TurnNo());
+                }
+                else if (Mentions(line, RerollCardId1) || Mentions(line, RerollCardId8))
+                {
+                    _stats.TavernRolls++;
+                    if (_turn != null) _turn.Rolls++;
+                    Act();
+                }
+                else if (Mentions(line, FreezeCardId))
+                {
+                    _stats.Freezes++;
+                    Act();
+                }
+                else if (Mentions(line, TripleCardId))
+                {
+                    _stats.TriplesCreated++;
+                }
+            }
+            _logIndex = count;
+        }
+
+        private static bool Mentions(string line, string cardId)
+        {
+            return line.IndexOf("cardId=" + cardId, StringComparison.Ordinal) >= 0;
+        }
+
+        private int TurnNo() { return _turn != null ? _turn.Turn : 0; }
 
         /// <summary>
         /// Biggest minion of the match. Attack and health are taken from the SAME minion — gluing the

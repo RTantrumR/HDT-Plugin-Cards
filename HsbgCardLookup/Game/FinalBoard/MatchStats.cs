@@ -26,6 +26,8 @@ namespace HsbgCardLookup.Game.FinalBoard
         public int TavernRolls { get; set; }
         public int FreeRollsUsed { get; set; }
         public int TavernUpgrades { get; set; }
+        public int Freezes { get; set; }
+        public int TriplesCreated { get; set; }
         public int MinionsBought { get; set; }
         public int SpellsBought { get; set; }
         public int MinionsSold { get; set; }
