@@ -10,33 +10,49 @@ using Hearthstone_Deck_Tracker.Hearthstone.Entities;   // Entity
 namespace HsbgCardLookup.Game.FinalBoard
 {
     /// <summary>
-    /// Counts what the player DID during a Battlegrounds match — gold, rolls, buys, sells, plays,
-    /// upgrades, combat damage — as a per-turn series.
+    /// Counts what the player DID during a Battlegrounds match — buys, sells, rolls, plays, upgrades,
+    /// combat damage — as a per-turn series.
     ///
-    /// Method and semantics follow Reign-in-blood's HDT-FinalStatsPlugin (MIT) where they overlap.
-    /// The load-bearing idea taken from it: the tavern's shop cards are entities that are IN PLAY but
-    /// NOT controlled by the player, and a per-entity (zone, controller) snapshot diffed each tick
-    /// turns that into events — a known shop entity arriving in the player's hand is a purchase.
-    /// Selling and the APM series are ours; his plugin tracks neither.
+    /// THE RULE THIS IS BUILT ON, measured rather than assumed: in a Battlegrounds match, one player
+    /// action is exactly one BLOCK_START BlockType=PLAY block owned by the player. A whole 8-turn
+    /// match was reconciled line by line against its own Power.log — 61 such blocks, 61 actions,
+    /// nothing left over and nothing unclassified:
     ///
-    /// EVERY counter here is a heuristic over game state that Blizzard can change without warning,
-    /// so each detection logs why it fired. That is not debug noise left behind: it is the only way
-    /// a miscount after a patch shows up as a wrong log line instead of a wrong number a player
-    /// trusts. Anything uncertain stays at zero — a missing stat beats an invented one.
+    ///     27 played from hand | 9 bought | 8 sold | 7 activated on board | 5 rolled | 3 upgraded
+    ///      + 2 tavern spells bought
+    ///
+    /// The card id says WHICH action (the shop buttons are pseudo-cards), and the entity's zone
+    /// separates a card played out of hand from an "Activate" ability used on the board.
+    ///
+    /// An earlier build inferred buys and plays from a per-entity (zone, controller) diff instead —
+    /// Reign-in-blood's approach in HDT-FinalStatsPlugin, and the reason his AGENTS.md documents how
+    /// each counter goes wrong. Measured against the same match it was wrong four ways: a minion
+    /// GRANTED to hand for free (Deepwater Chieftain, arriving with a "Costs 0" enchantment) is
+    /// indistinguishable from a purchase; buying a tavern SPELL takes a different button and was
+    /// missed entirely; hero-selection cards leaving hand counted as minions played; and spells the
+    /// game does not tag IS_BACON_POOL_SPELL landed in the minion bucket. The log has no such
+    /// ambiguity, because it records the press rather than its consequences.
+    ///
+    /// EVERY counter is still a heuristic over data Blizzard can change without warning, so each
+    /// detection logs why it fired — that is how a miscount after a patch shows up as a wrong log
+    /// line instead of a wrong number a player trusts. Anything unrecognised stays uncounted.
     /// </summary>
     internal sealed class MatchStatsTracker
     {
-        private const int PollMs = 200;   // fine enough for APM; the work per tick is a dictionary diff
+        private const int PollMs = 200;
 
-        // The game's own shop buttons. Pressing one opens a POWER block sourced from these
-        // pseudo-cards, which is how HearthSim's converter and Firestone detect these actions — and
-        // it beats inferring them from state: a sale looks like a triple if you only watch minions
-        // leave the board, and Bob reshuffling looks like a roll if you only diff the shop.
+        // The tavern's own buttons. Every one of these is a pseudo-card whose PLAY block IS the press.
+        // NB TB_BaconShop_DragBuy is a strict PREFIX of TB_BaconShop_DragBuy_Spell, so the card id has
+        // to be compared whole — a substring test would count every spell purchase twice.
+        private const string BuyCardId = "TB_BaconShop_DragBuy";
+        private const string BuySpellCardId = "TB_BaconShop_DragBuy_Spell";
         private const string SellCardId = "TB_BaconShop_DragSell";
         private const string RerollCardId1 = "TB_BaconShop_1p_Reroll_Button";
         private const string RerollCardId8 = "TB_BaconShop_8p_Reroll_Button";
         private const string FreezeCardId = "TB_BaconShopLockAll_Button";
         private const string TripleCardId = "TB_BaconShop_Triples_01";
+        // Tier 2..6 each have their own button: TB_BaconShopTechUp02_Button and friends.
+        private const string TechUpPrefix = "TB_BaconShopTechUp";
 
         private readonly Action<string> _log;
 
@@ -47,18 +63,13 @@ namespace HsbgCardLookup.Game.FinalBoard
         private MatchStats _stats;
         private TurnStat _turn;
         private readonly Stopwatch _shopClock = new Stopwatch();
-
-        // Per-entity (zone, controller) from the previous tick — the diff is what produces events.
-        private readonly Dictionary<int, ZoneState> _prev = new Dictionary<int, ZoneState>();
-        private readonly HashSet<int> _knownShopIds = new HashSet<int>();
-        private readonly HashSet<int> _countedBuys = new HashSet<int>();
-        private readonly HashSet<int> _countedPlays = new HashSet<int>();
+        private TimeSpan _turnStartTod;
 
         private int _prevResourcesUsed;
-        private int _prevTechLevel;
         private int _combatDealt, _combatTaken;
         private bool _turnClosed;
         private int _logIndex;
+        private bool _playerIdWarned;
 
         public MatchStatsTracker(Action<string> log) { _log = log; }
 
@@ -68,7 +79,12 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// <summary>Called by <see cref="FinalBoardCapture"/> when it writes the record.</summary>
         public MatchStats TakeSnapshot()
         {
-            CloseTurn();   // no-op if the shop turn was already closed by the combat edge
+            // A match can end in three ways and each leaves a different thing undone. Beaten in
+            // combat: the shop turn was closed at the phase edge but its combat never resolved,
+            // because resolution normally happens when the NEXT shop opens and there isn't one.
+            // Conceded from the shop: the turn is still open. Ended cleanly: both already done.
+            if (_wasCombat.HasValue && _wasCombat.Value) ResolveCombat(Core.Game);
+            CloseTurn();
             return _stats;
         }
 
@@ -78,14 +94,11 @@ namespace HsbgCardLookup.Game.FinalBoard
             _turn = null;
             _wasCombat = null;
             _shopClock.Reset();
-            _prev.Clear();
-            _knownShopIds.Clear();
-            _countedBuys.Clear();
-            _countedPlays.Clear();
+            _turnStartTod = TimeSpan.Zero;
             _prevResourcesUsed = 0;
-            _prevTechLevel = 0;
             _turnClosed = false;
             _logIndex = 0;
+            _playerIdWarned = false;
             _combatDealt = _combatTaken = 0;
         }
 
@@ -134,6 +147,12 @@ namespace HsbgCardLookup.Game.FinalBoard
             int n = 0;
             try { n = g.GetTurnNumber(); } catch { }
 
+            // Hero selection reads as turn 0 and is not a shop. Opening a turn there produced a
+            // phantom "turn 0" that swallowed the whole of turn 1 — its actions, its gold and its
+            // clock — and left the record with no turn 1 at all. The hero does not exist yet either,
+            // which is why that entry also recorded a starting health of 0.
+            if (n < 1) return;
+
             _turn = new TurnStat
             {
                 Turn = n,
@@ -143,30 +162,19 @@ namespace HsbgCardLookup.Game.FinalBoard
             _stats.Turns.Add(_turn);
             _turnClosed = false;
             _shopClock.Restart();
+            _turnStartTod = DateTime.Now.TimeOfDay;
 
             // RESOURCES_USED restarts each turn, so the baseline has to restart with it or the first
             // read of the new turn would be counted as a full turn's spending.
             _prevResourcesUsed = Math.Max(0, Tag(g.PlayerEntity, GameTag.RESOURCES_USED));
-            _prevTechLevel = _turn.TavernTier;
         }
 
         private void CloseTurn()
         {
-            // A match that ends during combat has already had its shop turn closed at the phase
-            // edge. Closing twice would recompute the leftover gold and board size from the
-            // post-combat state and quietly overwrite what the player actually finished the shop with.
             if (_turn == null || _turnClosed) return;
             _turnClosed = true;
             _turn.ShopSeconds = Math.Round(_shopClock.Elapsed.TotalSeconds, 1);
             _shopClock.Stop();
-            try
-            {
-                var g = Core.Game;
-                _turn.GoldLeftover = GoldAvailable(g);
-                _turn.BoardSize = BoardSize(g);
-                if (_turn.TavernTier <= 0) _turn.TavernTier = Tag(g.PlayerEntity, GameTag.PLAYER_TECH_LEVEL);
-            }
-            catch { }
             Log(string.Format("turn {0} closed | tier={1} actions={2} shop={3}s spent={4} leftover={5} bought={6} sold={7} rolls={8}",
                 _turn.Turn, _turn.TavernTier, _turn.Actions, _turn.ShopSeconds, _turn.GoldSpent,
                 _turn.GoldLeftover, _turn.MinionsBought, _turn.MinionsSold, _turn.Rolls));
@@ -182,7 +190,7 @@ namespace HsbgCardLookup.Game.FinalBoard
         private void ResolveCombat(GameV2 g)
         {
             var t = _stats != null ? _stats.Turns.LastOrDefault() : null;
-            if (t == null) return;
+            if (t == null || t.CombatResult != null) return;
 
             t.HeroHpEnd = HeroHp(g);
             int lost = Math.Max(0, t.HeroHpStart - t.HeroHpEnd);
@@ -243,8 +251,8 @@ namespace HsbgCardLookup.Game.FinalBoard
         {
             if (_turn == null) OpenTurn(g);
 
-            int playerId = -1;
-            try { playerId = g.Player.Id; } catch { return; }
+            ScanPowerLog(g);
+            if (_turn == null) return;
 
             // Gold: RESOURCES_USED only ever climbs within a turn. A DROP is a refund (a sale) or a
             // turn reset -- never spending -- so it just becomes the new baseline. Reign's rule.
@@ -258,98 +266,45 @@ namespace HsbgCardLookup.Game.FinalBoard
             _prevResourcesUsed = used;
 
             int tech = Tag(g.PlayerEntity, GameTag.PLAYER_TECH_LEVEL);
-            if (tech > _prevTechLevel && _prevTechLevel > 0)
-            {
-                _stats.TavernUpgrades++;
-                Act("upgrade");
-                Log("tavern upgrade to " + tech + " on turn " + _turn.Turn);
-            }
-            if (tech > 0) { _prevTechLevel = tech; _turn.TavernTier = tech; }
+            if (tech > 0) _turn.TavernTier = tech;
 
-            var entities = Snapshot(g);
-            var shopIds = new HashSet<int>();
-            var current = new Dictionary<int, ZoneState>();
+            // Sampled every tick and kept, rather than read once when the turn closes. The close
+            // happens on the combat edge, by which point the game has already torn the shop down:
+            // gold read as zero for every single turn, and a conceded match recorded a health of
+            // zero for a hero that was still alive. The last sample before the shop ends IS the end
+            // state.
+            _turn.GoldLeftover = GoldAvailable(g);
+            _turn.BoardSize = BoardSize(g);
+            _turn.HeroHpEnd = HeroHp(g);
 
-            foreach (var e in entities)
-            {
-                if (e == null || e.Id <= 0) continue;
-                int cardType = Tag(e, GameTag.CARDTYPE);
-                var state = new ZoneState((Zone)Tag(e, GameTag.ZONE), Tag(e, GameTag.CONTROLLER),
-                                          Tag(e, GameTag.EXHAUSTED) > 0, cardType == (int)CardType.HERO_POWER);
-                current[e.Id] = state;
-
-                bool mine = state.Controller == playerId;
-                bool inPlay = state.Zone == Zone.PLAY;
-
-                // Bob's offerings: in play, but not ours.
-                if (inPlay && !mine && (IsMinion(e) || IsTavernSpell(e)))
-                {
-                    shopIds.Add(e.Id);
-                    _knownShopIds.Add(e.Id);
-                }
-
-                ZoneState prev;
-                bool known = _prev.TryGetValue(e.Id, out prev);
-
-                // HERO POWER: its own entity flips EXHAUSTED when used. Watching the tag beats
-                // reading PlayerEntity.HERO_POWER_ENTITY, which the live probe found empty.
-                if (mine && state.IsHeroPower && known && !prev.Exhausted && state.Exhausted)
-                {
-                    _stats.HeroPowersUsed++;
-                    Act("heropower");
-                }
-
-                // BUY: a card we saw in the tavern is now in our hand.
-                if (mine && state.Zone == Zone.HAND && _knownShopIds.Contains(e.Id) && _countedBuys.Add(e.Id))
-                {
-                    if (IsTavernSpell(e)) _stats.SpellsBought++;
-                    else { _stats.MinionsBought++; _turn.MinionsBought++; }
-                    Act("buy");
-                    Log("bought " + (e.CardId ?? "?") + " on turn " + _turn.Turn);
-                }
-
-                // PLAY: it left our hand for the board.
-                if (mine && known && prev.Zone == Zone.HAND && state.Zone != Zone.HAND && _countedPlays.Add(e.Id))
-                {
-                    if (IsTavernSpell(e)) _stats.SpellsPlayed++;
-                    else _stats.MinionsPlayed++;
-                    Act(IsTavernSpell(e) ? "spell" : "play");
-                }
-
-            }
-
-            ScanPowerLog();
-
-            TrackBoardPeaks(g, playerId);
-
-            _prev.Clear();
-            foreach (var kv in current) _prev[kv.Key] = kv.Value;
+            TrackBoardPeaks(g);
         }
 
         /// <summary>
-        /// Count the shop-button presses by walking the new lines of HDT's Power.log.
+        /// Walk the new lines of HDT's Power.log and turn each player-owned PLAY block into an action.
         ///
         /// Only NEW lines are read, and the cursor resets if the log ever shrinks (a new game).
-        /// Selling, rolling, freezing and tripling leave no usable trace in entity state — a sold
-        /// minion and a tripled one both simply leave the board — but each opens a block sourced
-        /// from the button's own pseudo-card. Card ids per HearthSim's replay converter.
+        /// ONLY BlockType=PLAY counts, which was measured rather than assumed: in a real 13-turn
+        /// match the reroll button produced 40 PLAY blocks but 120 POWER and 53 TRIGGER ones — a
+        /// single manual roll emits one PLAY plus several POWER/TRIGGER blocks at the same timestamp,
+        /// and the tavern's automatic turn-start refresh emits a lone TRIGGER. PLAY is the one that
+        /// means "the player pressed this". A passive hero power is the same story: Fragrant
+        /// Phylactery fired seven TRIGGER blocks across a match and never a PLAY one, so counting
+        /// hero-power PLAY blocks cannot mistake a passive for a press.
         ///
-        /// ONLY BlockType=PLAY counts, and that was measured rather than assumed. In a real 13-turn
-        /// match the reroll button produced 40 PLAY blocks but 120 POWER and 53 TRIGGER ones: a
-        /// single manual roll emits one PLAY plus several POWER/TRIGGER blocks at the same
-        /// timestamp, and the tavern's automatic turn-start refresh emits a lone TRIGGER. PLAY is
-        /// the one that means "the player pressed this". Counting POWER would have tripled rolls
-        /// and counting every block would have inflated all five.
+        /// Lines are only counted while a shop turn is OPEN. Nothing a player does happens outside
+        /// one, and attributing a stray block to a turn already closed would corrupt its timings.
         /// </summary>
-        private void ScanPowerLog()
+        private void ScanPowerLog(GameV2 g)
         {
             List<string> log;
-            try { log = Core.Game != null ? Core.Game.PowerLog : null; } catch { return; }
+            try { log = g != null ? g.PowerLog : null; } catch { return; }
             if (log == null) return;
 
             int count;
             try { count = log.Count; } catch { return; }
             if (count < _logIndex) _logIndex = 0;
+            if (_turn == null || _turnClosed) { _logIndex = count; return; }
 
             for (int i = _logIndex; i < count; i++)
             {
@@ -358,36 +313,178 @@ namespace HsbgCardLookup.Game.FinalBoard
                 if (string.IsNullOrEmpty(line)) continue;
                 if (line.IndexOf("BLOCK_START", StringComparison.Ordinal) < 0) continue;
                 if (line.IndexOf("BlockType=PLAY", StringComparison.Ordinal) < 0) continue;
-
-                if (Mentions(line, SellCardId))
-                {
-                    _stats.MinionsSold++;
-                    if (_turn != null) _turn.MinionsSold++;
-                    Act("sell");
-                    Log("sold a minion on turn " + TurnNo());
-                }
-                else if (Mentions(line, RerollCardId1) || Mentions(line, RerollCardId8))
-                {
-                    _stats.TavernRolls++;
-                    if (_turn != null) _turn.Rolls++;
-                    Act("roll");
-                }
-                else if (Mentions(line, FreezeCardId))
-                {
-                    _stats.Freezes++;
-                    Act("freeze");
-                }
-                else if (Mentions(line, TripleCardId))
-                {
-                    _stats.TriplesCreated++;
-                }
+                try { Classify(g, line); } catch { }
             }
             _logIndex = count;
         }
 
-        private static bool Mentions(string line, string cardId)
+        private void Classify(GameV2 g, string line)
         {
-            return line.IndexOf("cardId=" + cardId, StringComparison.Ordinal) >= 0;
+            string cardId = Field(line, "cardId=");
+            if (string.IsNullOrEmpty(cardId)) return;
+            if (!IsOurs(g, line)) return;
+
+            int at = OffsetMs(line);
+
+            if (cardId == BuySpellCardId)                  // checked before BuyCardId: it is a prefix
+            {
+                _stats.SpellsBought++;
+                Act("buyspell", at);
+                Log("bought a tavern spell on turn " + TurnNo());
+            }
+            else if (cardId == BuyCardId)
+            {
+                _stats.MinionsBought++;
+                _turn.MinionsBought++;
+                Act("buy", at);
+                Log("bought a minion on turn " + TurnNo());
+            }
+            else if (cardId == SellCardId)
+            {
+                _stats.MinionsSold++;
+                _turn.MinionsSold++;
+                Act("sell", at);
+            }
+            else if (cardId == RerollCardId8 || cardId == RerollCardId1)
+            {
+                _stats.TavernRolls++;
+                _turn.Rolls++;
+                Act("roll", at);
+            }
+            else if (cardId == FreezeCardId)
+            {
+                _stats.Freezes++;
+                Act("freeze", at);
+            }
+            else if (cardId == TripleCardId)
+            {
+                _stats.TriplesCreated++;
+            }
+            else if (cardId.StartsWith(TechUpPrefix, StringComparison.Ordinal))
+            {
+                _stats.TavernUpgrades++;
+                Act("upgrade", at);
+                Log("tavern upgrade on turn " + TurnNo());
+            }
+            else
+            {
+                ClassifyCard(g, line, at);
+            }
+        }
+
+        /// <summary>
+        /// A card the player used rather than a button they pressed. The entity's ZONE is what
+        /// separates the two cases: out of HAND is a card being played, still in PLAY is one of the
+        /// season's "Activate (N)" abilities being used on a minion already on the board — a
+        /// deliberate, gold-costing action that nothing was counting before.
+        /// </summary>
+        private void ClassifyCard(GameV2 g, string line, int at)
+        {
+            string zone = Field(line, "zone=");
+            int type = CardTypeOf(g, line);
+
+            if (type == (int)CardType.HERO_POWER)
+            {
+                _stats.HeroPowersUsed++;
+                Act("heropower", at);
+                return;
+            }
+            if (type == (int)CardType.HERO) return;   // the hero-selection pick is not a play
+
+            if (zone == "HAND")
+            {
+                // Minion or not. Everything else played out of hand — tavern spells, the season's
+                // magic items, anything new — counts as a spell rather than being dropped, because a
+                // card the player spent a turn on should never vanish from their own action count.
+                if (type == (int)CardType.MINION) _stats.MinionsPlayed++;
+                else _stats.SpellsPlayed++;
+                Act(type == (int)CardType.MINION ? "play" : "spell", at);
+            }
+            else if (zone == "PLAY" && type == (int)CardType.MINION)
+            {
+                _stats.MinionActivations++;
+                Act("activate", at);
+            }
+        }
+
+        /// <summary>
+        /// Whether this block belongs to the local player. The log's own player= field answers it
+        /// directly; the entity is consulted only when that field is missing or disagrees, which
+        /// would mean the field does not mean what a whole reconciled match says it means.
+        /// </summary>
+        private bool IsOurs(GameV2 g, string line)
+        {
+            int mine;
+            try { mine = g.Player != null ? g.Player.Id : -1; } catch { return false; }
+            if (mine <= 0) return false;
+
+            int logPlayer = ParseInt(Field(line, "player="));
+            if (logPlayer > 0 && logPlayer == mine) return true;
+
+            var e = EntityOf(g, line);
+            if (e == null) return false;
+            bool ours = Tag(e, GameTag.CONTROLLER) == mine;
+            if (ours && logPlayer > 0 && !_playerIdWarned)
+            {
+                _playerIdWarned = true;
+                Log("NOTE: log player=" + logPlayer + " but our player id is " + mine + " - using the entity's controller");
+            }
+            return ours;
+        }
+
+        private static Entity EntityOf(GameV2 g, string line)
+        {
+            int id = ParseInt(Field(line, " id="));
+            if (id <= 0) return null;
+            try
+            {
+                Entity e;
+                return g.Entities != null && g.Entities.TryGetValue(id, out e) ? e : null;
+            }
+            catch { return null; }
+        }
+
+        private static int CardTypeOf(GameV2 g, string line)
+        {
+            var e = EntityOf(g, line);
+            return e != null ? Tag(e, GameTag.CARDTYPE) : 0;
+        }
+
+        /// <summary>
+        /// Milliseconds from the start of this shop turn, taken from the log line's own timestamp
+        /// rather than from when we happened to read it. A 200ms poll can deliver a whole burst of
+        /// lines at once, and the burst is exactly what a peak-APM window measures — so reading the
+        /// clock at scan time would smear the fastest four seconds of the match into one instant.
+        /// Falls back to the shop clock if the line carries no usable timestamp.
+        /// </summary>
+        private int OffsetMs(string line)
+        {
+            int fallback = (int)_shopClock.ElapsedMilliseconds;
+            if (_turnStartTod == TimeSpan.Zero) return fallback;
+            if (line.Length < 3 || line[0] != 'D' || line[1] != ' ') return fallback;
+            int end = line.IndexOf(' ', 2);
+            if (end < 0) return fallback;
+            TimeSpan tod;
+            if (!TimeSpan.TryParse(line.Substring(2, end - 2), out tod)) return fallback;
+            double ms = (tod - _turnStartTod).TotalMilliseconds;
+            if (ms < 0 || ms > 30 * 60 * 1000) return fallback;   // clock rollover, or a stale line
+            return (int)ms;
+        }
+
+        private static string Field(string line, string key)
+        {
+            int i = line.IndexOf(key, StringComparison.Ordinal);
+            if (i < 0) return null;
+            i += key.Length;
+            int j = i;
+            while (j < line.Length && line[j] != ' ' && line[j] != ']') j++;
+            return line.Substring(i, j - i);
+        }
+
+        private static int ParseInt(string s)
+        {
+            int v;
+            return int.TryParse(s, out v) ? v : 0;
         }
 
         private int TurnNo() { return _turn != null ? _turn.Turn : 0; }
@@ -396,7 +493,7 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// Biggest minion of the match. Attack and health are taken from the SAME minion — gluing the
         /// best attack seen to the best health seen would invent a creature that never existed.
         /// </summary>
-        private void TrackBoardPeaks(GameV2 g, int playerId)
+        private void TrackBoardPeaks(GameV2 g)
         {
             try
             {
@@ -430,21 +527,15 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// spells, discovers, upgrades and hero powers but NOT freezes; keeping the raw stream means
         /// matching them, or not, stays a display decision rather than a data one.
         /// </summary>
-        private void Act(string kind)
+        private void Act(string kind, int atMs)
         {
             if (_turn == null) return;
             _turn.Actions++;
-            _turn.ActionTimes.Add((int)_shopClock.ElapsedMilliseconds);
+            _turn.ActionTimes.Add(atMs);
             _turn.ActionKinds.Add(kind);
         }
 
         // ── reads ───────────────────────────────────────────────────────────────────────────────
-        private static List<Entity> Snapshot(GameV2 g)
-        {
-            try { return g.Entities != null ? g.Entities.Values.ToList() : new List<Entity>(); }
-            catch { return new List<Entity>(); }
-        }
-
         private static int Tag(Entity e, GameTag tag)
         {
             try { return e != null ? e.GetTag(tag) : 0; } catch { return 0; }
@@ -479,40 +570,9 @@ namespace HsbgCardLookup.Game.FinalBoard
             catch { return 0; }
         }
 
-        private static bool IsMinion(Entity e)
-        {
-            try { return e.GetTag(GameTag.CARDTYPE) == (int)CardType.MINION; } catch { return false; }
-        }
-
-        private static bool IsTavernSpell(Entity e)
-        {
-            try
-            {
-                if (e.GetTag(GameTag.CARDTYPE) != (int)CardType.SPELL) return false;
-                return e.HasTag(GameTag.IS_BACON_POOL_SPELL) || e.GetTag(GameTag.IS_BACON_POOL_SPELL) > 0;
-            }
-            catch { return false; }
-        }
-
         private void Log(string msg)
         {
             try { if (_log != null) _log("[MatchStats] " + msg); } catch { }
-        }
-
-        private struct ZoneState
-        {
-            public readonly Zone Zone;
-            public readonly int Controller;
-            public readonly bool Exhausted;
-            public readonly bool IsHeroPower;
-
-            public ZoneState(Zone zone, int controller, bool exhausted, bool isHeroPower)
-            {
-                Zone = zone;
-                Controller = controller;
-                Exhausted = exhausted;
-                IsHeroPower = isHeroPower;
-            }
         }
     }
 }

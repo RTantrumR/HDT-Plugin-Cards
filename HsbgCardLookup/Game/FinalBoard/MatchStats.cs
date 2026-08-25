@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
@@ -24,7 +24,6 @@ namespace HsbgCardLookup.Game.FinalBoard
         // ── economy ─────────────────────────────────────────────────────────────────────────────
         public int GoldSpent { get; set; }
         public int TavernRolls { get; set; }
-        public int FreeRollsUsed { get; set; }
         public int TavernUpgrades { get; set; }
         public int Freezes { get; set; }
         public int TriplesCreated { get; set; }
@@ -34,6 +33,13 @@ namespace HsbgCardLookup.Game.FinalBoard
         public int MinionsSold { get; set; }
         public int MinionsPlayed { get; set; }
         public int SpellsPlayed { get; set; }
+
+        /// <summary>
+        /// Season 14's "Activate (N)" abilities used on minions already on the board. A separate
+        /// action from playing the minion, costing its own gold, and one nothing else counts —
+        /// seven of them in a single 8-turn match, so leaving them out understates a busy player.
+        /// </summary>
+        public int MinionActivations { get; set; }
 
         // ── board peaks ─────────────────────────────────────────────────────────────────────────
         public int HighestAttack { get; set; }
@@ -67,41 +73,44 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// nothing can be done during it, so counting it would punish long fights and flatter a slow
         /// player whose combats happened to be short.
         /// </summary>
-        [JsonIgnore]
-        public double ApmAverage
-        {
-            get
-            {
-                if (Turns == null) return 0;
-                double seconds = Turns.Sum(t => t.ShopSeconds);
-                if (seconds < 1) return 0;
-                return ActionCount / (seconds / 60.0);
-            }
-        }
+        [JsonIgnore] public double ApmAverage => ShopSeconds >= 1 ? ActionCount / (ShopSeconds / 60.0) : 0;
+
+        /// <summary>Total time spent in shops. The denominator of <see cref="ApmAverage"/>.</summary>
+        [JsonIgnore] public double ShopSeconds => Turns != null ? Turns.Sum(t => t.ShopSeconds) : 0;
 
         /// <summary>Best SUSTAINED turn — how fast a whole shop was played. Turns under 5s divide into noise.</summary>
-        [JsonIgnore]
-        public double ApmPeakTurn
+        [JsonIgnore] public double ApmPeakTurn => PeakTurn().Value;
+
+        /// <summary>Which turn <see cref="ApmPeakTurn"/> belongs to, or 0 if there is no usable turn.</summary>
+        [JsonIgnore] public int ApmPeakTurnNumber => PeakTurn().Key;
+
+        private KeyValuePair<int, double> PeakTurn()
         {
-            get
+            int bestTurn = 0;
+            double best = 0;
+            if (Turns != null)
             {
-                if (Turns == null) return 0;
-                double best = 0;
                 foreach (var t in Turns)
                 {
                     if (t.ShopSeconds < 5) continue;
                     double apm = t.Actions / (t.ShopSeconds / 60.0);
-                    if (apm > best) best = apm;
+                    if (apm > best) { best = apm; bestTurn = t.Turn; }
                 }
-                return best;
             }
+            return new KeyValuePair<int, double>(bestTurn, best);
         }
 
         /// <summary>
-        /// Best BURST — the fastest four seconds of the match, which is a different question from
-        /// the best turn and gives a much higher number. Four seconds is Firestone's window, chosen
+        /// Best BURST — the fastest four seconds of the match. Four seconds is Firestone's window,
         /// so this figure is comparable to the one their in-game widget shows; theirs is live-only
         /// and resets every turn, so a match-level version does not exist anywhere else.
+        ///
+        /// NOT the headline number, and that was measured. In a real match whose turn 8 carried 34
+        /// of the player's 61 actions, the four-second peak picked turn FIVE instead — five ordinary
+        /// drags that happened to land close together score 75, while the flurry the player actually
+        /// remembers scores 31 sustained across a whole shop. A window that short measures how fast
+        /// two hands can move once, not how fast a turn was played. <see cref="ApmPeakTurn"/> is the
+        /// one that agrees with the player.
         /// </summary>
         [JsonIgnore]
         public double ApmPeakBurst => PeakBurst(4.0);

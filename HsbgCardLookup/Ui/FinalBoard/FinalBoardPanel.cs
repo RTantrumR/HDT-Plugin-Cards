@@ -52,6 +52,18 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private Border _detailDivider;
         private readonly TextBlock _playerName;
 
+        private readonly FinalBoardStatsView _stats = new FinalBoardStatsView();
+        private StackPanel _boardView;
+        private Border _tabBoard, _tabStats;
+
+        /// <summary>
+        /// Which view the panel opens on, remembered for the session. Stats is the default because it
+        /// is the half the game does not already show: a player who has just watched their own final
+        /// board fill the screen does not need us to redraw it, but nothing anywhere tells them they
+        /// left nine gold unspent. The board stays one click away for when it is the board they want.
+        /// </summary>
+        private static bool _showStats = true;
+
         public FinalBoardPanel()
         {
             _placement = Text(30, FontWeights.Bold, UiKit.AccentBrush);
@@ -128,6 +140,12 @@ namespace HsbgCardLookup.Ui.FinalBoard
             headerGrid.Children.Add(_mmr);
             rows.Children.Add(headerGrid);
 
+            rows.Children.Add(Tabs());
+
+            _boardView = new StackPanel();
+            rows.Children.Add(_boardView);
+            rows.Children.Add(_stats.Root);
+
             // ── detail: trinkets left, hero centred, hero power + anomaly right ────────────────
             _detailDivider = Divider();
 
@@ -142,20 +160,75 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _powers.HorizontalAlignment = HorizontalAlignment.Right;
             Grid.SetColumn(_powers, 1);
             detail.Children.Add(_powers);
-            rows.Children.Add(_detailDivider);
-            rows.Children.Add(detail);
+            _boardView.Children.Add(_detailDivider);
+            _boardView.Children.Add(detail);
 
-            rows.Children.Add(Divider());
+            _boardView.Children.Add(Divider());
 
             // ── the warband itself ─────────────────────────────────────────────────────────────
             var boardBox = new Grid { Margin = new Thickness(0, 10, 0, 4), MinHeight = MinionSize };
             boardBox.Children.Add(_board);
             boardBox.Children.Add(_emptyBoard);
-            rows.Children.Add(boardBox);
+            _boardView.Children.Add(boardBox);
 
             _playerName.HorizontalAlignment = HorizontalAlignment.Left;
             rows.Children.Add(_playerName);
+            ApplyView();
             return rows;
+        }
+
+        // ── Board / Stats ───────────────────────────────────────────────────────────────────────
+        private UIElement Tabs()
+        {
+            _tabBoard = Tab("Board", false);
+            _tabStats = Tab("Stats", true);
+            var strip = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 2, 0, 0),
+            };
+            strip.Children.Add(_tabStats);
+            strip.Children.Add(_tabBoard);
+            return strip;
+        }
+
+        private Border Tab(string label, bool stats)
+        {
+            var b = new Border
+            {
+                Padding = new Thickness(14, 5, 14, 5),
+                Margin = new Thickness(0, 0, 6, 0),
+                CornerRadius = new CornerRadius(4),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Child = new TextBlock { FontSize = 13, FontWeight = FontWeights.SemiBold, IsHitTestVisible = false },
+            };
+            ((TextBlock)b.Child).Text = label;
+            b.MouseLeftButtonUp += (s, e) =>
+            {
+                _showStats = stats;
+                ApplyView();
+                e.Handled = true;
+            };
+            return b;
+        }
+
+        private void ApplyView()
+        {
+            if (_boardView == null) return;
+            _boardView.Visibility = _showStats ? Visibility.Collapsed : Visibility.Visible;
+            _stats.Root.Visibility = _showStats ? Visibility.Visible : Visibility.Collapsed;
+            Paint(_tabStats, _showStats);
+            Paint(_tabBoard, !_showStats);
+        }
+
+        private static void Paint(Border tab, bool selected)
+        {
+            if (tab == null) return;
+            tab.Background = selected ? UiKit.Br(UiKit.PanelActive) : Brushes.Transparent;
+            tab.BorderBrush = selected ? UiKit.AccentBrush : UiKit.StrokeBrush;
+            tab.BorderThickness = new Thickness(1);
+            var tb = tab.Child as TextBlock;
+            if (tb != null) tb.Foreground = selected ? UiKit.AccentBrush : UiKit.TextMuted;
         }
 
         private static Border Divider() => new Border
@@ -222,6 +295,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
             bool anyDetail = _trinkets.Children.Count > 0 || _powers.Children.Count > 0;
             _detailRow.Visibility = anyDetail ? Visibility.Visible : Visibility.Collapsed;
             _detailDivider.Visibility = _detailRow.Visibility;
+
+            var biggest = rec.Stats != null ? CardOf(rec.Stats.HighestMinionCardId) : null;
+            _stats.Show(rec.Stats, biggest != null ? biggest.Name : null);
+            ApplyView();
         }
 
         private static void FillEntities(Panel host, List<MinionRecord> items, double size, Func<Entity, UIElement> make)
