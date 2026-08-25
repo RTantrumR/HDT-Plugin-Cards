@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Windows.Input;
 using System.Xml.Serialization;
@@ -112,6 +112,13 @@ namespace HsbgCardLookup.Config
         // Opt-in match recorder: capture the player's board + context at each combat boundary and write a
         // CSV per match (no screenshots). Off by default. Output: DataDir\match-exports\.
         public bool ExportMatchBoards { get; set; } = false;
+
+        // Keep a local JSON record of every finished BG match under DataDir\matches\. On by default:
+        // HDT prunes its own final-board store after 7 days, so this is what turns a rolling window
+        // into a history -- and it is what the Final Board panel renders from. Local only, never sent
+        // anywhere.
+        public bool RecordMatchHistory { get; set; } = true;
+
 
         [XmlIgnore] public Key BrowserKeyParsed => Enum.TryParse(BrowserKey, out Key k) ? k : Key.F3;
         [XmlIgnore] public Key GoldenKeyParsed => Enum.TryParse(GoldenKey, out Key k) ? k : Key.G;

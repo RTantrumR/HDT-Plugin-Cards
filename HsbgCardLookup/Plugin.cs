@@ -32,6 +32,7 @@ namespace HsbgCardLookup
         private OverlayLarge _overlayLarge;
         private FloatingCardManager _floating;
         private Game.BgHud _bgHud;                               // always-on trinkets/anomaly HUD
+        private Game.FinalBoard.FinalBoardStore _matchHistory;  // local JSON history of finished BG matches
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
         private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
@@ -136,6 +137,25 @@ namespace HsbgCardLookup
             Task.Run(() => CheckForUpdateAsync());
             Task.Run(() => CheckNoticesAsync());
             Task.Run(() => RefreshArtPackAsync());
+            Task.Run(() => LoadMatchHistory());
+        }
+
+        /// <summary>
+        /// Read our match history and top it up from HDT's own store. Off the UI thread because it
+        /// touches the disk, and on EVERY load because HDT prunes its final boards after 7 days —
+        /// a session we skip is history we can never get back.
+        /// </summary>
+        private void LoadMatchHistory()
+        {
+            try
+            {
+                if (!_config.RecordMatchHistory) return;
+                var store = new Game.FinalBoard.FinalBoardStore(Log);
+                store.Load();
+                store.ImportFromHdt();
+                _matchHistory = store;
+            }
+            catch (Exception ex) { Log("LoadMatchHistory error: " + ex.Message); }
         }
 
         private async Task RefreshArtPackAsync()

@@ -105,6 +105,8 @@
     <Compile Include="Game\GameStateProbe.cs" />
     <Compile Include="Game\DarkGiftProbe.cs" />
     <Compile Include="Game\FinalBoardProbe.cs" />
+    <Compile Include="Game\FinalBoard\FinalBoardRecord.cs" />
+    <Compile Include="Game\FinalBoard\FinalBoardStore.cs" />
     <Compile Include="Game\DarkGifts.cs" />
     <Compile Include="Game\DarkGiftWatcher.cs" />
     <Compile Include="Ui\DarkGiftPanel.cs" />
