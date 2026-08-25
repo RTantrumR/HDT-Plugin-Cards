@@ -718,22 +718,25 @@ namespace HsbgCardLookup.Ui
         /// Apply a change that arrives in BURSTS — a slider drag, or a held click on a slider track,
         /// which repeats its step several times a second until the thumb reaches the cursor.
         ///
-        /// The two halves of <see cref="Changed"/> have very different costs, so they are split rather
-        /// than throttled together. Repainting the page and its live preview is a few milliseconds and
-        /// runs on EVERY tick, which is what makes the control feel live. Persisting is not: one
-        /// _onChanged is a config write to disk plus a whole ApplySettings, which re-runs the F3
-        /// overlay's pool and re-applies every feature. Doing that per step is what made the window
-        /// stutter for seconds while Hearthstone was starting and the disk was already busy — so it is
-        /// debounced to the END of the burst, and only the last value is ever written.
+        /// The caller sets the value and its caption on every tick, so the control itself is exact and
+        /// immediate. Everything DOWNSTREAM of the value waits for the burst to end, for two reasons,
+        /// both found live:
+        ///
+        ///   • re-rendering per tick FLICKERS hard — the Dark Gift panel's minion grid re-flows between
+        ///     one and four columns as the count crosses a row boundary, and every rebuild reloads its
+        ///     card art, so a sweep across the track is a strobe of relayouts;
+        ///   • one _onChanged is a config write to disk plus a whole ApplySettings, which re-runs the F3
+        ///     overlay's pool and re-applies every feature — a dozen of those for one gesture stuttered
+        ///     for seconds while Hearthstone was starting and the disk was already busy.
+        ///
+        /// Trailing edge, restarted by every tick, so a fast sweep redraws exactly ONCE. The interval is
+        /// short enough that a single deliberate step still reads as instant.
         /// </summary>
         private void ChangedLive()
         {
-            foreach (var r in _modeRefresh) { try { r(); } catch { } }
-            try { _pageRefresh?.Invoke(); } catch { }
-
             if (_applyDebounce == null)
             {
-                _applyDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                _applyDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
                 _applyDebounce.Tick += (s, e) => FlushPending();
             }
             _applyPending = true;
@@ -741,15 +744,15 @@ namespace HsbgCardLookup.Ui
             _applyDebounce.Start();   // restart on every tick: the timer fires once the burst settles
         }
 
-        /// <summary>Persist a pending live change now. Everything that ends a burst or walks away from
-        /// one calls this, so a value can never be left unsaved: the drag-release, leaving the page,
-        /// and closing the window.</summary>
+        /// <summary>Apply a pending live change now. Everything that ends a burst or walks away from one
+        /// calls this, so a value can never be left unrendered or unsaved: the drag-release, leaving the
+        /// page, and closing the window.</summary>
         private void FlushPending()
         {
             _applyDebounce?.Stop();
             if (!_applyPending) return;
             _applyPending = false;
-            _onChanged();
+            Changed();
         }
 
         /// <summary>Show a built page. The ScrollViewer is a floor against pages outgrowing the screen:
