@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using HsbgCardLookup.Game.FinalBoard;
 
@@ -24,7 +25,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
     internal sealed class FinalBoardStatsView
     {
         private const double ContentW = 888;      // the panel's 920 reference width less its padding
-        private const double BarW = 90;
+        private const double RowH = 26;
+        private const double TierIconH = 20;
 
         private readonly StackPanel _root = new StackPanel();
 
@@ -50,6 +52,58 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _root.Children.Add(TurnTable(s));
         }
 
+        // ── action categories ───────────────────────────────────────────────────────────────────
+        /// <summary>
+        /// A turn's actions, split by what they were. Each kind gets its OWN COLUMN in the table,
+        /// always in this order, always in the same place, labelled by the header above it.
+        ///
+        /// That is a deliberate correction of a first attempt at a stacked bar, and the reason is
+        /// measured rather than aesthetic. In a stack, a category that did not happen this turn
+        /// collapses out, so segments that are far apart in the palette end up touching — and run
+        /// against ALL pairs rather than adjacent ones, this set fails: Sell and Spell are
+        /// separated by 1.6 (OKLab ΔE) for a deuteranope, and Other and Buy by 9.8 for normal
+        /// vision, against a floor of 15. No seven-colour set clears that gate. Giving each kind a
+        /// fixed labelled column makes POSITION the identity and colour merely reinforcement, which
+        /// removes the problem instead of arguing with it — and it lets a column be read downward,
+        /// so "when did I stop buying" is answerable at a glance, which a row of stacks never was.
+        ///
+        /// Upgrades, freezes and hero powers share "Other": a handful per match each, and the
+        /// counters above already report all three by name.
+        /// </summary>
+        private static readonly ActionKind[] Kinds =
+        {
+            new ActionKind("Buy", 0x39, 0x87, 0xE5, "buy", "buyspell"),
+            new ActionKind("Play", 0xD9, 0x59, 0x26, "play"),
+            new ActionKind("Spell", 0x19, 0x9E, 0x70, "spell"),
+            new ActionKind("Activate", 0xC9, 0x85, 0x00, "activate"),
+            new ActionKind("Sell", 0xD5, 0x51, 0x81, "sell"),
+            new ActionKind("Roll", 0x00, 0x83, 0x00, "roll"),
+            new ActionKind("Other", 0x90, 0x85, 0xE9, "upgrade", "freeze", "heropower"),
+        };
+
+        private sealed class ActionKind
+        {
+            public readonly string Label;
+            public readonly Brush Brush;
+            private readonly string[] _kinds;
+
+            public ActionKind(string label, byte r, byte g, byte b, params string[] kinds)
+            {
+                Label = label;
+                Brush = Frozen(Color.FromRgb(r, g, b));
+                _kinds = kinds;
+            }
+
+            public bool Matches(string kind) => _kinds.Contains(kind, StringComparer.Ordinal);
+        }
+
+        /// <summary>Anything the tracker learns to emit later still lands somewhere, in "Other".</summary>
+        private static int IndexOf(string kind)
+        {
+            for (int i = 0; i < Kinds.Length; i++) if (Kinds[i].Matches(kind)) return i;
+            return Kinds.Length - 1;
+        }
+
         // ── the four numbers worth reading first ────────────────────────────────────────────────
         private static UIElement Headline(MatchStats s)
         {
@@ -57,29 +111,39 @@ namespace HsbgCardLookup.Ui.FinalBoard
             for (int i = 0; i < 4; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             int peakTurn = s.ApmPeakTurnNumber;
-            Put(g, 0, Tile(s.ActionCount.ToString(CultureInfo.InvariantCulture), "actions", null));
-            Put(g, 1, Tile(Round1(s.ApmAverage), "average APM", Mins(s.ShopSeconds) + " in shops"));
-            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "fastest turn", peakTurn > 0 ? "turn " + peakTurn : null));
+            Put(g, 0, Tile(s.ActionCount.ToString(CultureInfo.InvariantCulture), "actions", null, UiKit.AccentBrush));
+            Put(g, 1, Tile(Round1(s.ApmAverage), "average APM", Mins(s.ShopSeconds) + " in shops", Kinds[0].Brush));
+            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "fastest turn", peakTurn > 0 ? "turn " + peakTurn : null, Kinds[2].Brush));
 
             // Unspent gold is the only tile that can report a MISTAKE, so it is the only one that
-            // ever leaves the accent colour. Painting a wasteful number in the same gold as a good
-            // APM would congratulate the player for it.
+            // ever wears a status colour. Painting a wasteful number in the same gold as a good APM
+            // would congratulate the player for it — and leaving all four the same colour, which is
+            // how this started, made none of them worth looking at first.
             int wasted = s.GoldWasted;
             Put(g, 3, Tile(wasted.ToString(CultureInfo.InvariantCulture), "gold unspent",
                            wasted > 0 ? "over " + s.Turns.Count(t => t.GoldLeftover > 0) + " turns" : "nothing left behind",
-                           wasted > 0 ? Red : null));
+                           wasted > 0 ? Red : UiKit.TextMuted));
             return g;
         }
 
-        private static UIElement Tile(string value, string label, string sub, Brush valueBrush = null)
+        private static UIElement Tile(string value, string label, string sub, Brush brush)
         {
             var box = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
+            box.Children.Add(new Border
+            {
+                Width = 34,
+                Height = 3,
+                CornerRadius = new CornerRadius(2),
+                Background = brush,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 0, 0, 6),
+            });
             box.Children.Add(new TextBlock
             {
                 Text = value,
                 FontSize = 30,
                 FontWeight = FontWeights.Bold,
-                Foreground = valueBrush ?? UiKit.AccentBrush,
+                Foreground = brush,
                 IsHitTestVisible = false,
             });
             box.Children.Add(Line(label, 13, UiKit.TextSecondary));
@@ -167,17 +231,21 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var rows = new StackPanel();
             rows.Children.Add(HeaderRow());
 
-            int maxActions = Math.Max(1, s.Turns.Max(t => t.Actions));
             bool alt = false;
             foreach (var t in s.Turns)
             {
-                rows.Children.Add(TurnRow(t, maxActions, alt));
+                rows.Children.Add(TurnRow(t, alt));
                 alt = !alt;
             }
             return rows;
         }
 
-        private static readonly double[] Cols = { 46, 46, 92, 118, 118, 40, BarW + 34, 52 };
+        // turn | tier | health | combat | gold | APM | total, then one column per action kind.
+        // APM is a two-digit number and needs almost none of its width; the rest goes to the
+        // breakdown, which is the only part that can spend it on more information.
+        private static readonly double[] Cols = { 34, 48, 100, 132, 112, 46, 48, 42, 44, 46, 58, 40, 40, 46 };
+
+        private static readonly string[] Heads = { "turn", "tier", "health", "combat", "gold", "APM", "actions" };
 
         private static Grid Row()
         {
@@ -187,87 +255,124 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return g;
         }
 
+        /// <summary>The kind columns label themselves, so the table needs no separate legend.</summary>
         private static UIElement HeaderRow()
         {
             var g = Row();
-            string[] heads = { "turn", "tier", "health", "combat", "gold", "acts", "", "APM" };
-            for (int i = 0; i < heads.Length; i++)
-            {
-                var tb = Line(heads[i], 11, UiKit.TextMuted);
-                tb.Margin = new Thickness(0, 0, 0, 4);
-                Grid.SetColumn(tb, i);
-                g.Children.Add(tb);
-            }
+            for (int i = 0; i < Heads.Length; i++) Put(g, i, Head(Heads[i]));
+            for (int i = 0; i < Kinds.Length; i++) Put(g, Heads.Length + i, Head(Kinds[i].Label));
             return g;
         }
 
-        private static UIElement TurnRow(TurnStat t, int maxActions, bool alt)
+        private static TextBlock Head(string text)
+        {
+            var tb = Line(text, 11, UiKit.TextMuted);
+            tb.Margin = new Thickness(0, 0, 0, 4);
+            return tb;
+        }
+
+        private static UIElement TurnRow(TurnStat t, bool alt)
         {
             var g = Row();
-            g.Height = 22;
+            g.Height = RowH;
 
-            Cell(g, 0, "T" + t.Turn, UiKit.TextSecondary, FontWeights.SemiBold);
-            Cell(g, 1, t.TavernTier > 0 ? t.TavernTier.ToString(CultureInfo.InvariantCulture) : "—", UiKit.TextMuted, FontWeights.Normal);
-            Cell(g, 2, Health(t), UiKit.TextSecondary, FontWeights.Normal);
+            Cell(g, 0, t.Turn.ToString(CultureInfo.InvariantCulture), UiKit.TextSecondary, FontWeights.SemiBold);
+            Put(g, 1, Tier(t));
+            Put(g, 2, Health(t));
+            Put(g, 3, Combat(t));
+            Put(g, 4, Gold(t));
+            Cell(g, 5, t.ShopSeconds >= 1 ? Round0(t.Apm) : "—", UiKit.TextSecondary, FontWeights.Normal);
+            Cell(g, 6, t.Actions.ToString(CultureInfo.InvariantCulture), UiKit.TextPrimary, FontWeights.SemiBold);
 
-            var combat = Line(CombatText(t), 12, CombatBrush(t));
-            Grid.SetColumn(combat, 3);
-            g.Children.Add(combat);
-
-            // Leftover gold is the mistake worth seeing, so it is the half that gets coloured.
-            var gold = new TextBlock { FontSize = 12, IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center };
-            gold.Inlines.Add(new System.Windows.Documents.Run(t.GoldSpent + " spent") { Foreground = UiKit.TextSecondary });
-            if (t.GoldLeftover > 0)
-                gold.Inlines.Add(new System.Windows.Documents.Run("  " + t.GoldLeftover + " left") { Foreground = Red });
-            Grid.SetColumn(gold, 4);
-            g.Children.Add(gold);
-
-            Cell(g, 5, t.Actions.ToString(CultureInfo.InvariantCulture), UiKit.TextPrimary, FontWeights.SemiBold);
-
-            var bar = new Border
-            {
-                Width = Math.Max(2, BarW * t.Actions / (double)maxActions),
-                Height = 8,
-                CornerRadius = new CornerRadius(2),
-                Background = UiKit.AccentBrush,
-                Opacity = 0.75,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            Grid.SetColumn(bar, 6);
-            g.Children.Add(bar);
-
-            Cell(g, 7, t.ShopSeconds >= 1 ? Round0(t.Apm) : "—", UiKit.TextSecondary, FontWeights.Normal);
+            var counts = new int[Kinds.Length];
+            if (t.ActionKinds != null) foreach (var k in t.ActionKinds) counts[IndexOf(k)]++;
+            for (int i = 0; i < Kinds.Length; i++)
+                if (counts[i] > 0) Put(g, Heads.Length + i, KindCell(Kinds[i], counts[i]));
 
             if (!alt) return g;
             return new Border { Background = UiKit.Br(Color.FromArgb(0x1A, 0x39, 0x47, 0x5E)), Child = g };
         }
 
-        private static string Health(TurnStat t)
+        /// <summary>A zero renders as nothing at all — an empty cell says "none of these" faster than a nought does, and keeps the eye on the turns where something happened.</summary>
+        private static UIElement KindCell(ActionKind kind, int count)
         {
-            if (t.HeroHpStart <= 0 && t.HeroHpEnd <= 0) return "—";
-            if (t.HeroHpEnd == t.HeroHpStart) return t.HeroHpStart.ToString(CultureInfo.InvariantCulture);
-            return t.HeroHpStart + " → " + t.HeroHpEnd;
+            var cell = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            cell.Children.Add(new Border
+            {
+                Width = 7,
+                Height = 7,
+                CornerRadius = new CornerRadius(2),
+                Background = kind.Brush,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 5, 0),
+            });
+            var n = Line(count.ToString(CultureInfo.InvariantCulture), 12, UiKit.TextPrimary);
+            n.FontWeight = FontWeights.SemiBold;
+            cell.Children.Add(n);
+            return cell;
         }
 
         /// <summary>
-        /// A win reads by the damage it sent, a loss by the damage it cost. No sign on the number:
-        /// a minus in front of a win's damage reads as something the player lost, which is the exact
-        /// opposite of what happened. The row's colour already says which side took it.
+        /// The tier icon ships with the plugin already, so it costs nothing — but it is a shield
+        /// carrying N stars, and at a table row's height nobody counts stars. It keeps the number
+        /// beside it: the shield is what the eye finds, the digit is what it reads.
         /// </summary>
-        private static string CombatText(TurnStat t)
+        private static UIElement Tier(TurnStat t)
         {
-            if (t.CombatResult == null) return "—";
-            if (t.CombatResult == "win") return t.DamageDealt > 0 ? "won  " + t.DamageDealt + " dmg" : "won";
-            if (t.CombatResult == "loss") return t.DamageTaken > 0 ? "lost  " + t.DamageTaken + " dmg" : "lost";
-            return "tied";
+            if (t.TavernTier <= 0) return Line("—", 12, UiKit.TextMuted);
+            var box = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            var icon = UiKit.TierIcon(t.TavernTier, TierIconH);
+            if (icon != null)
+            {
+                icon.IsHitTestVisible = false;
+                icon.Margin = new Thickness(0, 0, 5, 0);
+                box.Children.Add(icon);
+            }
+            box.Children.Add(Line(t.TavernTier.ToString(CultureInfo.InvariantCulture), 12, UiKit.TextSecondary));
+            return box;
         }
 
-        private static Brush CombatBrush(TurnStat t)
+        private static TextBlock Health(TurnStat t)
         {
-            if (t.CombatResult == "win") return Green;
-            if (t.CombatResult == "loss") return Red;
-            return UiKit.TextMuted;
+            var tb = Run12();
+            if (t.HeroHpStart <= 0 && t.HeroHpEnd <= 0) { tb.Inlines.Add(Ink("—", UiKit.TextMuted)); return tb; }
+            if (t.HeroHpEnd == t.HeroHpStart || t.HeroHpEnd <= 0)
+            {
+                tb.Inlines.Add(Ink(t.HeroHpStart.ToString(CultureInfo.InvariantCulture), UiKit.TextSecondary));
+                return tb;
+            }
+            // The arrow recedes and the landing number carries the colour: what matters is where the
+            // health ended up, not the punctuation getting it there.
+            bool down = t.HeroHpEnd < t.HeroHpStart;
+            tb.Inlines.Add(Ink(t.HeroHpStart.ToString(CultureInfo.InvariantCulture), UiKit.TextMuted));
+            tb.Inlines.Add(Ink(" → ", UiKit.TextMuted));
+            var end = Ink(t.HeroHpEnd.ToString(CultureInfo.InvariantCulture), down ? Red : Green);
+            end.FontWeight = FontWeights.SemiBold;
+            tb.Inlines.Add(end);
+            return tb;
+        }
+
+        /// <summary>A win reads by the damage it sent, a loss by the damage it cost — in those words, because "won 3 damage" is not a sentence.</summary>
+        private static TextBlock Combat(TurnStat t)
+        {
+            var tb = Run12();
+            if (t.CombatResult == null) { tb.Inlines.Add(Ink("—", UiKit.TextMuted)); return tb; }
+            if (t.CombatResult == "win")
+                tb.Inlines.Add(Ink(t.DamageDealt > 0 ? "Dealt " + t.DamageDealt + " damage" : "Won", Green));
+            else if (t.CombatResult == "loss")
+                tb.Inlines.Add(Ink(t.DamageTaken > 0 ? "Took " + t.DamageTaken + " damage" : "Lost", Red));
+            else
+                tb.Inlines.Add(Ink("Tied", UiKit.TextMuted));
+            return tb;
+        }
+
+        /// <summary>Leftover gold is the mistake worth seeing, so it is the half that gets coloured.</summary>
+        private static TextBlock Gold(TurnStat t)
+        {
+            var tb = Run12();
+            tb.Inlines.Add(Ink(t.GoldSpent + " spent", UiKit.TextSecondary));
+            if (t.GoldLeftover > 0) tb.Inlines.Add(Ink("  " + t.GoldLeftover + " left", Red));
+            return tb;
         }
 
         private static UIElement Empty()
@@ -284,6 +389,15 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         // ── plumbing ────────────────────────────────────────────────────────────────────────────
+        private static TextBlock Run12() => new TextBlock
+        {
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+        };
+
+        private static Run Ink(string text, Brush brush) => new Run(text) { Foreground = brush };
+
         private static void Cell(Grid g, int col, string text, Brush brush, FontWeight weight)
         {
             var tb = Line(text, 12, brush);
