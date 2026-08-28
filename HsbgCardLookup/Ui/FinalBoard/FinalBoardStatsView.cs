@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using HsbgCardLookup.Config;
 using HsbgCardLookup.Game.FinalBoard;
 
 namespace HsbgCardLookup.Ui.FinalBoard
@@ -36,8 +37,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// Resolved by the caller, not here: card lookup lives in HDT's Database, and keeping this
         /// view free of it is what lets the whole thing be rendered to a PNG with no HDT running.
         /// </param>
-        public void Show(MatchStats s, string biggestMinionName = null)
+        /// <param name="options">Which blocks to draw; null means all of them.</param>
+        public void Show(MatchStats s, string biggestMinionName = null, FinalBoardOptions options = null)
         {
+            var o = options ?? new FinalBoardOptions();
             _root.Children.Clear();
             if (s == null || s.Turns == null || s.Turns.Count == 0)
             {
@@ -45,11 +48,17 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 return;
             }
 
-            _root.Children.Add(Headline(s));
-            _root.Children.Add(Divider(12));
-            _root.Children.Add(Counters(s, biggestMinionName));
-            _root.Children.Add(Divider(12));
-            _root.Children.Add(TurnTable(s));
+            // Built as a list first so a divider only ever lands BETWEEN two blocks that are both
+            // being drawn -- switching the middle block off must not leave two rules touching.
+            var blocks = new List<UIElement>();
+            if (o.HeadlineTiles) blocks.Add(Headline(s));
+            if (o.Counters) blocks.Add(Counters(s, biggestMinionName));
+            if (o.TurnTable) blocks.Add(TurnTable(s));
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (i > 0) _root.Children.Add(Divider(12));
+                _root.Children.Add(blocks[i]);
+            }
         }
 
         // ── action categories ───────────────────────────────────────────────────────────────────
@@ -129,15 +138,6 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private static UIElement Tile(string value, string label, string sub, Brush brush)
         {
             var box = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
-            box.Children.Add(new Border
-            {
-                Width = 34,
-                Height = 3,
-                CornerRadius = new CornerRadius(2),
-                Background = brush,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0, 0, 0, 6),
-            });
             box.Children.Add(new TextBlock
             {
                 Text = value,

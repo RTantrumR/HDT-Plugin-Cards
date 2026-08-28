@@ -110,7 +110,12 @@
     <Compile Include="Game\FinalBoard\FinalBoardCapture.cs" />
     <Compile Include="Game\FinalBoard\MatchStats.cs" />
     <Compile Include="Game\FinalBoard\MatchStatsTracker.cs" />
+    <Compile Include="Config\FinalBoardOptions.cs" />
+    <Compile Include="Hotkey\HotkeyText.cs" />
+
     <Compile Include="Ui\FinalBoard\FinalBoardPanel.cs" />
+
+    <Compile Include="Ui\FinalBoard\FinalBoardSurface.cs" />
     <Compile Include="Ui\FinalBoard\FinalBoardStatsView.cs" />
     <Compile Include="Ui\FinalBoard\FinalBoardExport.cs" />
     <Compile Include="Game\DarkGifts.cs" />
@@ -165,6 +170,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="data\tribes\*.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Final Board panel frame. Reign-in-blood's artwork from HDT-FinalStatsPlugin, used with
+         his agreement as a co-author of this feature; sliced rather than stretched, see
+         FinalBoardPanel.Slice. -->
+    <None Include="data\panel\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -25,7 +25,7 @@ namespace HsbgCardLookup.Ui
     /// </summary>
     public sealed class SettingsWindow : Window
     {
-        private static readonly string[] Kinds = { "browser", "golden", "focus" };
+        private static readonly string[] Kinds = { "browser", "golden", "focus", "history" };
         private const string Unbound = "None";
 
         private readonly PluginConfig _config;
@@ -62,6 +62,11 @@ namespace HsbgCardLookup.Ui
         private readonly Action _checkForUpdates;
         private readonly Action<UpdateNotice> _openDownloadPage;   // release page in the browser (notify-only updater)
         private readonly Action<string> _skipUpdate;
+        private readonly Game.FinalBoard.FinalBoardStore _matchHistory;
+        private readonly Action<Game.FinalBoard.FinalBoardRecord> _showMatch;   // opens one match on HDT's overlay canvas
+        private TextBlock _shotFolderLabel;
+        private System.Windows.Controls.Primitives.Popup _previewPopup;   // hovered match, drawn beside the list
+        private FinalBoard.FinalBoardPanel _previewPanel;
         private UpdateNotice _updateNotice;     // most recently pushed state (see RefreshUpdateStatus)
         private bool _onUpdatesPage;
         private StackPanel _updateActionsHost;  // repainted in place, no full page rebuild needed
@@ -69,7 +74,8 @@ namespace HsbgCardLookup.Ui
         internal SettingsWindow(PluginConfig config, Data.CardStore store, HotkeyManager hotkey,
             Action onChanged, Action<ArrangeTarget> onArrange,
             string currentVersion, Action checkForUpdates, Action<UpdateNotice> openDownloadPage,
-            Action<string> skipUpdate)
+            Action<string> skipUpdate, Game.FinalBoard.FinalBoardStore matchHistory,
+            Action<Game.FinalBoard.FinalBoardRecord> showMatch)
         {
             _config = config;
             _store = store;
@@ -80,6 +86,8 @@ namespace HsbgCardLookup.Ui
             _checkForUpdates = checkForUpdates;
             _openDownloadPage = openDownloadPage;
             _skipUpdate = skipUpdate;
+            _matchHistory = matchHistory;
+            _showMatch = showMatch;
 
             Title = "HSBG Card Lookup - Settings";
             WindowStyle = WindowStyle.SingleBorderWindow;
@@ -123,6 +131,7 @@ namespace HsbgCardLookup.Ui
                 _mmrPreview?.Close(); _mmrPreview = null;
                 _hudPreview?.Close(); _hudPreview = null;
                 _giftPreview?.Close(); _giftPreview = null;
+                ClosePreview();
             };
         }
 
@@ -138,7 +147,8 @@ namespace HsbgCardLookup.Ui
         /// it) and ringed by the dashed gold outline this window uses nowhere else. Header and status
         /// line stay outside the body, so Back and the feedback for the switch itself keep working.
         /// </summary>
-        private StackPanel NewPage(string title, bool sub, Func<bool> master, Action<bool> setMaster)
+        private StackPanel NewPage(string title, bool sub, Func<bool> master, Action<bool> setMaster,
+                                  Action onBack = null)
         {
             EndKeyCapture();              // navigating away cancels a pending key capture
             FlushPending();               // ...but a pending setting still has to land
@@ -151,6 +161,7 @@ namespace HsbgCardLookup.Ui
             _mmrPreview?.Close(); _mmrPreview = null;
             _hudPreview?.Close(); _hudPreview = null;
             _giftPreview?.Close(); _giftPreview = null;
+            ClosePreview();
             _arrangeBtn = null; _arrangeBtnLabel = null;
             _arrangeTargetOnPage = ArrangeTarget.None;
             _pageRefresh = null;   // page-local; rebuilt when its page shows
@@ -168,7 +179,10 @@ namespace HsbgCardLookup.Ui
                     CornerRadius = new CornerRadius(7), Padding = new Thickness(11, 5, 11, 5), Cursor = Cursors.Hand,
                     VerticalAlignment = VerticalAlignment.Center, Child = backLbl
                 };
-                back.MouseLeftButtonUp += (s, e) => BuildMain();
+                // Back returns to the page you came FROM, which for a page reached from another
+                // sub-page is not the main list.
+                var goBack = onBack ?? (Action)BuildMain;
+                back.MouseLeftButtonUp += (s, e) => goBack();
                 DockPanel.SetDock(back, Dock.Left);
                 head.Children.Add(back);
                 if (master != null)
@@ -269,6 +283,17 @@ namespace HsbgCardLookup.Ui
                         : "Dark Gift list off.";
                     Changed();
                 }, BuildDarkGifts));
+
+            stack.Children.Add(CategoryRow("Final Board",
+                "Keep every finished match, and pick what the end-of-match panel shows.",
+                () => _config.RecordMatchHistory, v =>
+                {
+                    _config.RecordMatchHistory = v;
+                    _status.Text = v
+                        ? "Recording matches. Open the sub-page to choose what the panel shows."
+                        : "Not recording new matches; the ones already stored are still there.";
+                    Changed();
+                }, BuildFinalBoard));
 
             stack.Children.Add(CategoryRow("Updates", UpdatesHint(), null, null, BuildUpdates));
 
@@ -609,6 +634,471 @@ namespace HsbgCardLookup.Ui
             });
 
             ShowPage();
+        }
+
+        // -- Final Board -----------------------------------------------------------------------
+        //
+        // This page is a TRIAL of a different row style: every control sits in its own container,
+        // the way the main page's category rows already do, and the sentence that used to hang under
+        // each label has moved into a "?" beside it. The old shape stacked a 15px label, a wrapped
+        // 11.5px sentence and the next label with nothing between them, so the eye had to work out
+        // where one setting ended -- and a page of nine switches ran twice as tall as it needed to.
+        // The page-level description at the top stays a sentence: it explains the FEATURE, and there
+        // is no single control for it to hang off.
+        //
+        // Deliberately confined to this page. If it reads better than the others, the helpers below
+        // are what the rest of them adopt.
+
+        private void BuildFinalBoard()
+        {
+            var stack = NewPage("Final Board", sub: true, () => _config.RecordMatchHistory, v =>
+            {
+                _config.RecordMatchHistory = v;
+                _status.Text = v ? "Recording matches." : "Not recording new matches.";
+                Changed();
+            });
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Every match is recorded whole either way \u2014 these choose what the panel draws, "
+                     + "so switching one back on shows history that was already kept.",
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            string group = null;
+            bool firstHeading = true;
+            foreach (var b in FinalBoardOptions.Blocks)
+            {
+                if (b.Group != group)
+                {
+                    group = b.Group;
+                    stack.Children.Add(SectionHeading(group, firstHeading));
+                    firstHeading = false;
+                }
+                stack.Children.Add(BlockRow(b));
+            }
+
+            stack.Children.Add(SectionHeading("Screenshots"));
+            stack.Children.Add(ShotFolderRow());
+
+            stack.Children.Add(SectionHeading("Match history"));
+            stack.Children.Add(HistoryRow());
+            stack.Children.Add(HistoryKeyRow());
+
+            ShowPage();
+        }
+
+        // -- the trial row style -----------------------------------------------------------------
+
+        /// <summary>A section heading that outranks the labels under it. The old one was 11.5px
+        /// against 15px rows, so it read as a note attached to the first switch rather than as the
+        /// title of the group.</summary>
+        private static TextBlock SectionHeading(string text, bool first = false) => new TextBlock
+        {
+            Text = text,
+            Foreground = UiKit.TextPrimary, FontSize = 16, FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(2, first ? 2 : 16, 0, 8)
+        };
+
+        /// <summary>The container every row on this page sits in -- same treatment as a main-page
+        /// category, which is what stops a column of settings reading as one undifferentiated block.</summary>
+        private static Border PageCard(UIElement content) => new Border
+        {
+            Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 8, 10, 8),
+            Margin = new Thickness(0, 0, 0, 7), Child = content
+        };
+
+        /// <summary>
+        /// The explanation, folded into a mark beside the label. It costs one line of height instead
+        /// of two or three, and it only speaks when asked -- which is the right trade for a sentence
+        /// most readers need once and then never again.
+        /// </summary>
+        private static UIElement HelpIcon(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return new Border { Width = 0 };
+
+            var glyph = new TextBlock
+            {
+                Text = "?", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = UiKit.TextMuted,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            };
+            var mark = new Border
+            {
+                Width = 17, Height = 17, CornerRadius = new CornerRadius(9),
+                Background = UiKit.Br(UiKit.PanelBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                Margin = new Thickness(7, 1, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Help, Child = glyph
+            };
+            // WPF's stock tooltip is light-themed; left alone it flashes white over a dark window.
+            mark.ToolTip = new ToolTip
+            {
+                Background = UiKit.Br(UiKit.PanelBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                Padding = new Thickness(9, 6, 9, 6), HasDropShadow = true,
+                Content = new TextBlock
+                {
+                    Text = text, Foreground = UiKit.TextPrimary, FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap, MaxWidth = 260
+                }
+            };
+            ToolTipService.SetInitialShowDelay(mark, 120);
+            ToolTipService.SetShowDuration(mark, 30000);
+            mark.MouseEnter += (s, e) => { mark.BorderBrush = UiKit.AccentBrush; glyph.Foreground = UiKit.AccentBrush; };
+            mark.MouseLeave += (s, e) => { mark.BorderBrush = UiKit.StrokeBrush; glyph.Foreground = UiKit.TextMuted; };
+            return mark;
+        }
+
+        /// <summary>Label + "?" on the left, the On/Off pill on the right, all inside one container.</summary>
+        private UIElement BlockRow(FinalBoardOptions.Block b)
+        {
+            var dock = new DockPanel { LastChildFill = true };
+
+            var pill = TogglePill(b.Get(_config.FinalBoardDisplay), v =>
+            {
+                b.Set(_config.FinalBoardDisplay, v);
+                _status.Text = b.Label + (v ? " shown." : " hidden.");
+                Changed();
+            }, width: 74, get: () => b.Get(_config.FinalBoardDisplay));
+            pill.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(pill, Dock.Right);
+            dock.Children.Add(pill);
+
+            var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            left.Children.Add(new TextBlock
+            {
+                Text = b.Label, Foreground = UiKit.TextPrimary, FontSize = 15,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            left.Children.Add(HelpIcon(b.Desc));
+            dock.Children.Add(left);
+
+            return PageCard(dock);
+        }
+
+        // -- where the camera writes --------------------------------------------------------------
+
+        private UIElement ShotFolderRow()
+        {
+            var dock = new DockPanel { LastChildFill = true };
+
+            var btnLabel = new TextBlock { Text = "Change\u2026", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            var btn = new Border
+            {
+                Background = UiKit.Br(UiKit.PanelBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7), Padding = new Thickness(0, 5, 0, 5), Cursor = Cursors.Hand,
+                Width = 74, Child = btnLabel, VerticalAlignment = VerticalAlignment.Center
+            };
+            btn.MouseLeftButtonUp += (s, e) => { e.Handled = true; ChangeShotFolder(); };
+            DockPanel.SetDock(btn, Dock.Right);
+            dock.Children.Add(btn);
+
+            var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            var head = new StackPanel { Orientation = Orientation.Horizontal };
+            head.Children.Add(new TextBlock { Text = "Save folder", Foreground = UiKit.TextPrimary, FontSize = 15, VerticalAlignment = VerticalAlignment.Center });
+            head.Children.Add(HelpIcon("The camera in the panel's top-right copies the picture to the clipboard "
+                                     + "and keeps a copy here. Pictures already saved are not moved."));
+            left.Children.Add(head);
+            _shotFolderLabel = new TextBlock
+            {
+                Foreground = UiKit.TextMuted, FontSize = 11.5,
+                TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 280
+            };
+            left.Children.Add(_shotFolderLabel);
+            dock.Children.Add(left);
+
+            UpdateShotFolderLabel();
+            return PageCard(dock);
+        }
+
+        private void UpdateShotFolderLabel()
+        {
+            if (_shotFolderLabel == null) return;
+            var dir = FinalBoard.FinalBoardExport.ShareDirFor(_config);
+            _shotFolderLabel.Text = dir;
+            _shotFolderLabel.ToolTip = dir;
+        }
+
+        /// <summary>Points new pictures somewhere else. Nothing is moved -- unlike the art cache, these
+        /// are the player's own files in their own folder, and relocating them behind their back is
+        /// not ours to do.</summary>
+        private void ChangeShotFolder()
+        {
+            using (var dlg = new System.Windows.Forms.FolderBrowserDialog())
+            {
+                dlg.Description = "Choose where the Final Board camera saves its pictures.";
+                dlg.ShowNewFolderButton = true;
+                if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK || string.IsNullOrEmpty(dlg.SelectedPath)) return;
+                _config.FinalBoardShotDir = dlg.SelectedPath;
+            }
+            Changed();
+            UpdateShotFolderLabel();
+            _status.Text = "New pictures will be saved in " + _config.FinalBoardShotDir;
+        }
+
+        // -- match history -------------------------------------------------------------------------
+
+        /// <summary>How many rows the history page builds at once. The store is a permanent archive;
+        /// past a hundred rows the page costs more to build than anyone scrolls.</summary>
+        private const int HistoryRows = 100;
+
+        /// <summary>
+        /// One row, not the list. The archive only grows, so inlining it would make this page taller
+        /// every time a game is played -- and taller for everyone, including the reader who came here
+        /// to flip a switch. It gets a page of its own instead.
+        /// </summary>
+        private UIElement HistoryRow()
+        {
+            int count = _matchHistory != null ? _matchHistory.All.Count : 0;
+
+            var dock = new DockPanel { LastChildFill = true };
+
+            var btnLabel = new TextBlock { Text = "Browse\u2026", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            var btn = new Border
+            {
+                Background = UiKit.Br(UiKit.PanelBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7), Padding = new Thickness(0, 5, 0, 5),
+                Width = 74, Child = btnLabel, VerticalAlignment = VerticalAlignment.Center,
+                Cursor = count > 0 ? Cursors.Hand : Cursors.Arrow, Opacity = count > 0 ? 1.0 : 0.45
+            };
+            if (count > 0) btn.MouseLeftButtonUp += (s, e) => { e.Handled = true; BuildMatchHistory(); };
+            DockPanel.SetDock(btn, Dock.Right);
+            dock.Children.Add(btn);
+
+            var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            var head = new StackPanel { Orientation = Orientation.Horizontal };
+            head.Children.Add(new TextBlock { Text = "Your matches", Foreground = UiKit.TextPrimary, FontSize = 15, VerticalAlignment = VerticalAlignment.Center });
+            head.Children.Add(HelpIcon("Pick a match to open its panel on the game overlay. Records go back "
+                                     + "further than Hearthstone Deck Tracker's own seven days, which is why "
+                                     + "they are copied out."));
+            left.Children.Add(head);
+            left.Children.Add(new TextBlock
+            {
+                Text = count == 0 ? "Nothing recorded yet."
+                                  : count + (count == 1 ? " match kept." : " matches kept."),
+                Foreground = UiKit.TextMuted, FontSize = 11.5
+            });
+            dock.Children.Add(left);
+
+            return PageCard(dock);
+        }
+
+        /// <summary>Jump straight to the match history — what the Match history hotkey opens.</summary>
+        internal void OpenMatchHistory() => BuildMatchHistory();
+
+        /// <summary>
+        /// The binding that summons this page. It lives here rather than with the overlay hotkeys
+        /// because it belongs to this feature, and because it is the only one of ours that carries a
+        /// modifier -- the "?" says why that changes when it fires.
+        /// </summary>
+        private UIElement HistoryKeyRow()
+        {
+            var row = KeyRow("history", "Hotkey");
+            var dock = row as DockPanel;
+            if (dock != null)
+            {
+                dock.Margin = new Thickness(0);
+                // Slip the "?" in beside the label, which KeyRow adds last.
+                var label = dock.Children[dock.Children.Count - 1] as TextBlock;
+                if (label != null)
+                {
+                    dock.Children.Remove(label);
+                    var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                    left.Children.Add(label);
+                    left.Children.Add(HelpIcon("Only fires while Hearthstone or Hearthstone Deck Tracker is "
+                                             + "in front. The default, Ctrl+H, already means History in every "
+                                             + "browser and Find and Replace in most editors, and this should "
+                                             + "not take it away from them."));
+                    dock.Children.Add(left);
+                }
+            }
+            return PageCard(row);
+        }
+
+        private void BuildMatchHistory()
+        {
+            var stack = NewPage("Match history", sub: true, master: null, setMaster: null, onBack: BuildFinalBoard);
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Pick one to open its panel on the game overlay.",
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            var all = _matchHistory != null ? _matchHistory.All : null;
+            if (all == null || all.Count == 0)
+            {
+                stack.Children.Add(PageCard(new TextBlock
+                {
+                    Text = "No matches recorded yet.", Foreground = UiKit.TextMuted, FontSize = 13,
+                    TextWrapping = TextWrapping.Wrap
+                }));
+                ShowPage();
+                return;
+            }
+
+            for (int i = 0; i < all.Count && i < HistoryRows; i++)
+                stack.Children.Add(MatchRow(all[i]));
+
+            if (all.Count > HistoryRows)
+                stack.Children.Add(new TextBlock
+                {
+                    Text = "\u2026and " + (all.Count - HistoryRows) + " older, kept on disk.",
+                    Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(2, 2, 0, 0)
+                });
+
+            ShowPage();
+        }
+
+        private UIElement MatchRow(Game.FinalBoard.FinalBoardRecord rec)
+        {
+            var dock = new DockPanel { LastChildFill = true };
+
+            var chev = new TextBlock
+            {
+                Text = "\u203a", FontSize = 20, Foreground = UiKit.TextMuted,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 2, 2)
+            };
+            DockPanel.SetDock(chev, Dock.Right);
+            dock.Children.Add(chev);
+
+            // The HERO is what a player remembers a run by, so it leads and it is the bright text.
+            // The date is how you find a run you already have in mind -- it has to be there, it does
+            // not have to be loud. Fixed widths so the columns line up down the list; a ragged edge
+            // turns a list you scan into a list you have to read.
+            // Tier-A records imported from HDT's store carry only a card id, so the name is resolved
+            // the way the panel's header resolves it and the two can never disagree about a hero.
+            var hero = rec.HeroName;
+            if (string.IsNullOrEmpty(hero)) hero = Game.FinalBoard.FinalBoardCapture.HeroNameOf(rec.HeroCardId);
+
+            var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            line.Children.Add(Col(string.IsNullOrEmpty(hero) ? "Unknown hero" : hero, 158, UiKit.TextPrimary, 13.5, FontWeights.Normal));
+            line.Children.Add(Col(FinalBoard.FinalBoardPanel.Ordinal(rec.Placement), 36, PlacementInk(rec), 13.5, FontWeights.SemiBold));
+            line.Children.Add(Col(FinalBoard.FinalBoardPanel.Duration(rec) ?? "\u2014", 46, UiKit.TextMuted, 12.5, FontWeights.Normal));
+            line.Children.Add(Col(FinalBoard.FinalBoardPanel.Timestamp(rec) ?? "", 0, UiKit.TextMuted, 12, FontWeights.Normal));
+            dock.Children.Add(line);
+
+            var card = PageCard(dock);
+            card.Cursor = Cursors.Hand;
+            card.MouseEnter += (s, e) => { card.BorderBrush = UiKit.AccentBrush; ShowPreview(card, rec); };
+            card.MouseLeave += (s, e) => { card.BorderBrush = UiKit.StrokeBrush; ClosePreview(); };
+            card.MouseLeftButtonUp += (s, e) => OpenMatch(rec);
+            return card;
+        }
+
+        /// <summary>
+        /// What the hovered row is: the hero, and the warband they finished with. It is the real
+        /// panel, not a second drawing of one -- the block switches are exactly the vocabulary needed
+        /// to say "header and board, nothing else", so the preview is that panel with those switches,
+        /// and anything that changes how a board is drawn changes here for free.
+        /// </summary>
+        private static readonly FinalBoardOptions PreviewOptions = new FinalBoardOptions
+        {
+            HeroPortrait = true, MmrDelta = true, MatchMeta = false, PlayerName = false,
+            HeadlineTiles = false, Counters = false, TurnTable = false,
+            DetailRow = false, Board = true,
+        };
+
+        private void ShowPreview(UIElement anchor, Game.FinalBoard.FinalBoardRecord rec)
+        {
+            try
+            {
+                if (_previewPanel == null)
+                {
+                    _previewPanel = new FinalBoard.FinalBoardPanel(PreviewOptions);
+                    _previewPanel.ChromeVisible = false;
+
+                    // A Viewbox rather than the panel's own Scale: that one is a RenderTransform, so
+                    // the element still MEASURES at its full reference width and the popup around it
+                    // would be sized for a panel twice as wide as the one being drawn.
+                    var box = new Viewbox { Width = 480, Stretch = Stretch.Uniform, Child = _previewPanel.Root };
+                    _previewPopup = new System.Windows.Controls.Primitives.Popup
+                    {
+                        AllowsTransparency = true,
+                        StaysOpen = true,
+                        Placement = System.Windows.Controls.Primitives.PlacementMode.Left,
+                        HorizontalOffset = -8,
+                        Child = new Border { Padding = new Thickness(0), Child = box }
+                    };
+                }
+                _previewPanel.Show(rec);
+                _previewPopup.PlacementTarget = anchor;
+                _previewPopup.IsOpen = true;
+            }
+            catch { ClosePreview(); }
+        }
+
+        private void ClosePreview()
+        {
+            try { if (_previewPopup != null) _previewPopup.IsOpen = false; }
+            catch { }
+        }
+
+        /// <summary>
+        /// Show the match over the game. This window gets out of the way and Hearthstone comes
+        /// forward, because the panel is drawn on Hearthstone Deck Tracker's overlay and that overlay
+        /// is hidden whenever the game is not in front: clicking a match while browsing settings used
+        /// to produce nothing at all until the player thought to click the game themselves. The panel
+        /// gives the window back when it is closed, on this page, scrolled where it was -- nothing is
+        /// rebuilt, so there is nothing to restore.
+        /// </summary>
+        private void OpenMatch(Game.FinalBoard.FinalBoardRecord rec)
+        {
+            ClosePreview();
+
+            if (!HearthstoneIsRunning())
+            {
+                _status.Text = "Hearthstone isn't running.";
+                MessageBox.Show(this,
+                    "Hearthstone isn't running.\n\n"
+                    + "The match panel is drawn on top of the game, so there is nowhere to show it yet. "
+                    + "Start Hearthstone, then pick the match again.",
+                    "HSBG Card Lookup \u2014 Match history",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _status.Text = "Showing that match over the game. Close it with the \u2715 to come back here.";
+            Hide();
+            try { _showMatch?.Invoke(rec); } catch { }
+        }
+
+        /// <summary>The overlay panel was dismissed; come back exactly as we were left.</summary>
+        internal void RestoreAfterOverlay()
+        {
+            try
+            {
+                if (IsVisible) return;
+                // The line that sent the reader to the game has been obeyed; leaving it up would have
+                // the window still asking for something that already happened.
+                _status.Text = "";
+                Show();
+                Activate();
+            }
+            catch { }
+        }
+
+        private static TextBlock Col(string text, double width, Brush ink, double size, FontWeight weight)
+        {
+            var tb = new TextBlock
+            {
+                Text = text ?? "", Foreground = ink, FontSize = size, FontWeight = weight,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            if (width > 0) tb.Width = width;
+            return tb;
+        }
+
+        // Same reading as the panel's own placement colour: the top half of the lobby is a good result,
+        // and duos has four teams rather than eight players.
+        private static Brush PlacementInk(Game.FinalBoard.FinalBoardRecord rec)
+        {
+            if (rec.Placement <= 0) return UiKit.TextMuted;
+            bool good = rec.Duos ? rec.Placement <= 2 : rec.Placement <= 4;
+            if (!good) return UiKit.Br(Color.FromRgb(0xEC, 0x69, 0x69));
+            return rec.Placement == 1 ? UiKit.AccentBrush : UiKit.Br(Color.FromRgb(0x6D, 0xEB, 0x6C));
         }
 
         // ── Updates ───────────────────────────────────────────────────────────────────────────
@@ -1538,12 +2028,12 @@ namespace HsbgCardLookup.Ui
         }
 
         // Fires on the hook thread (HDT's UI thread); marshal to be safe against reentrancy.
-        private void OnKeyCaptured(Key key)
+        private void OnKeyCaptured(Key key, ModifierKeys mods)
         {
-            Dispatcher.BeginInvoke(new Action(() => HandleCaptured(key)));
+            Dispatcher.BeginInvoke(new Action(() => HandleCaptured(key, mods)));
         }
 
-        private void HandleCaptured(Key key)
+        private void HandleCaptured(Key key, ModifierKeys mods)
         {
             if (_capturing == null) return;   // not listening: the hook isn't swallowing anything
 
@@ -1555,13 +2045,23 @@ namespace HsbgCardLookup.Ui
             }
             if (IsModifier(key))
             {
+                // A modifier on its own is not a binding, but holding one is how a combo is typed --
+                // so this says "keep going", not "wrong key".
                 _status.Text = (key == Key.LeftAlt || key == Key.RightAlt || key == Key.System)
-                    ? "Alt can't be bound - press another key."
-                    : "Press a non-modifier key.";
+                    ? "Alt can't be part of a binding - hold Ctrl or Shift, or press a key on its own."
+                    : "Now press the key to combine it with.";
+                return;
+            }
+            if ((mods & ModifierKeys.Alt) != 0)
+            {
+                // Windows hands Alt+key to the focused window's menu, and a global hook that fires on
+                // it while the game has one open is a fight we would lose.
+                _status.Text = "Alt can't be part of a binding - try Ctrl or Shift.";
                 return;
             }
 
-            string ks = key.ToString();
+            mods &= ModifierKeys.Control | ModifierKeys.Shift;
+            string ks = HotkeyText.Format(key, mods);
 
             // Steal: if another binding uses this key, unbind it and take the key here.
             var stolen = new List<string>();
@@ -1607,6 +2107,7 @@ namespace HsbgCardLookup.Ui
                 case "browser": return _config.BrowserKey;
                 case "golden": return _config.GoldenKey;
                 case "focus": return _config.FocusKey;
+                case "history": return _config.MatchHistoryKey;
                 default: return "";
             }
         }
@@ -1618,6 +2119,7 @@ namespace HsbgCardLookup.Ui
                 case "browser": _config.BrowserKey = v; break;
                 case "golden": _config.GoldenKey = v; break;
                 case "focus": _config.FocusKey = v; break;
+                case "history": _config.MatchHistoryKey = v; break;
             }
         }
 
@@ -1628,6 +2130,7 @@ namespace HsbgCardLookup.Ui
                 case "browser": return "Open overlay";
                 case "golden": return "Toggle golden";
                 case "focus": return "Focus search";
+                case "history": return "Match history";
                 default: return kind;
             }
         }

@@ -119,6 +119,23 @@ namespace HsbgCardLookup.Config
         // anywhere.
         public bool RecordMatchHistory { get; set; } = true;
 
+        // What the Final Board panel DRAWS. Display only -- a match is always recorded whole, so
+        // turning a block back on reveals history that was already stored.
+        public FinalBoardOptions FinalBoardDisplay { get; set; } = new FinalBoardOptions();
+        // Where the player dragged the Final Board panel, as canvas fractions.
+        public HudPlacement FinalBoardHud { get; set; } = new HudPlacement();
+        // Where the panel's camera writes its pictures. Empty = the default under Pictures.
+        public string FinalBoardShotDir { get; set; } = "";
+
+        // Summons the match-history page. Written "F1" / "Ctrl+H" / "None"; see HotkeyText.
+        // Unlike the overlay key this one only fires while Hearthstone or HDT is IN FRONT. F1 means
+        // Help almost everywhere else and Ctrl+H -- the first default, dropped -- means History in
+        // every browser; the gate is what keeps a binding of ours from stepping on either.
+        public string MatchHistoryKey { get; set; } = "F1";
+
+
+        [XmlIgnore] public Key MatchHistoryKeyParsed => Hotkey.HotkeyText.KeyOf(MatchHistoryKey);
+        [XmlIgnore] public ModifierKeys MatchHistoryModsParsed => Hotkey.HotkeyText.ModsOf(MatchHistoryKey);
 
         [XmlIgnore] public Key BrowserKeyParsed => Enum.TryParse(BrowserKey, out Key k) ? k : Key.F3;
         [XmlIgnore] public Key GoldenKeyParsed => Enum.TryParse(GoldenKey, out Key k) ? k : Key.G;

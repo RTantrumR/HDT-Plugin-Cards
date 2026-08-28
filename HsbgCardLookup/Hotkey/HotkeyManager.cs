@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -19,14 +19,27 @@ namespace HsbgCardLookup.Hotkey
 
         private readonly LowLevelKeyboardProc _proc;   // kept alive for the hook's lifetime
         private IntPtr _hookId = IntPtr.Zero;
-        private readonly Dictionary<int, Key> _targets = new Dictionary<int, Key>();
 
-        /// <summary>Raised when a registered key is pressed. Args: the key, and foreground process name.</summary>
-        public event Action<Key, string> HotkeyPressed;
+        /// <summary>
+        /// Registered bindings. A list rather than a dictionary because the KEY alone no longer
+        /// identifies a binding: H and Ctrl+H are two different things and both may be registered.
+        /// </summary>
+        private readonly List<Binding> _targets = new List<Binding>();
+
+        private struct Binding
+        {
+            public int Vk;
+            public Key Key;
+            public ModifierKeys Mods;
+        }
+
+        /// <summary>Raised when a registered binding is pressed. Args: key, modifiers, and the
+        /// foreground process name.</summary>
+        public event Action<Key, ModifierKeys, string> HotkeyPressed;
 
         /// <summary>Raised for every key while in capture mode — the settings dialog reads it to
-        /// rebind. Fires on the hook thread.</summary>
-        public event Action<Key> KeyCaptured;
+        /// rebind, together with whatever modifiers were being held. Fires on the hook thread.</summary>
+        public event Action<Key, ModifierKeys> KeyCaptured;
 
         private bool _capturing;
         private volatile bool _suppressed;
@@ -47,9 +60,12 @@ namespace HsbgCardLookup.Hotkey
             _proc = HookCallback;
         }
 
-        public void AddKey(Key key)
+        public void AddKey(Key key) => AddKey(key, ModifierKeys.None);
+
+        public void AddKey(Key key, ModifierKeys mods)
         {
-            _targets[KeyInterop.VirtualKeyFromKey(key)] = key;
+            if (key == Key.None) return;
+            _targets.Add(new Binding { Vk = KeyInterop.VirtualKeyFromKey(key), Key = key, Mods = mods });
         }
 
         public void ClearKeys() => _targets.Clear();
@@ -81,20 +97,48 @@ namespace HsbgCardLookup.Hotkey
                 if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
                 {
                     int vk = Marshal.ReadInt32(lParam);
+                    var mods = CurrentModifiers();
                     if (_capturing)
                     {
-                        try { KeyCaptured?.Invoke(KeyInterop.KeyFromVirtualKey(vk)); } catch { }
+                        try { KeyCaptured?.Invoke(KeyInterop.KeyFromVirtualKey(vk), mods); } catch { }
                         return (IntPtr)1;   // swallow during rebind
                     }
-                    if (!_suppressed && _targets.TryGetValue(vk, out Key key))
+                    if (!_suppressed)
                     {
-                        try { HotkeyPressed?.Invoke(key, GetForegroundProcessName()); } catch { }
+                        // EXACT match on the modifiers, in both directions: Ctrl+H must not trip a
+                        // binding on plain H, and a plain H binding must not swallow the meaning of
+                        // every chord that happens to end in H.
+                        foreach (var t in _targets)
+                        {
+                            if (t.Vk != vk || t.Mods != mods) continue;
+                            try { HotkeyPressed?.Invoke(t.Key, t.Mods, GetForegroundProcessName()); } catch { }
+                            break;
+                        }
                         // fall through — normal mode never swallows
                     }
                 }
             }
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
+
+        /// <summary>What is held right now. Read inside the hook, so it must be the ASYNC state:
+        /// GetKeyState reports the queue of the calling thread, which for a global hook is not the
+        /// thread the keystroke belongs to.</summary>
+        private static ModifierKeys CurrentModifiers()
+        {
+            var mods = ModifierKeys.None;
+            if (Down(VK_CONTROL)) mods |= ModifierKeys.Control;
+            if (Down(VK_SHIFT)) mods |= ModifierKeys.Shift;
+            if (Down(VK_MENU)) mods |= ModifierKeys.Alt;
+            return mods;
+        }
+
+        private static bool Down(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+        private const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
 
         private static string GetForegroundProcessName()
         {

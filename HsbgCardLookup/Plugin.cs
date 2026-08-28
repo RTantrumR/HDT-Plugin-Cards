@@ -34,6 +34,7 @@ namespace HsbgCardLookup
         private Game.BgHud _bgHud;                               // always-on trinkets/anomaly HUD
         private Game.FinalBoard.FinalBoardStore _matchHistory;  // local JSON history of finished BG matches
         private Game.FinalBoard.FinalBoardCapture _finalBoardCapture;
+        private Ui.FinalBoard.FinalBoardSurface _finalBoardSurface;   // the panel, on HDT's overlay canvas
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
         private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
@@ -88,6 +89,45 @@ namespace HsbgCardLookup
             root.Items.Add(settings);
             root.Items.Add(update);
             return root;
+        }
+
+        /// <summary>
+        /// Open the Final Board panel on one stored match. The panel lives on HDT's overlay canvas,
+        /// which HDT keeps glued to the Hearthstone window and hides when Hearthstone is not in front
+        /// — so Hearthstone is brought forward as part of showing it. Without that the click lands,
+        /// the panel is created, and the player sees absolutely nothing until they happen to alt-tab:
+        /// an action whose result is invisible until you go looking for it has not really happened.
+        /// Same reasoning, same helper, as entering arrange mode.
+        /// </summary>
+        internal void ShowMatch(Game.FinalBoard.FinalBoardRecord rec)
+        {
+            try
+            {
+                if (rec == null) { Log("[FinalBoard] nothing to show"); return; }
+                var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+                if (canvas == null) { Log("[FinalBoard] no overlay canvas"); return; }
+                canvas.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (_finalBoardSurface == null)
+                        {
+                            _finalBoardSurface = new Ui.FinalBoard.FinalBoardSurface(_config, Log);
+                            _finalBoardSurface.Closed = () =>
+                            {
+                                try { _ui?.BeginInvoke(new Action(() => _settings?.RestoreAfterOverlay())); }
+                                catch { }
+                            };
+                        }
+                        _finalBoardSurface.Show(rec);
+                        // HDT's own helper: it restores a minimized window and satisfies Windows'
+                        // foreground lock, which a bare SetForegroundWindow from here does not.
+                        try { Hearthstone_Deck_Tracker.User32.BringHsToForeground(); } catch { }
+                    }
+                    catch (Exception ex) { Log("ShowMatch (canvas) error: " + ex.Message); }
+                }));
+            }
+            catch (Exception ex) { Log("ShowMatch error: " + ex.Message); }
         }
 
         public void OnLoad()
@@ -165,7 +205,8 @@ namespace HsbgCardLookup
                     {
                         var png = System.IO.Path.Combine(PluginConfig.DataDir, "final-board-debug.png");
                         Ui.FinalBoard.FinalBoardExport.RenderAsync(newest, png,
-                            written => Log("[FinalBoard] debug render: " + (written ?? "FAILED")));
+                            written => Log("[FinalBoard] debug render: " + (written ?? "FAILED")),
+                            options: _config.FinalBoardDisplay, chrome: true);
                     }));
                 }
 #endif
@@ -443,6 +484,7 @@ namespace HsbgCardLookup
             if (key != Key.None) _overlays[key] = _overlayLarge;   // unbound = not registered
             _hotkey.ClearKeys();
             foreach (var k in _overlays.Keys) _hotkey.AddKey(k);
+            _hotkey.AddKey(_config.MatchHistoryKeyParsed, _config.MatchHistoryModsParsed);
         }
 
         // The in-game 🔍 button's click — same behavior as the summon hotkey. Fires on the canvas
@@ -475,6 +517,7 @@ namespace HsbgCardLookup
             _bgMmr?.OnSettingsChanged();    // opponent-MMR reader on/off
             _darkGifts?.OnSettingsChanged(); // Dark Gift hover panel on/off
             _searchButton?.OnSettingsChanged(); // in-game search button on/off
+            _finalBoardSurface?.Refresh();   // redraw an open Final Board panel against the new switches
         }
 
         // Enter/leave arrange mode for ONE feature. Everything else on the canvas stands down for the
@@ -514,20 +557,34 @@ namespace HsbgCardLookup
                 _darkGifts?.CloseAll();
                 _searchButton?.CloseAll();
                 _overlayLarge?.Close();
+                try { _finalBoardSurface?.Close(); } catch { }
+                _finalBoardSurface = null;
                 _overlays = null;
             });
             Log("OnUnload");
         }
 
-        private void OnHotkeyPressed(Key key, string foreground)
+        private void OnHotkeyPressed(Key key, System.Windows.Input.ModifierKeys mods, string foreground)
         {
-            Log($"Hotkey {key} pressed  (foreground = {foreground})");
+            Log($"Hotkey {key} (+{mods}) pressed  (foreground = {foreground})");
 
             // Debounce per key: auto-repeat sends repeated WM_KEYDOWNs while held.
             var now = DateTime.UtcNow;
             if (_lastToggle.TryGetValue(key, out DateTime last) && (now - last).TotalMilliseconds < 300)
                 return;
             _lastToggle[key] = now;
+
+            if (key != Key.None && key == _config.MatchHistoryKeyParsed && mods == _config.MatchHistoryModsParsed)
+            {
+                // GATED, unlike the overlay key. The default is Ctrl+H, which already means History
+                // in every browser and Find-and-Replace in Word, Excel, Visual Studio, VS Code and
+                // Notepad++ (and Backspace in a terminal). Our hook is global and never swallows, so
+                // an ungated binding would not break those — it would do something worse: leave them
+                // working while our window jumped in front of them. It only fires over the game.
+                if (!IsOurForeground(foreground)) return;
+                _ui?.BeginInvoke(new Action(OpenMatchHistory));
+                return;
+            }
 
             // Hook callback should return fast; marshal UI work asynchronously.
             _ui?.BeginInvoke(new Action(() =>
@@ -538,6 +595,19 @@ namespace HsbgCardLookup
                     if (!ReferenceEquals(w, target)) w.HideIfOpen();
                 target.Toggle();
             }));
+        }
+
+        /// <summary>Hearthstone, or HDT itself — which is also where our own overlay and settings
+        /// windows live, since they belong to HDT's process.</summary>
+        private static bool IsOurForeground(string process) =>
+            string.Equals(process, "Hearthstone", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(process, "HearthstoneDeckTracker", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Open the settings window straight onto the match-history page.</summary>
+        private void OpenMatchHistory()
+        {
+            OpenSettings();
+            try { _settings?.OpenMatchHistory(); } catch (Exception ex) { Log("OpenMatchHistory error: " + ex.Message); }
         }
 
         public void OnButtonPress()
@@ -555,7 +625,7 @@ namespace HsbgCardLookup
             if (_settings != null) { _settings.Show(); _settings.Activate(); return; }
             _settings = new SettingsWindow(_config, _store, _hotkey, ApplySettings, SetArrangeMode,
             Version.ToString(), CheckForUpdatesInteractive,
-            n => OpenDownloadPage(n?.Url), SkipVersion);
+            n => OpenDownloadPage(n?.Url), SkipVersion, _matchHistory, ShowMatch);
             _settings.Closed += (s, e) => _settings = null;
             _settings.Show();
             _settings.RefreshUpdateStatus(_lastUpdateNotice);   // seed with what's already known
