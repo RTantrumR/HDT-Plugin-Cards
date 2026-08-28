@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
@@ -67,6 +67,16 @@ namespace HsbgCardLookup.Game.FinalBoard
         public List<MinionRecord> Trinkets { get; set; }
         public int AnomalyDbfId { get; set; }
         public string AnomalyCardId { get; set; }
+
+        /// <summary>
+        /// The lobby ran Dark Gifts. It is not an anomaly in the tag sense — there is no
+        /// BACON_GLOBAL_ANOMALY_DBID for it — it is the presence of the BG36_Button_DarkGift entity,
+        /// which is how <c>DarkGiftWatcher</c> finds it too. Stored because it is a fact about the
+        /// match that cannot be recovered afterwards, and because the trinket medallions are drawn
+        /// in that season's frame. False on every record captured before this field existed, and on
+        /// every import: absence here means "not known", not "no".
+        /// </summary>
+        public bool DarkGiftLobby { get; set; }
 
         [JsonIgnore]
         public bool HasOurCapture => string.Equals(Source, "live", StringComparison.OrdinalIgnoreCase);

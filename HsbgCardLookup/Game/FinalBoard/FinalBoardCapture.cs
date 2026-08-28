@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using HearthDb.Enums;
@@ -135,6 +135,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             rec.Trinkets = x.Trinkets;
             rec.AnomalyDbfId = x.AnomalyDbfId;
             rec.AnomalyCardId = x.AnomalyCardId;
+            rec.DarkGiftLobby = x.DarkGiftLobby;
             rec.PlayerName = x.PlayerName;
             rec.Turns = x.Turns;
             rec.Stats = _tracker.TakeSnapshot();
@@ -149,6 +150,9 @@ namespace HsbgCardLookup.Game.FinalBoard
         }
 
         // ── reads ───────────────────────────────────────────────────────────────────────────────
+        /// <summary>The Dark Gift button, probe-verified 2026-08-05 — the same id DarkGiftWatcher uses.</summary>
+        private const string DarkGiftButtonId = "BG36_Button_DarkGift";
+
         private sealed class Extras
         {
             public string HeroPowerCardId;
@@ -156,6 +160,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             public List<MinionRecord> Trinkets;
             public int AnomalyDbfId;
             public string AnomalyCardId;
+            public bool DarkGiftLobby;
             public string PlayerName;
             public int Turns;
         }
@@ -184,6 +189,7 @@ namespace HsbgCardLookup.Game.FinalBoard
 
                 ReadHeroPower(g, x);
                 ReadAnomaly(g, x);
+                ReadDarkGiftLobby(g, x);
             }
             catch (Exception ex) { Log("ReadExtras error: " + ex.Message); }
             return x;
@@ -241,6 +247,30 @@ namespace HsbgCardLookup.Game.FinalBoard
         private static bool InPlay(Entity e)
         {
             try { return e.GetTag(GameTag.ZONE) == (int)Zone.PLAY; } catch { return false; }
+        }
+
+        /// <summary>
+        /// Dark Gifts announce themselves with a button entity and nothing else — no anomaly tag, no
+        /// game-entity flag — so this looks for the same card id <c>DarkGiftWatcher</c> keys on. Read
+        /// at match end while the entities are still up, because nothing afterwards remembers it.
+        /// </summary>
+        private static void ReadDarkGiftLobby(GameV2 g, Extras x)
+        {
+            try
+            {
+                var ents = g.Entities;
+                if (ents == null) return;
+                foreach (var e in ents.Values)
+                {
+                    if (e == null) continue;
+                    if (string.Equals(e.CardId, DarkGiftButtonId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        x.DarkGiftLobby = true;
+                        return;
+                    }
+                }
+            }
+            catch { }
         }
 
         private static void ReadAnomaly(GameV2 g, Extras x)

@@ -5,6 +5,7 @@ using IoPath = System.IO.Path;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -13,6 +14,7 @@ using HearthDb.Enums;
 using HdtControls = Hearthstone_Deck_Tracker.Controls;
 using Hearthstone_Deck_Tracker.Hearthstone;            // Database
 using Hearthstone_Deck_Tracker.Hearthstone.Entities;
+using Hearthstone_Deck_Tracker.Controls.Overlay;       // CardAssetViewModel
 using Hearthstone_Deck_Tracker.Utility.Assets;         // CardAssetType
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Game.FinalBoard;
@@ -69,11 +71,27 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private const double MinionSize = 134;
         private const double MinionOverlap = -5;
         private const double PortraitW = 190, PortraitH = 268;
-        private const double TrinketSize = 100;
+        // The box, not the medallion. HDT draws the trinket's ring smaller inside its 110 natural
+        // square than the hero power draws its own, so equal boxes leave the trinkets visibly the
+        // smaller pair: measured off the render, 100 and 130 came out as rings of 77 and 104. 135
+        // is what makes the two rings the same size, which is what "the same size" means to the eye.
+        private const double TrinketSize = 135;
+
+        // Our own medallion has none of HDT's transparent margin, so it is drawn at the size of the
+        // RING rather than of the box — otherwise the Dark Gift season's trinkets would tower over
+        // the hero power beside them. The portrait fills 0.59 of the frame, which is the widest it
+        // goes while still leaving the red rune field visible as a rim: below that the season is
+        // hard to read at a glance, above it the frame is just a gold circle.
+        private const double TrinketRing = 104;
+        private const double TrinketArtFrac = 0.59;
         private const double HeroPowerSize = 130;
         private const double AnomalyW = 90, AnomalyH = 130;
 
-        private const double DetailsW = 600;   // 3 columns of 200, centred
+        // Two trinkets at 135 no longer fit Reign's 200 column, and neither did a hero power beside
+        // an anomaly (130 + 90 + 6) — that one was overflowing already. The outer columns take the
+        // extra; the middle one keeps the portrait's 200, so the portrait sits where it always did.
+        private const double DetailsW = 700;
+        private static readonly double[] DetailCols = { 250, 200, 250 };
         private const double BandContentW = 740;
 
         private readonly Border _root;
@@ -256,8 +274,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            for (int i = 0; i < 3; i++)
-                details.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(DetailsW / 3) });
+            foreach (var w in DetailCols)
+                details.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
 
             Put(details, 0, _trinkets);
 
@@ -542,8 +560,11 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 foreach (var t in rec.Trinkets ?? new List<MinionRecord>())
                 {
                     if (t == null || string.IsNullOrEmpty(t.CardId)) continue;
-                    Add(_trinkets, new HdtControls.Trinket(EntityFor(t.CardId, t.Tags)),
-                        TrinketSize, TrinketSize, new Thickness(2, 0, 2, 0));
+                    // Negative, and it has to be: a third of the 135 box is the transparent margin
+                    // HDT leaves around the ring, so a positive gap between the boxes reads as a
+                    // large one between the medallions. −8 a side leaves about 15px of real air.
+                    Add(_trinkets, Trinket(t, rec.DarkGiftLobby),
+                        TrinketSize, TrinketSize, new Thickness(-8, 0, -8, 0));
                 }
                 if (!string.IsNullOrEmpty(rec.HeroPowerCardId))
                     Add(_powers, new HdtControls.HeroPower(EntityFor(rec.HeroPowerCardId, null)),
@@ -602,6 +623,50 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// correct for all three — and for a non-square child like the anomaly card it letterboxes
         /// rather than squashing.
         /// </summary>
+        /// <summary>
+        /// One trinket. HDT's own control everywhere except a Dark Gift lobby, which gets that
+        /// season's frame instead — a board from one season should not be able to pass for a board
+        /// from another, and the medallion is where the game itself says which one you were in.
+        /// Falls back to HDT's control whenever the frame or the card is missing, so a lost asset
+        /// costs the season marker and nothing else.
+        /// </summary>
+        private static UIElement Trinket(MinionRecord t, bool darkGift)
+        {
+            var frame = darkGift ? LoadTrinketFrame() : null;
+            var card = frame != null ? CardOf(t.CardId) : null;
+            if (frame == null || card == null)
+                return new HdtControls.Trinket(EntityFor(t.CardId, t.Tags));
+
+            double d = TrinketRing * TrinketArtFrac;
+
+            // The portrait arrives asynchronously — HDT fetches and caches it — so this binds rather
+            // than reads. A render taken before it lands shows the frame's own gem, which is the
+            // artwork's stand-in for a trinket and reads as one.
+            var art = new Image
+            {
+                Width = d,
+                Height = d,
+                Stretch = Stretch.UniformToFill,
+                Clip = new EllipseGeometry(new Point(d / 2, d / 2), d / 2, d / 2),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            art.SetBinding(Image.SourceProperty,
+                new Binding("Asset") { Source = new CardAssetViewModel(card, CardAssetType.Portrait) });
+
+            var box = new Grid { Width = TrinketSize, Height = TrinketSize };
+            box.Children.Add(new Image
+            {
+                Source = frame,
+                Width = TrinketRing,
+                Height = TrinketRing,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            box.Children.Add(art);
+            return box;
+        }
+
         private static void Add(Panel host, UIElement child, double w, double h, Thickness margin)
         {
             var fe = child as FrameworkElement;
@@ -621,6 +686,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         private static BitmapSource _art;
         private static bool _artTried;
+        private static BitmapSource _trinketFrame;
+        private static bool _trinketFrameTried;
 
         /// <summary>Loaded once per process, and a failure is remembered: a missing file must cost one
         /// attempt, not one per panel. The panel falls back to a flat gradient and still works.</summary>
@@ -636,6 +703,22 @@ namespace HsbgCardLookup.Ui.FinalBoard
             }
             catch { _art = null; }
             return _art;
+        }
+
+        /// <summary>The Dark Gift season's trinket frame, loaded once on the same terms as the panel
+        /// artwork. Reign's, converted from his WebP; a bigger source can replace the file alone.</summary>
+        private static BitmapSource LoadTrinketFrame()
+        {
+            if (_trinketFrameTried) return _trinketFrame;
+            _trinketFrameTried = true;
+            try
+            {
+                var dir = IoPath.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                var file = IoPath.Combine(dir, "data", "panel", "TrinketFrameDarkGift.png");
+                if (System.IO.File.Exists(file)) _trinketFrame = ImageCache.Load(file, (int)TrinketRing * 2);
+            }
+            catch { _trinketFrame = null; }
+            return _trinketFrame;
         }
 
         /// <summary>

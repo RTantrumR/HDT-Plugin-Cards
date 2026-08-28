@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -339,6 +339,14 @@ namespace HsbgCardLookup.Ui.FinalBoard
             if (t.HeroHpEnd == t.HeroHpStart || t.HeroHpEnd <= 0)
             {
                 tb.Inlines.Add(Ink(t.HeroHpStart.ToString(CultureInfo.InvariantCulture), UiKit.TextSecondary));
+                return tb;
+            }
+            if (t.HeroHpStart <= 0)
+            {
+                // No reading at the top of the turn, so this is where the hero came in — 30 plus armour,
+                // doubled armour in duos, 60 for Patchwerk off his hero power. "0 → 40" said the hero
+                // was resurrected from nothing; it is a spawn, and a spawn is one number.
+                tb.Inlines.Add(Ink(t.HeroHpEnd.ToString(CultureInfo.InvariantCulture), UiKit.TextSecondary));
                 return tb;
             }
             // The arrow recedes and the landing number carries the colour: what matters is where the
