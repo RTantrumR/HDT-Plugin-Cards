@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using IoPath = System.IO.Path;
@@ -36,34 +36,34 @@ namespace HsbgCardLookup.Ui.FinalBoard
     /// The frame is Reign-in-blood's artwork from HDT-FinalStatsPlugin, and so is the composition it
     /// was drawn for: trinkets left, a tall hero portrait breaking the top rail, hero power and
     /// anomaly right, then a band reading rank · MMR · turn · hero · highest creature · duration.
-    /// He is a co-author of this feature. The layout below is his; what differs is that the artwork
-    /// is <b>sliced</b> instead of stretched (see <see cref="Slice"/>), because his panel is one
-    /// fixed height and ours has to hold either a board or a tall stats table.
+    /// He is a co-author of this feature. The layout below is his, and so is the way the artwork is
+    /// drawn: <b>whole, at the size it was painted</b>, never resampled. His panel is one fixed
+    /// height and ours has to hold either a board or a tall stats table, so where he can let the
+    /// image fill the panel we pin it to the top and let the flat zone under it carry on downwards.
     ///
     /// Layout is authored in reference pixels and scaled as a whole (<see cref="Scale"/>), the way
     /// every other canvas element in this codebase works.
     /// </summary>
     internal sealed class FinalBoardPanel
     {
-        // ── the artwork, and the rows measured out of it ────────────────────────────────────────
-        // Measured off the PNG itself rather than guessed: the gold rail occupies y20–34 and the
-        // band's two gold rules sit at y155 and y217. Those rules are the seams, so they are where
-        // the image is cut.
+        // ── the artwork ─────────────────────────────────────────────────────────────────────────
+        // Drawn once, whole, at 920x410, and never scaled in either direction. Cutting it into rows
+        // and stretching them was tried first and it does not survive contact with the painting: the
+        // gold rail, the radial glow behind the hero and above all the red rank shield — which hangs
+        // BELOW the band's lower rule, from y152 to y235 — straddle the seams, so every seam that
+        // moves distorts something that was drawn to sit still.
         private const double PanelW = 920;
         private const double ArtH = 410;
 
-        // The header is cut in TWO so the row can be taller than the artwork's own header zone
-        // without the rail growing with it: the rail keeps its painted height, and only the flat
-        // purple beneath it stretches. Reign's header is 204 tall and his portrait is 268 — it is
-        // meant to break the rail and overhang the band, and it cannot do either from a 155 row.
-        private const double RailH = 60;       // art rows 0-59: the gold rail and its scroll ends
-        private const double RailArtEnd = 60;
-        private const double HeaderFillTop = 60;   // art rows 60-154: flat, safe to stretch
-        private const double HeaderFillArtH = 95;
-        private const double HeaderH = 204;    // total header height, Reign's
-        private const double BandTop = 155;
-        private const double BandH = 63;       // the stat strip, between the two gold rules
-        private const double BodyTop = 218;    // flat gradient below — the only stretchable part
+        // Reign's rows, and they are what makes the untouched image work: they do not describe the
+        // painting, they are laid over it, and two lifts put the content back on the painted seams.
+        // Header 204 / band 58 / the rest, the whole thing raised 15, the band raised a further 30 —
+        // which lands the band's six cells between the gold rules at y157 and y216, and the RANK cell
+        // squarely on the shield. Verified against the PNG, not copied on faith.
+        private const double HeaderH = 204;
+        private const double BandH = 58;
+        private const double ContentLift = 15;
+        private const double BandLift = ContentLift + 30;
 
         // Reign's sizes, and they matter: HDT's Trinket/HeroPower are drawn for 110x110.
         private const double MinionSize = 134;
@@ -198,41 +198,45 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var art = LoadArt();
 
             var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(RailH) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(HeaderH - RailH) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(HeaderH) });
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(BandH) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            // Backgrounds first, each its own slice. The rail and the band are drawn at the height
-            // they were painted at, so their ornament is pixel-exact; the two flat zones are the only
-            // ones that stretch, and they have nothing in them to distort.
-            AddArt(grid, 0, Slice(art, 0, RailArtEnd));
-            AddArt(grid, 1, Slice(art, HeaderFillTop, HeaderFillArtH));
-            AddArt(grid, 2, Slice(art, BandTop, BandH));
-            AddArt(grid, 3, Slice(art, BodyTop, ArtH - BodyTop));
+            // The background, and it is one picture: the artwork at 1:1, pinned to the top, over a
+            // ground taken from its own bottom edge. A stats table can push the panel past 410 and
+            // all of that growth happens below the painting, in a zone the painting had left flat.
+            // The lifts are on the content, never on this — the image is the fixed thing here.
+            var bg = Background(art);
+            Grid.SetRow(bg, 0);
+            Grid.SetRowSpan(bg, 3);
+            Panel.SetZIndex(bg, 0);
+            grid.Children.Add(bg);
 
-            // The details span both header rows and are allowed to overflow: the portrait is taller
-            // than the header, breaks the rail above it and rests on the band below, which is the
-            // whole reason the composition reads as a hero and not as a row of icons.
+            // The portrait is 268 tall in a 204 row and is meant to be: it breaks the rail above it
+            // and comes down to rest on the band, which is what makes the composition read as a hero
+            // rather than as a row of icons. Nothing here clips.
             var details = Details();
             Grid.SetRow(details, 0);
-            Grid.SetRowSpan(details, 2);
             Panel.SetZIndex(details, 10);
+            details.RenderTransform = new TranslateTransform(0, -ContentLift);
             grid.Children.Add(details);
 
             var band = Band();
-            Grid.SetRow(band, 2);
+            Grid.SetRow(band, 1);
             Panel.SetZIndex(band, 5);
+            band.RenderTransform = new TranslateTransform(0, -BandLift);
             grid.Children.Add(band);
 
             var body = Body();
-            Grid.SetRow(body, 3);
+            Grid.SetRow(body, 2);
             Panel.SetZIndex(body, 5);
+            body.RenderTransform = new TranslateTransform(0, -ContentLift);
             grid.Children.Add(body);
 
             return new Border
             {
                 Width = PanelW,
+                MinHeight = ArtH,   // never crop the painting; a short body just leaves flat ground
                 BorderBrush = Frozen(Color.FromArgb(70, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 Background = art == null ? (Brush)new LinearGradientBrush(UiKit.PanelBg2, UiKit.PanelBg, 90) : Brushes.Transparent,
@@ -244,7 +248,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         // ── row 0: trinkets · hero · hero power + anomaly ───────────────────────────────────────
 
-        private UIElement Details()
+        private FrameworkElement Details()
         {
             var details = new Grid
             {
@@ -272,7 +276,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// shield the artwork already has waiting for it, which is why the geometry is copied rather
         /// than re-invented.
         /// </summary>
-        private UIElement Band()
+        private FrameworkElement Band()
         {
             var band = new Grid
             {
@@ -286,9 +290,16 @@ namespace HsbgCardLookup.Ui.FinalBoard
             Put(band, 0, Cell("RANK", out _rank, 17));
             Put(band, 1, Cell("MMR", out _mmr, 17));
             Put(band, 2, Cell("TURN", out _turn, 17));
-            Put(band, 3, Cell("HERO", out _hero, 18));
+            var heroCell = Cell("HERO", out _hero, 18);
+            Put(band, 3, heroCell);
             Put(band, 4, Cell("HIGHEST CREATURE", out _highest, 17));
             Put(band, 5, Cell("DURATION", out _duration, 17));
+
+            // The portrait comes down over this one cell and lands on its label. That is the
+            // composition working, not failing — the name reads as the nameplate under the picture —
+            // but a caption sliced in half by a silver frame is not. Hidden, not removed: the line
+            // still holds its space, so the six values stay on one baseline.
+            ((StackPanel)heroCell).Children[0].Visibility = Visibility.Hidden;
 
             _hero.Foreground = Gold;
             return band;
@@ -312,7 +323,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         // ── row 2: whichever view is open, then the footer ──────────────────────────────────────
 
-        private UIElement Body()
+        private FrameworkElement Body()
         {
             var rows = new StackPanel { Margin = new Thickness(16, 8, 16, 8) };
 
@@ -628,28 +639,35 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         /// <summary>
-        /// One horizontal band of the artwork, as a brush. The ImageBrush Viewbox selects the source
-        /// rows and Fill paints them across the target, so a row drawn at its painted height is
-        /// untouched and only the row we deliberately stretch is stretched.
+        /// The artwork, undistorted, plus whatever ground is needed under it. The image rectangle is
+        /// exactly 920x410 so Stretch.Fill is a 1:1 blit; behind it a second rectangle carries the
+        /// painting's own last two rows, which are flat, so a panel of any height ends on the colour
+        /// the artist ended on. Returns an empty Grid when the file is missing — the caller has
+        /// already put a gradient behind us for that case.
         /// </summary>
-        private static Brush Slice(BitmapSource art, double top, double height)
+        private static FrameworkElement Background(BitmapSource art)
         {
-            if (art == null) return null;
-            return new ImageBrush(art)
-            {
-                ViewboxUnits = BrushMappingMode.RelativeToBoundingBox,
-                Viewbox = new Rect(0, top / ArtH, 1, height / ArtH),
-                Stretch = Stretch.Fill,
-            };
-        }
+            var bg = new Grid { IsHitTestVisible = false };
+            if (art == null) return bg;
 
-        private static void AddArt(Grid grid, int row, Brush brush)
-        {
-            if (brush == null) return;
-            var r = new Rectangle { Fill = brush, IsHitTestVisible = false };
-            Grid.SetRow(r, row);
-            Panel.SetZIndex(r, 0);
-            grid.Children.Add(r);
+            bg.Children.Add(new Rectangle
+            {
+                IsHitTestVisible = false,
+                Fill = new ImageBrush(art)
+                {
+                    ViewboxUnits = BrushMappingMode.RelativeToBoundingBox,
+                    Viewbox = new Rect(0, (ArtH - 2) / ArtH, 1, 2 / ArtH),
+                    Stretch = Stretch.Fill,
+                },
+            });
+            bg.Children.Add(new Rectangle
+            {
+                Height = ArtH,
+                VerticalAlignment = VerticalAlignment.Top,
+                IsHitTestVisible = false,
+                Fill = new ImageBrush(art) { Stretch = Stretch.Fill },
+            });
+            return bg;
         }
 
         /// <summary>
