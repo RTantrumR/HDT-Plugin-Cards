@@ -122,20 +122,20 @@ namespace HsbgCardLookup.Ui.FinalBoard
             int peakTurn = s.ApmPeakTurnNumber;
             Put(g, 0, Tile(s.ActionCount.ToString(CultureInfo.InvariantCulture), "actions", null, UiKit.AccentBrush));
             Put(g, 1, Tile(Round1(s.ApmAverage), "average APM", Mins(s.ShopSeconds) + " in shops", Kinds[0].Brush));
-            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "fastest turn", peakTurn > 0 ? "turn " + peakTurn : null, Kinds[2].Brush));
+            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "peak APM", peakTurn > 0 ? "on turn " + peakTurn : null, Kinds[2].Brush));
 
-            // Unspent gold is the only tile that can report a MISTAKE, so it is the only one that
-            // ever wears a status colour. Painting a wasteful number in the same gold as a good APM
-            // would congratulate the player for it — and leaving all four the same colour, which is
-            // how this started, made none of them worth looking at first.
+            // Gold spent, not gold unspent: a big tile around a one-digit number was a frame with
+            // no picture, and spending is the total that scales with how much got done. The
+            // leftover is still the mistake, so it keeps its red — in the subline, where a small
+            // number belongs.
             int wasted = s.GoldWasted;
-            Put(g, 3, Tile(wasted.ToString(CultureInfo.InvariantCulture), "gold unspent",
-                           wasted > 0 ? "over " + s.Turns.Count(t => t.GoldLeftover > 0) + " turns" : "nothing left behind",
-                           wasted > 0 ? Red : UiKit.TextMuted));
+            Put(g, 3, Tile(s.GoldSpent.ToString(CultureInfo.InvariantCulture), "gold spent",
+                           wasted > 0 ? wasted + " left unspent" : "every coin spent",
+                           Kinds[3].Brush, wasted > 0 ? Red : null));
             return g;
         }
 
-        private static UIElement Tile(string value, string label, string sub, Brush brush)
+        private static UIElement Tile(string value, string label, string sub, Brush brush, Brush subBrush = null)
         {
             var box = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
             box.Children.Add(new TextBlock
@@ -147,7 +147,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 IsHitTestVisible = false,
             });
             box.Children.Add(Line(label, 13, UiKit.TextSecondary));
-            box.Children.Add(Line(sub ?? "", 11, UiKit.TextMuted));
+            box.Children.Add(Line(sub ?? "", 11, subBrush ?? UiKit.TextMuted));
             return box;
         }
 
@@ -164,23 +164,46 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 Pair("Sold", s.MinionsSold.ToString(CultureInfo.InvariantCulture)),
                 Pair("Rolled", s.TavernRolls.ToString(CultureInfo.InvariantCulture)),
                 Pair("Froze", s.Freezes.ToString(CultureInfo.InvariantCulture)),
-                Pair("Gold spent", s.GoldSpent.ToString(CultureInfo.InvariantCulture))));
+                Pair("Gold unspent", s.GoldWasted.ToString(CultureInfo.InvariantCulture),
+                     s.GoldWasted > 0 ? Red : null)));
 
             Put(g, 1, Stack(
                 Pair("Played", Join(Count(s.MinionsPlayed, "minion"), Count(s.SpellsPlayed, "spell"))),
                 Pair("Activated", s.MinionActivations.ToString(CultureInfo.InvariantCulture)),
                 Pair("Hero power", s.HeroPowersUsed.ToString(CultureInfo.InvariantCulture)),
-                Pair("Tavern ups", s.TavernUpgrades.ToString(CultureInfo.InvariantCulture)),
                 Pair("Triples", s.TriplesCreated.ToString(CultureInfo.InvariantCulture))));
 
             Put(g, 2, Stack(
-                Pair("Combats", s.CombatWins + "W " + s.CombatLosses + "L" + (s.CombatDraws > 0 ? " " + s.CombatDraws + "D" : "")),
+                Pair("Combats", CombatsText(s)),
                 Pair("Damage dealt", Damage(s.HeroDamageDealt, s.MaxHeroDamageDealt)),
                 Pair("Damage taken", Damage(s.HeroDamageTaken, s.MaxHeroDamageTaken)),
-                Pair("Biggest", Biggest(s, biggestMinionName)),
-                // Firestone's window, kept here rather than in the headline: see MatchStats.ApmPeakBurst.
-                Pair("Peak burst", Round0(s.ApmPeakBurst) + " APM in 4s")));
+                Pair("Biggest minion", Biggest(s, biggestMinionName)),
+                // Firestone's window, kept here rather than in the headline: see MatchStats.PeakBurstActions.
+                Pair("Peak burst", s.PeakBurstActions + " actions in 4s")));
             return g;
+        }
+
+        /// <summary>The letters carry the verdict's colour and the counts stay plain — "8W 8L" reads
+        /// as a record, not a score, once the W is a win-green and the L a loss-red.</summary>
+        private static TextBlock CombatsText(MatchStats s)
+        {
+            var tb = new TextBlock
+            {
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            };
+            tb.Inlines.Add(Ink(s.CombatWins.ToString(CultureInfo.InvariantCulture), UiKit.TextPrimary));
+            tb.Inlines.Add(Ink("W", Green));
+            tb.Inlines.Add(Ink(" " + s.CombatLosses, UiKit.TextPrimary));
+            tb.Inlines.Add(Ink("L", Red));
+            if (s.CombatDraws > 0)
+            {
+                tb.Inlines.Add(Ink(" " + s.CombatDraws, UiKit.TextPrimary));
+                tb.Inlines.Add(Ink("D", UiKit.TextMuted));
+            }
+            return tb;
         }
 
         private static string Biggest(MatchStats s, string name)
@@ -194,7 +217,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private static string Damage(int total, int max)
         {
             if (total <= 0) return "0";
-            return total + (max > 0 ? "  (best " + max + ")" : "");
+            return total + (max > 0 ? "  (highest " + max + ")" : "");
         }
 
         private static string Count(int n, string noun)
@@ -211,17 +234,21 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return a + " · " + b;
         }
 
-        private static UIElement Pair(string label, string value)
+        private static UIElement Pair(string label, string value, Brush valueBrush = null)
+        {
+            var v = Line(value, 13, valueBrush ?? UiKit.TextPrimary);
+            v.FontWeight = FontWeights.SemiBold;
+            return Pair(label, v);
+        }
+
+        private static UIElement Pair(string label, TextBlock value)
         {
             var g = new Grid { Margin = new Thickness(0, 0, 18, 5) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var l = Line(label, 13, UiKit.TextMuted);
-            var v = Line(value, 13, UiKit.TextPrimary);
-            v.FontWeight = FontWeights.SemiBold;
-            g.Children.Add(l);
-            Grid.SetColumn(v, 1);
-            g.Children.Add(v);
+            g.Children.Add(Line(label, 13, UiKit.TextMuted));
+            Grid.SetColumn(value, 1);
+            g.Children.Add(value);
             return g;
         }
 

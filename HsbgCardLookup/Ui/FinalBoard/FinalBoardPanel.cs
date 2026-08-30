@@ -35,7 +35,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
     ///
     /// The frame is Reign-in-blood's artwork from HDT-FinalStatsPlugin, and so is the composition it
     /// was drawn for: trinkets left, a tall hero portrait breaking the top rail, hero power and
-    /// anomaly right, then a band reading rank · MMR · turn · hero · highest creature · duration.
+    /// anomaly right, then a band reading rank · MMR · turn · hero · biggest creature · duration.
     /// He is a co-author of this feature. The layout below is his, and so is the way the artwork is
     /// drawn: <b>whole, at the size it was painted</b>, never resampled. His panel is one fixed
     /// height and ours has to hold either a board or a tall stats table, so where he can let the
@@ -97,7 +97,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private readonly TextBlock _emptyBoard;
         private readonly TextBlock _playerName, _playedAt;
 
-        private TextBlock _rank, _mmr, _turn, _hero, _highest, _duration;
+        private TextBlock _rank, _mmr, _turn, _hero, _biggest, _duration;
 
         private readonly FinalBoardStatsView _stats = new FinalBoardStatsView();
         private readonly FinalBoardOptions _options;
@@ -305,7 +305,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             Put(band, 2, Cell("TURN", out _turn, 17));
             var heroCell = Cell("HERO", out _hero, 18);
             Put(band, 3, heroCell);
-            Put(band, 4, Cell("HIGHEST CREATURE", out _highest, 17));
+            Put(band, 4, Cell("BIGGEST CREATURE", out _biggest, 17));
             Put(band, 5, Cell("DURATION", out _duration, 17));
 
             // The portrait comes down over this one cell and lands on its label. That is the
@@ -527,7 +527,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             SetCell(_turn, rec.Turns > 0 ? rec.Turns.ToString(CultureInfo.InvariantCulture) : null,
                     UiKit.TextPrimary, _options.MatchMeta);
             SetCell(_duration, Duration(rec), UiKit.TextPrimary, _options.MatchMeta);
-            SetCell(_highest, Highest(rec), UiKit.TextPrimary, true);
+            SetCell(_biggest, Biggest(rec), UiKit.TextPrimary, true);
 
             var delta = rec.MmrDelta;
             bool showMmr = _options.MmrDelta && delta.HasValue && !rec.FriendlyGame;
@@ -610,7 +610,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             cell.Foreground = has ? ink : Muted;
         }
 
-        private static string Highest(FinalBoardRecord rec)
+        private static string Biggest(FinalBoardRecord rec)
         {
             var s = rec.Stats;
             if (s == null || (s.HighestMinionAttack <= 0 && s.HighestMinionHealth <= 0)) return null;

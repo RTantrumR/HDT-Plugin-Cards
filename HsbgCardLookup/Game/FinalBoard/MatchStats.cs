@@ -101,24 +101,25 @@ namespace HsbgCardLookup.Game.FinalBoard
         }
 
         /// <summary>
-        /// Best BURST — the fastest four seconds of the match. Four seconds is Firestone's window,
-        /// so this figure is comparable to the one their in-game widget shows; theirs is live-only
-        /// and resets every turn, so a match-level version does not exist anywhere else.
+        /// Best BURST — the most actions inside any four seconds of the match. Four seconds is
+        /// Firestone's window, so the window is comparable to their in-game widget's; theirs is
+        /// live-only and resets every turn, so a match-level version does not exist anywhere else.
+        /// Reported as the COUNT, not an APM: "7 actions in 4s" is a thing that happened, while
+        /// the same window written as "105 APM" describes a minute that never took place.
         ///
         /// NOT the headline number, and that was measured. In a real match whose turn 8 carried 34
-        /// of the player's 61 actions, the four-second peak picked turn FIVE instead — five ordinary
-        /// drags that happened to land close together score 75, while the flurry the player actually
-        /// remembers scores 31 sustained across a whole shop. A window that short measures how fast
-        /// two hands can move once, not how fast a turn was played. <see cref="ApmPeakTurn"/> is the
-        /// one that agrees with the player.
+        /// of the player's 61 actions, the four-second peak picked turn FIVE instead — five
+        /// ordinary drags that happened to land close together beat the flurry the player actually
+        /// remembers. A window that short measures how fast two hands can move once, not how fast
+        /// a turn was played. <see cref="ApmPeakTurn"/> is the one that agrees with the player.
         /// </summary>
         [JsonIgnore]
-        public double ApmPeakBurst => PeakBurst(4.0);
+        public int PeakBurstActions => BurstActions(4.0);
 
-        public double PeakBurst(double windowSeconds)
+        public int BurstActions(double windowSeconds)
         {
             if (Turns == null || windowSeconds <= 0) return 0;
-            double best = 0;
+            int best = 0;
             foreach (var t in Turns)
             {
                 var times = t.ActionTimes;
@@ -129,8 +130,7 @@ namespace HsbgCardLookup.Game.FinalBoard
                     int count = 0;
                     double until = times[i] + windowSeconds * 1000.0;
                     for (int j = i; j < times.Count && times[j] <= until; j++) count++;
-                    double apm = count / windowSeconds * 60.0;
-                    if (apm > best) best = apm;
+                    if (count > best) best = count;
                 }
             }
             return best;
