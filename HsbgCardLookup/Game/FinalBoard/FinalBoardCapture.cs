@@ -30,7 +30,9 @@ namespace HsbgCardLookup.Game.FinalBoard
     /// </summary>
     internal sealed class FinalBoardCapture
     {
-        private const int PollMs = 500;
+        // 200 rather than 500: the tracker's B snapshot is frozen from its last rolling sample,
+        // so its staleness equals this cadence — see MatchStatsTracker._rolling.
+        private const int PollMs = 200;
         private const double CaptureWindowSeconds = 25;
 
         private readonly PluginConfig _config;

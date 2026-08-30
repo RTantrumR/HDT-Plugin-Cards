@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -71,6 +71,16 @@ namespace HsbgCardLookup.Game.FinalBoard
         private int _logIndex;
         private bool _playerIdWarned;
 
+        // The rolling pre-MAIN_END sample and its latch. B cannot be a live read: the end-of-turn
+        // trigger window resolves in the log in 0-150ms (measured over a full match), far inside our
+        // poll latency, so any state read taken after MAIN_END is detected is already post-trigger.
+        private ShopSnap _rolling;
+        private bool _mainEndSeen;
+
+        // Matches MatchRecorder.PostCombatSettleMs: board reads straight after the combat->recruit
+        // flip are not yet trustworthy, so A waits this long into the shop before sampling.
+        private const int OpenSettleMs = 600;
+
         public MatchStatsTracker(Action<string> log) { _log = log; }
 
         /// <summary>The live counters, or null outside a match.</summary>
@@ -84,7 +94,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             // because resolution normally happens when the NEXT shop opens and there isn't one.
             // Conceded from the shop: the turn is still open. Ended cleanly: both already done.
             if (_wasCombat.HasValue && _wasCombat.Value) ResolveCombat(Core.Game);
-            CloseTurn();
+            CloseTurn(Core.Game);
             return _stats;
         }
 
@@ -100,6 +110,8 @@ namespace HsbgCardLookup.Game.FinalBoard
             _logIndex = 0;
             _playerIdWarned = false;
             _combatDealt = _combatTaken = 0;
+            _rolling = null;
+            _mainEndSeen = false;
         }
 
         // ── poll ────────────────────────────────────────────────────────────────────────────────
@@ -132,7 +144,7 @@ namespace HsbgCardLookup.Game.FinalBoard
                 else if (_wasCombat.Value != combat)
                 {
                     _wasCombat = combat;
-                    if (combat) CloseTurn();               // shop just closed, combat starting
+                    if (combat) CloseTurn(g);              // shop just closed, combat starting
                     else { ResolveCombat(g); OpenTurn(g); } // combat resolved, new shop
                 }
 
@@ -163,18 +175,38 @@ namespace HsbgCardLookup.Game.FinalBoard
             _turnClosed = false;
             _shopClock.Restart();
             _turnStartTod = DateTime.Now.TimeOfDay;
+            _rolling = null;
+            _mainEndSeen = false;
 
             // RESOURCES_USED restarts each turn, so the baseline has to restart with it or the first
             // read of the new turn would be counted as a full turn's spending.
             _prevResourcesUsed = Math.Max(0, Tag(g.PlayerEntity, GameTag.RESOURCES_USED));
         }
 
-        private void CloseTurn()
+        private void CloseTurn(GameV2 g)
         {
             if (_turn == null || _turnClosed) return;
             _turnClosed = true;
             _turn.ShopSeconds = Math.Round(_shopClock.Elapsed.TotalSeconds, 1);
             _shopClock.Stop();
+
+            // C — post-trigger, pre-combat. The BOARD is a live read: this is the same edge
+            // MatchRecorder's "End of Turn" capture reads boards from, verified stat-for-stat over a
+            // full match (combat is simulated on separate entities, so the recruit board persists).
+            // The SCALARS are the tick-sampled values: gold and hero HP live-read zero here because
+            // the game has already torn the shop down (see TrackShop).
+            if (_turn.SnapPreCombat == null)
+            {
+                _turn.SnapPreCombat = new ShopSnap
+                {
+                    AtMs = (int)_shopClock.ElapsedMilliseconds,
+                    Gold = _turn.GoldLeftover,
+                    TavernTier = _turn.TavernTier,
+                    HeroHp = _turn.HeroHpEnd,
+                    Board = ReadBoard(g),
+                };
+                Log(string.Format("turn {0} snapshot C | board={1}", _turn.Turn, _turn.SnapPreCombat.Board.Count));
+            }
             Log(string.Format("turn {0} closed | tier={1} actions={2} shop={3}s spent={4} leftover={5} bought={6} sold={7} rolls={8}",
                 _turn.Turn, _turn.TavernTier, _turn.Actions, _turn.ShopSeconds, _turn.GoldSpent,
                 _turn.GoldLeftover, _turn.MinionsBought, _turn.MinionsSold, _turn.Rolls));
@@ -278,6 +310,24 @@ namespace HsbgCardLookup.Game.FinalBoard
             _turn.HeroHpEnd = HeroHp(g);
 
             TrackBoardPeaks(g);
+
+            // Rolling sample for B (and, first time, A). Runs AFTER ScanPowerLog on purpose: if this
+            // poll's scan saw MAIN_END, _mainEndSeen already stopped the sampler, so the sample frozen
+            // as B is from a poll where MAIN_END had not yet been written — pre-trigger by ordering.
+            if (!_mainEndSeen && _shopClock.ElapsedMilliseconds >= OpenSettleMs)
+            {
+                var snap = BuildSnap(g);
+                if (snap != null)
+                {
+                    _rolling = snap;
+                    if (_turn.SnapStart == null)
+                    {
+                        _turn.SnapStart = snap;
+                        Log(string.Format("turn {0} snapshot A at {1}ms | board={2} gold={3}",
+                            _turn.Turn, snap.AtMs, snap.Board.Count, snap.Gold));
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -311,6 +361,28 @@ namespace HsbgCardLookup.Game.FinalBoard
                 string line;
                 try { line = log[i]; } catch { break; }
                 if (string.IsNullOrEmpty(line)) continue;
+                if (!_mainEndSeen
+                    && line.IndexOf("tag=STEP value=MAIN_END", StringComparison.Ordinal) >= 0
+                    && line.IndexOf("Entity=GameEntity", StringComparison.Ordinal) >= 0
+                    && InThisTurn(line))
+                {
+                    // First MAIN_END while this shop turn is open = the SHOP game turn's. BG runs two
+                    // game turns per round, and the combat turn's own MAIN_END follows 0.4-3s later
+                    // (measured) - usually before the phase flag even flips - so the latch, not the
+                    // timestamp, is what keeps the trailing one out. InThisTurn rejects replayed old
+                    // lines after a reconnect resets the log cursor.
+                    _mainEndSeen = true;
+                    if (_rolling != null)
+                    {
+                        _turn.SnapEnd = _rolling;
+                        Log(string.Format("turn {0} MAIN_END at {1}ms | B frozen from {2}ms ({3}ms stale)",
+                            _turn.Turn, OffsetMs(line), _rolling.AtMs,
+                            (int)_shopClock.ElapsedMilliseconds - _rolling.AtMs));
+                    }
+                    else
+                        Log(string.Format("turn {0} MAIN_END | B missed - no settled sample yet", _turn.Turn));
+                    continue;
+                }
                 if (line.IndexOf("BLOCK_START", StringComparison.Ordinal) < 0) continue;
                 if (line.IndexOf("BlockType=PLAY", StringComparison.Ordinal) < 0) continue;
                 try { Classify(g, line); } catch { }
@@ -469,6 +541,97 @@ namespace HsbgCardLookup.Game.FinalBoard
             double ms = (tod - _turnStartTod).TotalMilliseconds;
             if (ms < 0 || ms > 30 * 60 * 1000) return fallback;   // clock rollover, or a stale line
             return (int)ms;
+        }
+
+        /// <summary>
+        /// Like <see cref="OffsetMs"/> but REJECTS instead of falling back: a MAIN_END line must
+        /// prove it belongs to this shop turn. The fallback would defeat the point — a replayed old
+        /// line (reconnect resets the cursor to 0) must not freeze B from a stale sample.
+        /// </summary>
+        private bool InThisTurn(string line)
+        {
+            if (_turnStartTod == TimeSpan.Zero) return false;
+            if (line.Length < 3 || line[0] != 'D' || line[1] != ' ') return false;
+            int end = line.IndexOf(' ', 2);
+            if (end < 0) return false;
+            TimeSpan tod;
+            if (!TimeSpan.TryParse(line.Substring(2, end - 2), out tod)) return false;
+            double ms = (tod - _turnStartTod).TotalMilliseconds;
+            return ms >= 0 && ms <= 30 * 60 * 1000;
+        }
+
+        // What a snapshot minion keeps: identity + position, the stats a diff compares, and the
+        // tags HDT's own BattlegroundsMinion renderer reads (pinned by IL: PREMIUM, TAUNT,
+        // DIVINE_SHIELD, DEATHRATTLE, POISONOUS, VENOMOUS, REBORN, ATK, HEALTH, DAMAGE), plus
+        // tier/race/legendary/keyword tags a later viewer needs. Everything else a live entity
+        // carries (~36 tags) is noise three times per turn.
+        private static readonly HashSet<int> SnapTags = new HashSet<int>
+        {
+            (int)GameTag.ENTITY_ID,
+            (int)GameTag.ZONE_POSITION,
+            (int)GameTag.ATK,
+            (int)GameTag.HEALTH,
+            (int)GameTag.DAMAGE,
+            (int)GameTag.PREMIUM,
+            (int)GameTag.TECH_LEVEL,
+            (int)GameTag.CARDRACE,
+            (int)GameTag.ELITE,
+            (int)GameTag.TAUNT,
+            (int)GameTag.DIVINE_SHIELD,
+            (int)GameTag.DEATHRATTLE,
+            (int)GameTag.POISONOUS,
+            (int)GameTag.VENOMOUS,
+            (int)GameTag.REBORN,
+            (int)GameTag.WINDFURY,
+            (int)GameTag.MEGA_WINDFURY,
+            (int)GameTag.STEALTH,
+            (int)GameTag.MODULAR,
+        };
+
+        private ShopSnap BuildSnap(GameV2 g)
+        {
+            try
+            {
+                return new ShopSnap
+                {
+                    AtMs = (int)_shopClock.ElapsedMilliseconds,
+                    Gold = GoldAvailable(g),
+                    TavernTier = _turn != null ? _turn.TavernTier : 0,
+                    HeroHp = HeroHp(g),
+                    Board = ReadBoard(g),
+                };
+            }
+            catch { return null; }
+        }
+
+        private static List<MinionRecord> ReadBoard(GameV2 g)
+        {
+            var list = new List<MinionRecord>();
+            try
+            {
+                var minions = g != null && g.Player != null && g.Player.Minions != null
+                    ? g.Player.Minions.ToList() : null;
+                if (minions == null) return list;
+                foreach (var m in minions)
+                    if (m != null) list.Add(ToSnapRecord(m));
+            }
+            catch { }
+            return list;
+        }
+
+        /// <summary>ENTITY_ID is forced from <c>e.Id</c> — authoritative even if the tag were absent.</summary>
+        private static MinionRecord ToSnapRecord(Entity e)
+        {
+            var tags = new Dictionary<int, int>();
+            try
+            {
+                if (e.Tags != null)
+                    foreach (var kv in e.Tags.ToList())
+                        if (SnapTags.Contains((int)kv.Key)) tags[(int)kv.Key] = kv.Value;
+            }
+            catch { }
+            try { tags[(int)GameTag.ENTITY_ID] = e.Id; } catch { }
+            return new MinionRecord { CardId = e.CardId, Tags = tags };
         }
 
         private static string Field(string line, string key)

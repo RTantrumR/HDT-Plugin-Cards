@@ -1,4 +1,4 @@
-// DEV-ONLY diagnostic logger. Compiled into Debug builds only (#if DEBUG) — Release/distribution
+﻿// DEV-ONLY diagnostic logger. Compiled into Debug builds only (#if DEBUG) — Release/distribution
 // builds exclude it entirely (and the Plugin.cs _probe wiring is likewise #if DEBUG'd), so it never
 // ships and never writes gamestate.log for end users.
 #if DEBUG
@@ -111,6 +111,33 @@ namespace HsbgCardLookup.Game
                     var trinkets = SafeList(p.Trinkets);
                     sb.AppendLine($"  trinkets ({trinkets.Count}):");
                     foreach (var t in trinkets) sb.AppendLine("    - " + Describe(t));
+
+                    // SPIKE 4 (shop snapshots phase 2 go/no-go): are the HAND and the tavern's OFFER
+                    // row readable from live state during a shop? Player.Hand and OfferedEntityIds
+                    // exist as properties, but nothing has ever read them in a BG shop — dump all
+                    // three candidate views so one live match settles what each actually holds.
+                    if (!g.IsBattlegroundsCombatPhase)
+                    {
+                        var hand = SafeList(p.Hand);
+                        sb.AppendLine($"  hand ({hand.Count}):");
+                        foreach (var h in hand) sb.AppendLine("    - " + Describe(h));
+
+                        var offeredIds = new List<int>();
+                        try { if (p.OfferedEntityIds != null) offeredIds.AddRange(p.OfferedEntityIds); } catch { }
+                        var offered = SafeList(p.OfferedEntities);
+                        sb.AppendLine($"  offeredEntityIds: [{string.Join(",", offeredIds)}]  offeredEntities ({offered.Count}):");
+                        foreach (var o in offered) sb.AppendLine("    - " + Describe(o));
+
+                        // Candidate shop row: in-PLAY minions some other controller owns.
+                        sb.AppendLine("  candidate offers (ZONE=PLAY, CARDTYPE=MINION, controller != us):");
+                        foreach (var e in allEntities)
+                        {
+                            int zone = 0, ct = 0, ctrl = 0;
+                            try { zone = e.GetTag(GameTag.ZONE); ct = e.GetTag(GameTag.CARDTYPE); ctrl = e.GetTag(GameTag.CONTROLLER); } catch { continue; }
+                            if (zone == (int)HearthDb.Enums.Zone.PLAY && ct == (int)CardType.MINION && ctrl != p.Id)
+                                sb.AppendLine($"    - ctrl={ctrl} " + Describe(e));
+                        }
+                    }
 
                     // Economy + hero/player-attached enchantments (gold-source + player-buff discovery).
                     sb.AppendLine("  gold: " + GoldLine(g.PlayerEntity));

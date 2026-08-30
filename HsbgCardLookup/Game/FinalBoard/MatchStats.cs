@@ -206,6 +206,28 @@ namespace HsbgCardLookup.Game.FinalBoard
         public int DamageDealt { get; set; }
         public int DamageTaken { get; set; }
 
+        // ── the three per-shop snapshots ────────────────────────────────────────────────────────
+        // Null on every record written before they existed, and on any moment the tracker could not
+        // catch — absence means "not captured", never "empty board". NullValueHandling keeps old-style
+        // turns from growing three "null" lines each.
+
+        /// <summary>A — the board as the shop opened, taken once the post-combat state has settled.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public ShopSnap SnapStart { get; set; }
+
+        /// <summary>
+        /// B — the board when the player's actionable time ended, BEFORE end-of-turn triggers.
+        /// This is the last rolling sample taken while MAIN_END had not yet appeared in the log:
+        /// the trigger window resolves in the log in 0–150ms (measured), so no read taken after
+        /// detecting MAIN_END can ever be pre-trigger.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public ShopSnap SnapEnd { get; set; }
+
+        /// <summary>C — after end-of-turn triggers, before combat. B→C differs by exactly those triggers.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public ShopSnap SnapPreCombat { get; set; }
+
         /// <summary>
         /// In-play time: first press to last, each silent gap counted at no more than
         /// <see cref="MatchStats.IdleCapSeconds"/>. Zero for a turn with fewer than two presses —
@@ -227,5 +249,24 @@ namespace HsbgCardLookup.Game.FinalBoard
 
         [JsonIgnore]
         public double Apm => ActiveSeconds >= 1 ? Actions / (ActiveSeconds / 60.0) : 0;
+    }
+
+    /// <summary>
+    /// The player's situation at one moment of a shop turn. Board minions are stored as
+    /// <see cref="MinionRecord"/>s trimmed to the snapshot tag whitelist (identity, stats, tier,
+    /// keywords) rather than the full ~36-tag dictionary the final board keeps — three of these per
+    /// turn with full tags would triple the record for tags no diff or render ever reads.
+    /// </summary>
+    internal sealed class ShopSnap
+    {
+        /// <summary>Milliseconds from the start of the shop turn, on the same clock as ActionTimes.</summary>
+        public int AtMs { get; set; }
+
+        public int Gold { get; set; }
+        public int TavernTier { get; set; }
+        public int HeroHp { get; set; }
+
+        /// <summary>In board order. ENTITY_ID inside each record is the identity key for diffing across snapshots.</summary>
+        public List<MinionRecord> Board { get; set; }
     }
 }
