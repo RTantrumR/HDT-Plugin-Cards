@@ -193,8 +193,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return g;
         }
 
-        /// <summary>The letters carry the verdict's colour and the counts stay plain — "8W 8L" reads
-        /// as a record, not a score, once the W is a win-green and the L a loss-red.</summary>
+        /// <summary>Each half wears its verdict whole — "8W" in win-green, "8L" in loss-red — so the
+        /// record reads at a glance even before the letters do.</summary>
         private static TextBlock CombatsText(MatchStats s)
         {
             var tb = new TextBlock
@@ -204,15 +204,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false,
             };
-            tb.Inlines.Add(Ink(s.CombatWins.ToString(CultureInfo.InvariantCulture), UiKit.TextPrimary));
-            tb.Inlines.Add(Ink("W", Green));
-            tb.Inlines.Add(Ink(" " + s.CombatLosses, UiKit.TextPrimary));
-            tb.Inlines.Add(Ink("L", Red));
+            tb.Inlines.Add(Ink(s.CombatWins + "W", Green));
+            tb.Inlines.Add(Ink(" " + s.CombatLosses + "L", Red));
             if (s.CombatDraws > 0)
-            {
-                tb.Inlines.Add(Ink(" " + s.CombatDraws, UiKit.TextPrimary));
-                tb.Inlines.Add(Ink("D", UiKit.TextMuted));
-            }
+                tb.Inlines.Add(Ink(" " + s.CombatDraws + "D", UiKit.TextMuted));
             return tb;
         }
 
