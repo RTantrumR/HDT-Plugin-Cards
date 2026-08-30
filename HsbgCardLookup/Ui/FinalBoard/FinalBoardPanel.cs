@@ -527,7 +527,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             string hero = rec.HeroName;
             if (string.IsNullOrEmpty(hero)) hero = FinalBoardCapture.HeroNameOf(rec.HeroCardId);
 
-            SetCell(_rank, Ordinal(rec.Placement), PlacementBrush(rec.Placement, rec.Duos), true);
+            SetCell(_rank, Ordinal(rec.Placement), PlacementBrush(rec), true);
             SetCell(_hero, hero, Gold, true);
             SetCell(_turn, rec.Turns > 0 ? rec.Turns.ToString(CultureInfo.InvariantCulture) : null,
                     UiKit.TextPrimary, _options.MatchMeta);
@@ -806,12 +806,30 @@ namespace HsbgCardLookup.Ui.FinalBoard
             }
         }
 
-        // Top half of the lobby reads as a good result; duos has four teams, so the line sits at 2nd.
-        private static Brush PlacementBrush(int placement, bool duos)
+        /// <summary>
+        /// What the finish was worth — and the rating change is the thing that knows, so it decides.
+        /// A gain is green, a loss is red, and a finish that moved nothing is amber. First place is
+        /// green whatever the lobby paid, because a win is a win.
+        ///
+        /// Gold used to mark 1st and it was the wrong colour for it: amber/gold is what a result
+        /// reads as when it neither gained nor lost you anything, which is the opposite of a win.
+        ///
+        /// Falls back to position when there is no rating to read — an import, a friendly game, a
+        /// season reset (where the number is the new rating, not a difference), or a match that
+        /// ended before HDT resolved one. Top half is good; duos has four teams, so its line is 2nd.
+        /// </summary>
+        private static Brush PlacementBrush(FinalBoardRecord rec)
         {
+            int placement = rec.Placement;
             if (placement <= 0) return UiKit.TextSecondary;
-            bool good = duos ? placement <= 2 : placement <= 4;
-            return good ? (placement == 1 ? UiKit.AccentBrush : Green) : Red;
+            if (placement == 1) return Green;
+
+            var delta = rec.MmrDelta;
+            if (delta.HasValue && !rec.FriendlyGame && !rec.SeasonReset)
+                return delta.Value > 0 ? Green : (delta.Value < 0 ? Red : Amber);
+
+            bool good = rec.Duos ? placement <= 2 : placement <= 4;
+            return good ? Green : Red;
         }
 
         private static void Put(Grid g, int col, UIElement child)
@@ -823,6 +841,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private static readonly Brush Green = Frozen(Color.FromRgb(0x6D, 0xEB, 0x6C));
         private static readonly Brush Red = Frozen(Color.FromRgb(0xEC, 0x69, 0x69));
         private static readonly Brush Gold = Frozen(Color.FromRgb(0xDA, 0xB8, 0x6C));
+        private static readonly Brush Amber = Frozen(Color.FromRgb(0xF0, 0xB0, 0x4A));
         private static readonly Brush Muted = Frozen(Color.FromRgb(0x68, 0x6D, 0x74));
 
         private static Brush Frozen(Color c)
