@@ -69,16 +69,41 @@ namespace HsbgCardLookup.Game.FinalBoard
         [JsonIgnore] public int ActionCount => Turns != null ? Turns.Sum(t => t.Actions) : 0;
 
         /// <summary>
-        /// Actions per minute across the whole match's shop time. Combat is excluded on purpose:
-        /// nothing can be done during it, so counting it would punish long fights and flatter a slow
-        /// player whose combats happened to be short.
+        /// Actions per minute over ACTIVE time. Two exclusions, one reason: time in which nothing
+        /// could be done, or nothing was being done, says nothing about speed. Combat is out
+        /// because no action is possible during it — counting it would punish long fights and
+        /// flatter a slow player whose combats happened to be short. Idle shop time is out because
+        /// sitting on spent gold is not slow play, it is no play; <see cref="ActiveSeconds"/> is
+        /// the model.
         /// </summary>
-        [JsonIgnore] public double ApmAverage => ShopSeconds >= 1 ? ActionCount / (ShopSeconds / 60.0) : 0;
+        [JsonIgnore] public double ApmAverage => ActiveSeconds >= 1 ? ActionCount / (ActiveSeconds / 60.0) : 0;
 
-        /// <summary>Total time spent in shops. The denominator of <see cref="ApmAverage"/>.</summary>
+        /// <summary>Total time spent in shops, idle included — the wall-clock half of the "active X of Y" readout.</summary>
         [JsonIgnore] public double ShopSeconds => Turns != null ? Turns.Sum(t => t.ShopSeconds) : 0;
 
-        /// <summary>Best SUSTAINED turn — how fast a whole shop was played. Turns under 5s divide into noise.</summary>
+        /// <summary>
+        /// A shop turn has three phases: reading the shop in, playing, and sitting there once the
+        /// playing is done. Only the middle one measures speed, so active time runs from the first
+        /// press to the last, and a silent stretch between two presses counts for at most
+        /// <see cref="IdleCapSeconds"/> — a mid-turn AFK cannot pass for deliberation. Derived
+        /// from the stored per-action timeline, so every record ever written recomputes under it.
+        /// </summary>
+        [JsonIgnore] public double ActiveSeconds => Turns != null ? Turns.Sum(t => t.ActiveSeconds) : 0;
+
+        /// <summary>
+        /// The most a pause between two presses can count for. Ten seconds is thinking that
+        /// belongs to playing — reading a discover, weighing a roll; anything longer is time away
+        /// from the turn, and only its first ten seconds stay on the clock.
+        /// </summary>
+        public const double IdleCapSeconds = 10;
+
+        /// <summary>
+        /// Best SUSTAINED turn — how fast a whole shop was played. The floor is 15s of ACTIVE time,
+        /// and it was measured, not guessed: at the old 5s a real match's turn 4 — seven presses in
+        /// 8.1 active seconds — scored 52 and took the tile from turn 15's 40.7 sustained across 91,
+        /// which is the short-flurry mistake this figure exists to avoid. Active time is far denser
+        /// than shop time, so the noise floor has to grow with it.
+        /// </summary>
         [JsonIgnore] public double ApmPeakTurn => PeakTurn().Value;
 
         /// <summary>Which turn <see cref="ApmPeakTurn"/> belongs to, or 0 if there is no usable turn.</summary>
@@ -92,8 +117,8 @@ namespace HsbgCardLookup.Game.FinalBoard
             {
                 foreach (var t in Turns)
                 {
-                    if (t.ShopSeconds < 5) continue;
-                    double apm = t.Actions / (t.ShopSeconds / 60.0);
+                    if (t.ActiveSeconds < 15) continue;
+                    double apm = t.Apm;
                     if (apm > best) { best = apm; bestTurn = t.Turn; }
                 }
             }
@@ -181,7 +206,26 @@ namespace HsbgCardLookup.Game.FinalBoard
         public int DamageDealt { get; set; }
         public int DamageTaken { get; set; }
 
+        /// <summary>
+        /// In-play time: first press to last, each silent gap counted at no more than
+        /// <see cref="MatchStats.IdleCapSeconds"/>. Zero for a turn with fewer than two presses —
+        /// one instant is not a span. The max() guards the rare out-of-order fallback timestamp.
+        /// </summary>
         [JsonIgnore]
-        public double Apm => ShopSeconds >= 1 ? Actions / (ShopSeconds / 60.0) : 0;
+        public double ActiveSeconds
+        {
+            get
+            {
+                var times = ActionTimes;
+                if (times == null || times.Count < 2) return 0;
+                double ms = 0;
+                for (int i = 1; i < times.Count; i++)
+                    ms += Math.Min(MatchStats.IdleCapSeconds * 1000.0, Math.Max(0, times[i] - times[i - 1]));
+                return ms / 1000.0;
+            }
+        }
+
+        [JsonIgnore]
+        public double Apm => ActiveSeconds >= 1 ? Actions / (ActiveSeconds / 60.0) : 0;
     }
 }

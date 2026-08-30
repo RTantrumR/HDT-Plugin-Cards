@@ -121,8 +121,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
             int peakTurn = s.ApmPeakTurnNumber;
             Put(g, 0, Tile(s.ActionCount.ToString(CultureInfo.InvariantCulture), "actions", null, UiKit.AccentBrush));
-            Put(g, 1, Tile(Round1(s.ApmAverage), "average APM", Mins(s.ShopSeconds) + " in shops", Kinds[0].Brush));
-            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "peak APM", peakTurn > 0 ? "on turn " + peakTurn : null, Kinds[2].Brush));
+            Put(g, 1, Tile(Round1(s.ApmAverage), "average APM", ActiveOfShops(s), Kinds[0].Brush));
+            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "peak turn APM", peakTurn > 0 ? "on turn " + peakTurn : null, Kinds[2].Brush));
 
             // Gold spent, not gold unspent: a big tile around a one-digit number was a frame with
             // no picture, and spending is the total that scales with how much got done. The
@@ -133,6 +133,16 @@ namespace HsbgCardLookup.Ui.FinalBoard
                            wasted > 0 ? wasted + " left unspent" : "every coin spent",
                            Kinds[3].Brush, wasted > 0 ? Red : null));
             return g;
+        }
+
+        /// <summary>"active 9:41 of 24:29 in shops" — the denominator's story and the idle share in one line.</summary>
+        private static string ActiveOfShops(MatchStats s)
+        {
+            string shops = Mins(s.ShopSeconds);
+            string active = Mins(s.ActiveSeconds);
+            if (shops.Length == 0) return null;
+            if (active.Length == 0) return shops + " in shops";
+            return "active " + active + " of " + shops + " in shops";
         }
 
         private static UIElement Tile(string value, string label, string sub, Brush brush, Brush subBrush = null)
@@ -308,7 +318,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             Put(g, 2, Health(t));
             Put(g, 3, Combat(t));
             Put(g, 4, Gold(t));
-            Cell(g, 5, t.ShopSeconds >= 1 ? Round0(t.Apm) : "—", UiKit.TextSecondary, FontWeights.Normal);
+            Cell(g, 5, t.ActiveSeconds >= 1 ? Round0(t.Apm) : "—", UiKit.TextSecondary, FontWeights.Normal);
             Cell(g, 6, t.Actions.ToString(CultureInfo.InvariantCulture), UiKit.TextPrimary, FontWeights.SemiBold);
 
             var counts = new int[Kinds.Length];
