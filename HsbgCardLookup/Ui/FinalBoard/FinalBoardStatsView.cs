@@ -122,7 +122,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             int peakTurn = s.ApmPeakTurnNumber;
             Put(g, 0, Tile(s.ActionCount.ToString(CultureInfo.InvariantCulture), "actions", null, UiKit.AccentBrush));
             Put(g, 1, Tile(Round1(s.ApmAverage), "average APM", ActiveOfShops(s), Kinds[0].Brush));
-            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "peak turn APM", peakTurn > 0 ? "on turn " + peakTurn : null, Kinds[2].Brush));
+            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "peak sustained APM", peakTurn > 0 ? "on turn " + peakTurn : null, Kinds[2].Brush));
 
             // Gold spent, not gold unspent: a big tile around a one-digit number was a frame with
             // no picture, and spending is the total that scales with how much got done. The
