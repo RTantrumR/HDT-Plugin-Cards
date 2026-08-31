@@ -69,14 +69,16 @@ namespace HsbgCardLookup.Game.FinalBoard
         [JsonIgnore] public int ActionCount => Turns != null ? Turns.Sum(t => t.Actions) : 0;
 
         /// <summary>
-        /// Actions per minute over ACTIVE time. Two exclusions, one reason: time in which nothing
+        /// APA — actions per ACTIVE minute, deliberately not called APM: "per minute" promises a
+        /// clock reading, and a three-press turn scoring 96 against a 46-press turn's 39 broke that
+        /// promise for the user. Two exclusions, one reason: time in which nothing
         /// could be done, or nothing was being done, says nothing about speed. Combat is out
         /// because no action is possible during it — counting it would punish long fights and
         /// flatter a slow player whose combats happened to be short. Idle shop time is out because
         /// sitting on spent gold is not slow play, it is no play; <see cref="ActiveSeconds"/> is
         /// the model.
         /// </summary>
-        [JsonIgnore] public double ApmAverage => ActiveSeconds >= 1 ? ActionCount / (ActiveSeconds / 60.0) : 0;
+        [JsonIgnore] public double ApaAverage => ActiveSeconds >= 1 ? ActionCount / (ActiveSeconds / 60.0) : 0;
 
         /// <summary>Total time spent in shops, idle included — the wall-clock half of the "active X of Y" readout.</summary>
         [JsonIgnore] public double ShopSeconds => Turns != null ? Turns.Sum(t => t.ShopSeconds) : 0;
@@ -104,10 +106,10 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// which is the short-flurry mistake this figure exists to avoid. Active time is far denser
         /// than shop time, so the noise floor has to grow with it.
         /// </summary>
-        [JsonIgnore] public double ApmPeakTurn => PeakTurn().Value;
+        [JsonIgnore] public double ApaPeakTurn => PeakTurn().Value;
 
-        /// <summary>Which turn <see cref="ApmPeakTurn"/> belongs to, or 0 if there is no usable turn.</summary>
-        [JsonIgnore] public int ApmPeakTurnNumber => PeakTurn().Key;
+        /// <summary>Which turn <see cref="ApaPeakTurn"/> belongs to, or 0 if there is no usable turn.</summary>
+        [JsonIgnore] public int ApaPeakTurnNumber => PeakTurn().Key;
 
         private KeyValuePair<int, double> PeakTurn()
         {
@@ -118,8 +120,8 @@ namespace HsbgCardLookup.Game.FinalBoard
                 foreach (var t in Turns)
                 {
                     if (t.ActiveSeconds < 15) continue;
-                    double apm = t.Apm;
-                    if (apm > best) { best = apm; bestTurn = t.Turn; }
+                    double apa = t.Apa;
+                    if (apa > best) { best = apa; bestTurn = t.Turn; }
                 }
             }
             return new KeyValuePair<int, double>(bestTurn, best);
@@ -136,7 +138,7 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// of the player's 61 actions, the four-second peak picked turn FIVE instead — five
         /// ordinary drags that happened to land close together beat the flurry the player actually
         /// remembers. A window that short measures how fast two hands can move once, not how fast
-        /// a turn was played. <see cref="ApmPeakTurn"/> is the one that agrees with the player.
+        /// a turn was played. <see cref="ApaPeakTurn"/> is the one that agrees with the player.
         /// </summary>
         [JsonIgnore]
         public int PeakBurstActions => BurstActions(4.0);
@@ -247,8 +249,13 @@ namespace HsbgCardLookup.Game.FinalBoard
             }
         }
 
+        /// <summary>Actions per ACTIVE minute. See <see cref="MatchStats.ApaAverage"/> for why it is not called APM.</summary>
         [JsonIgnore]
-        public double Apm => ActiveSeconds >= 1 ? Actions / (ActiveSeconds / 60.0) : 0;
+        public double Apa => ActiveSeconds >= 1 ? Actions / (ActiveSeconds / 60.0) : 0;
+
+        /// <summary>Actions per minute of the whole shop phase, idle included — the literal reading of "APM".</summary>
+        [JsonIgnore]
+        public double ShopApm => ShopSeconds >= 1 ? Actions / (ShopSeconds / 60.0) : 0;
     }
 
     /// <summary>

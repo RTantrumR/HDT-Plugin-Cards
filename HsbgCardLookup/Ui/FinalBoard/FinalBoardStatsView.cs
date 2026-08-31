@@ -119,10 +119,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var g = new Grid();
             for (int i = 0; i < 4; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            int peakTurn = s.ApmPeakTurnNumber;
+            int peakTurn = s.ApaPeakTurnNumber;
             Put(g, 0, Tile(s.ActionCount.ToString(CultureInfo.InvariantCulture), "actions", null, UiKit.AccentBrush));
-            Put(g, 1, Tile(Round1(s.ApmAverage), "average APM", ActiveOfShops(s), Kinds[0].Brush));
-            Put(g, 2, Tile(Round0(s.ApmPeakTurn), "peak sustained APM", peakTurn > 0 ? "on turn " + peakTurn : null, Kinds[2].Brush));
+            Put(g, 1, Tile(Round1(s.ApaAverage), "average APA", ActiveOfShops(s), Kinds[0].Brush));
+            Put(g, 2, Tile(Round0(s.ApaPeakTurn), "peak sustained APA", peakTurn > 0 ? "on turn " + peakTurn : null, Kinds[2].Brush));
 
             // Gold spent, not gold unspent: a big tile around a one-digit number was a frame with
             // no picture, and spending is the total that scales with how much got done. The
@@ -272,12 +272,23 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return rows;
         }
 
-        // turn | tier | health | combat | gold | APM | total, then one column per action kind.
-        // APM is a two-digit number and needs almost none of its width; the rest goes to the
-        // breakdown, which is the only part that can spend it on more information.
-        private static readonly double[] Cols = { 34, 48, 100, 132, 112, 46, 48, 42, 44, 46, 58, 40, 40, 46 };
+        // turn | tier | health | combat | gold | active | actions | APA | APM, then one column per
+        // action kind. The rates are two-digit numbers and need almost none of their width; the
+        // text columns get what their longest line needs ("Dealt 12 damage", "16 spent  3 left").
+        private static readonly double[] Cols = { 34, 48, 80, 110, 100, 52, 50, 40, 40, 42, 44, 46, 58, 40, 40, 46 };
 
-        private static readonly string[] Heads = { "turn", "tier", "health", "combat", "gold", "APM", "actions" };
+        private static readonly string[] Heads = { "Turn", "Tier", "Health", "Combat", "Gold", "Active", "Actions", "APA", "APM" };
+
+        // Hover text for the three columns whose label cannot carry their definition. Everything
+        // else in the header says what it is.
+        private static readonly string[] HeadTips =
+        {
+            null, null, null, null, null,
+            "First action to last, with any pause longer than 10 s counted as 10 s.\nReading the shop in and sitting there afterwards do not count.",
+            null,
+            "Actions per active minute: this turn's actions over its active time.\nA short flurry reads high; the peak tile only considers turns with 15 s or more of active time.",
+            "Actions per minute of the whole shop phase, idle time included.",
+        };
 
         private static Grid Row()
         {
@@ -291,15 +302,21 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private static UIElement HeaderRow()
         {
             var g = Row();
-            for (int i = 0; i < Heads.Length; i++) Put(g, i, Head(Heads[i]));
-            for (int i = 0; i < Kinds.Length; i++) Put(g, Heads.Length + i, Head(Kinds[i].Label));
+            for (int i = 0; i < Heads.Length; i++) Put(g, i, Head(Heads[i], HeadTips[i]));
+            for (int i = 0; i < Kinds.Length; i++) Put(g, Heads.Length + i, Head(Kinds[i].Label, null));
             return g;
         }
 
-        private static TextBlock Head(string text)
+        /// <summary>A head with a tip must be hit-testable for the hover to reach it; the rest stay transparent to the panel's drag.</summary>
+        private static TextBlock Head(string text, string tip)
         {
-            var tb = Line(text, 11, UiKit.TextMuted);
+            var tb = Line(text, 12, UiKit.TextMuted);
             tb.Margin = new Thickness(0, 0, 0, 4);
+            if (tip != null)
+            {
+                tb.ToolTip = tip;
+                tb.IsHitTestVisible = true;
+            }
             return tb;
         }
 
@@ -313,8 +330,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
             Put(g, 2, Health(t));
             Put(g, 3, Combat(t));
             Put(g, 4, Gold(t));
-            Cell(g, 5, t.ActiveSeconds >= 1 ? Round0(t.Apm) : "—", UiKit.TextSecondary, FontWeights.Normal);
+            Cell(g, 5, t.ActiveSeconds >= 1 ? Mins(t.ActiveSeconds) : "—", UiKit.TextSecondary, FontWeights.Normal);
             Cell(g, 6, t.Actions.ToString(CultureInfo.InvariantCulture), UiKit.TextPrimary, FontWeights.SemiBold);
+            Cell(g, 7, t.ActiveSeconds >= 1 ? Round0(t.Apa) : "—", UiKit.TextSecondary, FontWeights.Normal);
+            Cell(g, 8, t.ShopSeconds >= 1 ? Round0(t.ShopApm) : "—", UiKit.TextSecondary, FontWeights.Normal);
 
             var counts = new int[Kinds.Length];
             if (t.ActionKinds != null) foreach (var k in t.ActionKinds) counts[IndexOf(k)]++;
