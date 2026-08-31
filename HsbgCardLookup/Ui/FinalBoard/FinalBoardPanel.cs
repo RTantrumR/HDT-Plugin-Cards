@@ -341,7 +341,11 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var rows = new StackPanel { Margin = new Thickness(16, 8, 16, 8) };
 
             _boardView = new StackPanel();
-            var boardBox = new Grid { MinHeight = MinionSize };
+            // A taunt frame draws past its minion's box — the shield's foot lands ~10px below the
+            // row — and the footer sat 6px under it, so the date ran into the last minion (and the
+            // name would run into the first). The clearance lives here, not on the footer: only
+            // the board view has anything that overflows.
+            var boardBox = new Grid { MinHeight = MinionSize, Margin = new Thickness(0, 0, 0, 20) };
             boardBox.Children.Add(_board);
             boardBox.Children.Add(_emptyBoard);
             _boardView.Children.Add(boardBox);

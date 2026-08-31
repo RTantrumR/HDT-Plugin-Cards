@@ -284,7 +284,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private static readonly string[] HeadTips =
         {
             null, null, null, null, null,
-            "First action to last, with any pause longer than 10 s counted as 10 s.\nReading the shop in and sitting there afterwards do not count.",
+            "First action to last, with any pause longer than 10 s counted as 10 s.",
             null,
             "Actions per active minute: this turn's actions over its active time.",
             "Actions per minute of the whole shop phase, idle time included.",
