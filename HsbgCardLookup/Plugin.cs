@@ -115,11 +115,24 @@ namespace HsbgCardLookup
                             _finalBoardSurface = new Ui.FinalBoard.FinalBoardSurface(_config, Log);
                             _finalBoardSurface.Closed = () =>
                             {
+                                if (_hotkey != null) _hotkey.EscapeConsumer = null;
                                 try { _ui?.BeginInvoke(new Action(() => _settings?.RestoreAfterOverlay())); }
                                 catch { }
                             };
                         }
                         _finalBoardSurface.Show(rec);
+                        // Esc dismisses, for exactly as long as the panel is up. The consumer runs on
+                        // the hook thread and only decides; the hide itself is marshalled.
+                        if (_hotkey != null)
+                            _hotkey.EscapeConsumer = fg =>
+                            {
+                                if (!IsOurForeground(fg)) return false;
+                                var surface = _finalBoardSurface;
+                                if (surface == null) return false;
+                                try { canvas.Dispatcher.BeginInvoke(new Action(() => { try { surface.Hide(); } catch { } })); }
+                                catch { return false; }
+                                return true;
+                            };
                         // HDT's own helper: it restores a minimized window and satisfies Windows'
                         // foreground lock, which a bare SetForegroundWindow from here does not.
                         try { Hearthstone_Deck_Tracker.User32.BringHsToForeground(); } catch { }

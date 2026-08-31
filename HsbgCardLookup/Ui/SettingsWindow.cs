@@ -1048,15 +1048,23 @@ namespace HsbgCardLookup.Ui
             }
 
             _status.Text = "Showing that match over the game. Close it with the \u2715 to come back here.";
+            _hiddenForOverlay = true;
             Hide();
             try { _showMatch?.Invoke(rec); } catch { }
         }
+
+        // Set by OpenMatch, cleared by the restore. The panel can also be opened from the game
+        // itself (a click on HDT's session list) with this window hidden for its own reasons —
+        // that dismissal must not drag the window back up.
+        private bool _hiddenForOverlay;
 
         /// <summary>The overlay panel was dismissed; come back exactly as we were left.</summary>
         internal void RestoreAfterOverlay()
         {
             try
             {
+                if (!_hiddenForOverlay) return;
+                _hiddenForOverlay = false;
                 if (IsVisible) return;
                 // The line that sent the reader to the game has been obeyed; leaving it up would have
                 // the window still asking for something that already happened.

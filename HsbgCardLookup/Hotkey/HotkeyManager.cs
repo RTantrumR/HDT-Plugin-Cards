@@ -16,6 +16,7 @@ namespace HsbgCardLookup.Hotkey
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
         private const int WM_SYSKEYDOWN = 0x0104;
+        private const int VK_ESCAPE = 0x1B;
 
         private readonly LowLevelKeyboardProc _proc;   // kept alive for the hook's lifetime
         private IntPtr _hookId = IntPtr.Zero;
@@ -43,6 +44,15 @@ namespace HsbgCardLookup.Hotkey
 
         private bool _capturing;
         private volatile bool _suppressed;
+
+        /// <summary>
+        /// The one exception to "normal mode never swallows". A canvas-hosted panel cannot hold
+        /// keyboard focus, so Esc-to-dismiss has to come through here — and if the game saw the
+        /// same Esc it would open its own menu on top of the panel closing. Installed only while
+        /// such a panel is up, called with the foreground process name; return true to swallow.
+        /// Plain Esc only: chords fall through untouched.
+        /// </summary>
+        public Func<string, bool> EscapeConsumer;
 
         // Capture mode (settings window active): swallow every key-down and report it via KeyCaptured,
         // so rebinding doesn't trigger the hotkeys being rebound.
@@ -105,6 +115,16 @@ namespace HsbgCardLookup.Hotkey
                     }
                     if (!_suppressed)
                     {
+                        if (vk == VK_ESCAPE && mods == ModifierKeys.None)
+                        {
+                            var consumer = EscapeConsumer;
+                            bool eaten = false;
+                            if (consumer != null)
+                            {
+                                try { eaten = consumer(GetForegroundProcessName()); } catch { }
+                            }
+                            if (eaten) return (IntPtr)1;
+                        }
                         // EXACT match on the modifiers, in both directions: Ctrl+H must not trip a
                         // binding on plain H, and a plain H binding must not swallow the meaning of
                         // every chord that happens to end in H.
