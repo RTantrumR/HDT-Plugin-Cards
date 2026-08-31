@@ -67,6 +67,8 @@ namespace HsbgCardLookup.Game.FinalBoard
 
         private int _prevResourcesUsed;
         private int _combatDealt, _combatTaken;
+        // Health + armour as the shop closed: the baseline a combat is judged against.
+        private int _hpAtShopClose;
         private bool _turnClosed;
         private int _logIndex;
         private bool _playerIdWarned;
@@ -110,6 +112,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             _logIndex = 0;
             _playerIdWarned = false;
             _combatDealt = _combatTaken = 0;
+            _hpAtShopClose = 0;
             _rolling = null;
             _mainEndSeen = false;
         }
@@ -189,6 +192,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             _turnClosed = true;
             _turn.ShopSeconds = Math.Round(_shopClock.Elapsed.TotalSeconds, 1);
             _shopClock.Stop();
+            _hpAtShopClose = _turn.HeroHpEnd;   // the last tick sample, see TrackShop
 
             // C — post-trigger, pre-combat. The BOARD is a live read: this is the same edge
             // MatchRecorder's "End of Turn" capture reads boards from, verified stat-for-stat over a
@@ -214,10 +218,15 @@ namespace HsbgCardLookup.Game.FinalBoard
         }
 
         /// <summary>
-        /// Settle the combat that just ended. Damage TAKEN comes from the hero's own health, which is
-        /// the one number that cannot be argued with; damage DEALT comes from the predamage event
-        /// (see <see cref="NoteHeroDamage"/>), because nothing in our own state can observe it.
-        /// A combat where neither side lost health is a draw, which is exactly how it should read.
+        /// Settle the combat that just ended. Damage TAKEN is the hero's health at the END OF THE
+        /// SHOP minus its health now — not the start of the turn. A shop has its own ways of moving
+        /// that number (a demon that hits you, a spell that armours you), and none of them are a
+        /// combat result: the first live match booked a 2-damage "loss" for a combat the hero
+        /// walked out of untouched, because a demon had cost 2 in the shop. The user's rule:
+        /// "the actual loss should resolve to a loss — everything else is self-inflicted until
+        /// proven otherwise." Damage DEALT comes from the predamage event (see
+        /// <see cref="NoteHeroDamage"/>), because nothing in our own state can observe it. A combat
+        /// where neither side lost health is a draw, which is exactly how it should read.
         /// </summary>
         private void ResolveCombat(GameV2 g)
         {
@@ -225,7 +234,8 @@ namespace HsbgCardLookup.Game.FinalBoard
             if (t == null || t.CombatResult != null) return;
 
             t.HeroHpEnd = HeroHp(g);
-            int lost = Math.Max(0, t.HeroHpStart - t.HeroHpEnd);
+            int baseline = _hpAtShopClose > 0 ? _hpAtShopClose : t.HeroHpStart;
+            int lost = Math.Max(0, baseline - t.HeroHpEnd);
             t.DamageTaken = lost > 0 ? lost : _combatTaken;
             t.DamageDealt = _combatDealt;
 
