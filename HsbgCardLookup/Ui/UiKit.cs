@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Windows;
@@ -37,6 +37,27 @@ namespace HsbgCardLookup.Ui
         public static readonly Brush TextMuted     = Frozen(Color.FromRgb(0x76, 0x83, 0x96));
         public static readonly Brush AccentBrush   = Frozen(Accent);
         public static readonly Brush StrokeBrush   = Frozen(Stroke);
+
+        /// <summary>
+        /// The kit's tooltip. WPF's stock one is light-themed and waits most of a second: on a dark
+        /// overlay it flashes white, late. This one wears the panel's colours and shows at 120ms —
+        /// the settings window's "?" marks proved the numbers.
+        /// </summary>
+        public static void Tip(FrameworkElement el, string text)
+        {
+            el.ToolTip = new ToolTip
+            {
+                Background = Br(PanelBg), BorderBrush = StrokeBrush, BorderThickness = new Thickness(1),
+                Padding = new Thickness(9, 6, 9, 6), HasDropShadow = true,
+                Content = new TextBlock
+                {
+                    Text = text, Foreground = TextPrimary, FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap, MaxWidth = 300
+                }
+            };
+            ToolTipService.SetInitialShowDelay(el, 120);
+            ToolTipService.SetShowDuration(el, 30000);
+        }
 
         private static SolidColorBrush Frozen(Color c)
         {

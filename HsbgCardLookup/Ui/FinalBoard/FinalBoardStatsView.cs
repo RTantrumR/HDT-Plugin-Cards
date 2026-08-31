@@ -286,7 +286,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             null, null, null, null, null,
             "First action to last, with any pause longer than 10 s counted as 10 s.\nReading the shop in and sitting there afterwards do not count.",
             null,
-            "Actions per active minute: this turn's actions over its active time.\nA short flurry reads high; the peak tile only considers turns with 15 s or more of active time.",
+            "Actions per active minute: this turn's actions over its active time.",
             "Actions per minute of the whole shop phase, idle time included.",
         };
 
@@ -314,7 +314,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             tb.Margin = new Thickness(0, 0, 0, 4);
             if (tip != null)
             {
-                tb.ToolTip = tip;
+                UiKit.Tip(tb, tip);
                 tb.IsHitTestVisible = true;
             }
             return tb;

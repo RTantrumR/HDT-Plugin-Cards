@@ -429,9 +429,9 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 CornerRadius = new CornerRadius(4),
                 Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,
-                ToolTip = tooltip,
                 Child = glyph,
             };
+            UiKit.Tip(b, tooltip);
             b.MouseEnter += (s, e) => { glyph.Stroke = hover; b.Background = UiKit.Br(UiKit.PanelActive); };
             b.MouseLeave += (s, e) => { glyph.Stroke = rest; b.Background = Brushes.Transparent; };
             // Swallow the press as well as the release: the host starts a drag on MouseLeftButtonDown

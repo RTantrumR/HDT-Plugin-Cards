@@ -731,19 +731,7 @@ namespace HsbgCardLookup.Ui
                 Margin = new Thickness(7, 1, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Help, Child = glyph
             };
-            // WPF's stock tooltip is light-themed; left alone it flashes white over a dark window.
-            mark.ToolTip = new ToolTip
-            {
-                Background = UiKit.Br(UiKit.PanelBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
-                Padding = new Thickness(9, 6, 9, 6), HasDropShadow = true,
-                Content = new TextBlock
-                {
-                    Text = text, Foreground = UiKit.TextPrimary, FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap, MaxWidth = 260
-                }
-            };
-            ToolTipService.SetInitialShowDelay(mark, 120);
-            ToolTipService.SetShowDuration(mark, 30000);
+            UiKit.Tip(mark, text);
             mark.MouseEnter += (s, e) => { mark.BorderBrush = UiKit.AccentBrush; glyph.Foreground = UiKit.AccentBrush; };
             mark.MouseLeave += (s, e) => { mark.BorderBrush = UiKit.StrokeBrush; glyph.Foreground = UiKit.TextMuted; };
             return mark;
