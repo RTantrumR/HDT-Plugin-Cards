@@ -126,6 +126,9 @@ namespace HsbgCardLookup.Config
         public HudPlacement FinalBoardHud { get; set; } = new HudPlacement();
         // Where the panel's camera writes its pictures. Empty = the default under Pictures.
         public string FinalBoardShotDir { get; set; } = "";
+        // Clicking a game in HDT's own Battlegrounds session list opens its panel. While on, those
+        // rows take the click instead of the game underneath them.
+        public bool FinalBoardSessionClick { get; set; } = true;
 
         // Summons the match-history page. Written "F1" / "Ctrl+H" / "None"; see HotkeyText.
         // Unlike the overlay key this one only fires while Hearthstone or HDT is IN FRONT. F1 means

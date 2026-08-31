@@ -116,6 +116,7 @@
     <Compile Include="Ui\FinalBoard\FinalBoardPanel.cs" />
 
     <Compile Include="Ui\FinalBoard\FinalBoardSurface.cs" />
+    <Compile Include="Ui\FinalBoard\SessionRowHook.cs" />
     <Compile Include="Ui\FinalBoard\FinalBoardStatsView.cs" />
     <Compile Include="Ui\FinalBoard\FinalBoardExport.cs" />
     <Compile Include="Game\DarkGifts.cs" />

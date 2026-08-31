@@ -684,6 +684,7 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(SectionHeading("Match history"));
             stack.Children.Add(HistoryRow());
+            stack.Children.Add(SessionClickRow());
             stack.Children.Add(HistoryKeyRow());
 
             ShowPage();
@@ -866,6 +867,36 @@ namespace HsbgCardLookup.Ui
                                   : count + (count == 1 ? " match kept." : " matches kept."),
                 Foreground = UiKit.TextMuted, FontSize = 11.5
             });
+            dock.Children.Add(left);
+
+            return PageCard(dock);
+        }
+
+        /// <summary>The in-game route: HDT's session list, one click per game.</summary>
+        private UIElement SessionClickRow()
+        {
+            var dock = new DockPanel { LastChildFill = true };
+
+            var pill = TogglePill(_config.FinalBoardSessionClick, v =>
+            {
+                _config.FinalBoardSessionClick = v;
+                _status.Text = v ? "HDT's session list opens matches." : "HDT's session list left alone.";
+                Changed();
+            }, width: 74, get: () => _config.FinalBoardSessionClick);
+            pill.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(pill, Dock.Right);
+            dock.Children.Add(pill);
+
+            var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            left.Children.Add(new TextBlock
+            {
+                Text = "Click a game in HDT's session list", Foreground = UiKit.TextPrimary, FontSize = 15,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            left.Children.Add(HelpIcon("The list of this session's games on Hearthstone Deck Tracker's own "
+                                     + "Battlegrounds overlay. Its hover preview stays; a click opens the "
+                                     + "full panel. While this is on, a click on one of those rows goes "
+                                     + "to the row rather than to the game under it."));
             dock.Children.Add(left);
 
             return PageCard(dock);
