@@ -317,10 +317,18 @@ namespace HsbgCardLookup.Game.FinalBoard
             if (!_mainEndSeen && _shopClock.ElapsedMilliseconds >= OpenSettleMs)
             {
                 var snap = BuildSnap(g);
-                if (snap != null)
+                // Lines HDT parsed while we were sampling. HDT appends a line to PowerLog BEFORE
+                // applying its tags (LogWatcherManager.OnNewLines), so if MAIN_END shows up here this
+                // sample may already carry the triggers: the rescan freezes the PREVIOUS sample as B
+                // and the latch drops this one.
+                ScanPowerLog(g);
+                if (snap != null && !_mainEndSeen)
                 {
                     _rolling = snap;
-                    if (_turn.SnapStart == null)
+                    // A waits for the gold. Turn 1 opens ~8s before the game deals the shop (measured:
+                    // RESOURCES stays 0 through the intro), and a start snapshot with no gold is not
+                    // the start of anything. Every later turn has its gold at open.
+                    if (_turn.SnapStart == null && Tag(g.PlayerEntity, GameTag.RESOURCES) > 0)
                     {
                         _turn.SnapStart = snap;
                         Log(string.Format("turn {0} snapshot A at {1}ms | board={2} gold={3}",
