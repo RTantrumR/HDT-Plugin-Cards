@@ -273,7 +273,57 @@ namespace HsbgCardLookup.Game.FinalBoard
         public int TavernTier { get; set; }
         public int HeroHp { get; set; }
 
-        /// <summary>In board order. ENTITY_ID inside each record is the identity key for diffing across snapshots.</summary>
+        /// <summary>
+        /// In board order. ENTITY_ID inside each record is the identity key for diffing WITHIN a turn.
+        /// Across a combat the game re-creates every board minion under a new id (measured: 0 of N
+        /// ids survive from one turn's C to the next turn's A, every round); the new entity's
+        /// COPIED_FROM_ENTITY_ID points at the previous round's id, and that chain is the
+        /// cross-turn key.
+        /// </summary>
         public List<MinionRecord> Board { get; set; }
+
+        // ── added after the first live-verified round; null on records written before, and on any
+        // moment they could not be read. Same contract as the snapshots themselves: absence means
+        // "not captured", never "empty". ──
+
+        /// <summary>Cards in hand, hand order — minions and spells alike (CARDTYPE tells them apart).</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<MinionRecord> Hand { get; set; }
+
+        /// <summary>
+        /// The tavern's offer row, with the buffed stats the shop shows. Null at C — the tavern is
+        /// torn down at the recruit→combat edge and the same read there returns the opponent's
+        /// warband — and null in duos, where the teammate's board passes the read's filter and the
+        /// tavern's own controller id has not been verified.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<MinionRecord> Shop { get; set; }
+
+        /// <summary>
+        /// Every enchantment attached to a board minion, a card in hand, the hero or the player
+        /// entity, identical ones collapsed into a count. Raw on purpose: the shop's own markers and
+        /// [DNT] bookkeeping are in here too, because filtering at capture would throw away what a
+        /// later reader might want, and the viewer can drop them for free.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<EnchantRecord> Enchants { get; set; }
+    }
+
+    /// <summary>
+    /// One kind of enchantment on one host. Host is the ENTITY_ID it is attached to (a board or hand
+    /// minion, the hero, or the player entity for player-level buffs); Source is the card id of the
+    /// entity that created it, resolved at capture because that entity may be long sold by the time
+    /// anyone reads this; N1/N2 are the two script numbers the card text's {0}/{1} stand for, so
+    /// "+{0}/+{1}" can be rendered later without the entity.
+    /// </summary>
+    internal sealed class EnchantRecord
+    {
+        public int Host { get; set; }
+        public string CardId { get; set; }
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Source { get; set; }
+        public int Count { get; set; }
+        public int N1 { get; set; }
+        public int N2 { get; set; }
     }
 }

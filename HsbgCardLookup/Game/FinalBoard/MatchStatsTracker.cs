@@ -199,17 +199,26 @@ namespace HsbgCardLookup.Game.FinalBoard
             // full match (combat is simulated on separate entities, so the recruit board persists).
             // The SCALARS are the tick-sampled values: gold and hero HP live-read zero here because
             // the game has already torn the shop down (see TrackShop).
+            // Hand and enchantments are live too — our own entities persist into combat. The SHOP is
+            // not read here at all: the tavern is gone at this edge and the same filter would return
+            // the opponent's warband.
             if (_turn.SnapPreCombat == null)
             {
+                var sw = Stopwatch.StartNew();
+                var all = AllEntities(g);
+                var board = ReadBoard(g);
+                var hand = ReadHand(g);
                 _turn.SnapPreCombat = new ShopSnap
                 {
                     AtMs = (int)_shopClock.ElapsedMilliseconds,
                     Gold = _turn.GoldLeftover,
                     TavernTier = _turn.TavernTier,
                     HeroHp = _turn.HeroHpEnd,
-                    Board = ReadBoard(g),
+                    Board = board,
+                    Hand = hand,
+                    Enchants = ReadEnchants(g, all, board, hand),
                 };
-                Log(string.Format("turn {0} snapshot C | board={1}", _turn.Turn, _turn.SnapPreCombat.Board.Count));
+                Log(string.Format("turn {0} snapshot C | {1} ({2}ms to read)", _turn.Turn, Counts(_turn.SnapPreCombat), (int)sw.ElapsedMilliseconds));
             }
             Log(string.Format("turn {0} closed | tier={1} actions={2} shop={3}s spent={4} leftover={5} bought={6} sold={7} rolls={8}",
                 _turn.Turn, _turn.TavernTier, _turn.Actions, _turn.ShopSeconds, _turn.GoldSpent,
@@ -341,8 +350,8 @@ namespace HsbgCardLookup.Game.FinalBoard
                     if (_turn.SnapStart == null && Tag(g.PlayerEntity, GameTag.RESOURCES) > 0)
                     {
                         _turn.SnapStart = snap;
-                        Log(string.Format("turn {0} snapshot A at {1}ms | board={2} gold={3}",
-                            _turn.Turn, snap.AtMs, snap.Board.Count, snap.Gold));
+                        Log(string.Format("turn {0} snapshot A at {1}ms | {2} gold={3} ({4}ms to read)",
+                            _turn.Turn, snap.AtMs, Counts(snap), snap.Gold, _lastSnapMs));
                     }
                 }
             }
@@ -393,9 +402,9 @@ namespace HsbgCardLookup.Game.FinalBoard
                     if (_rolling != null)
                     {
                         _turn.SnapEnd = _rolling;
-                        Log(string.Format("turn {0} MAIN_END at {1}ms | B frozen from {2}ms ({3}ms stale)",
+                        Log(string.Format("turn {0} MAIN_END at {1}ms | B frozen from {2}ms ({3}ms stale) | {4} ({5}ms to read)",
                             _turn.Turn, OffsetMs(line), _rolling.AtMs,
-                            (int)_shopClock.ElapsedMilliseconds - _rolling.AtMs));
+                            (int)_shopClock.ElapsedMilliseconds - _rolling.AtMs, Counts(_rolling), _lastSnapMs));
                     }
                     else
                         Log(string.Format("turn {0} MAIN_END | B missed - no settled sample yet", _turn.Turn));
@@ -604,22 +613,148 @@ namespace HsbgCardLookup.Game.FinalBoard
             (int)GameTag.MEGA_WINDFURY,
             (int)GameTag.STEALTH,
             (int)GameTag.MODULAR,
+            // Added with hand/shop: a hand or a tavern row holds spells too, and cost matters there.
+            (int)GameTag.CARDTYPE,
+            (int)GameTag.COST,
+            // The cross-turn identity: after each combat every board minion is a NEW entity whose
+            // COPIED_FROM_ENTITY_ID names the one it replaced (verified on the 2026-08-31 record).
+            (int)GameTag.COPIED_FROM_ENTITY_ID,
         };
+
+        /// <summary>How long the last snapshot took to read, for the log — the 200 ms poll pays this every tick of a shop.</summary>
+        private int _lastSnapMs;
 
         private ShopSnap BuildSnap(GameV2 g)
         {
             try
             {
-                return new ShopSnap
+                var sw = Stopwatch.StartNew();
+                var all = AllEntities(g);
+                var board = ReadBoard(g);
+                var hand = ReadHand(g);
+                var snap = new ShopSnap
                 {
                     AtMs = (int)_shopClock.ElapsedMilliseconds,
                     Gold = GoldAvailable(g),
                     TavernTier = _turn != null ? _turn.TavernTier : 0,
                     HeroHp = HeroHp(g),
-                    Board = ReadBoard(g),
+                    Board = board,
+                    Hand = hand,
+                    Shop = IsDuos(g) ? null : ReadShop(g, all),
+                    Enchants = ReadEnchants(g, all, board, hand),
                 };
+                _lastSnapMs = (int)sw.ElapsedMilliseconds;
+                return snap;
             }
             catch { return null; }
+        }
+
+        private static string Counts(ShopSnap s) => s == null ? "-" : string.Format("board={0} hand={1} shop={2} ench={3}",
+            s.Board != null ? s.Board.Count : 0, s.Hand != null ? s.Hand.Count : 0,
+            s.Shop != null ? s.Shop.Count.ToString() : "-", s.Enchants != null ? s.Enchants.Count : 0);
+
+        private static bool IsDuos(GameV2 g)
+        {
+            try { return g.IsBattlegroundsDuosMatch; } catch { return false; }
+        }
+
+        private static List<Entity> AllEntities(GameV2 g)
+        {
+            try { return g != null && g.Entities != null ? g.Entities.Values.ToList() : new List<Entity>(); }
+            catch { return new List<Entity>(); }
+        }
+
+        private static List<MinionRecord> ReadHand(GameV2 g)
+        {
+            var list = new List<MinionRecord>();
+            try
+            {
+                var hand = g != null && g.Player != null && g.Player.Hand != null ? g.Player.Hand.ToList() : null;
+                if (hand == null) return list;
+                foreach (var c in hand.OrderBy(c => Tag(c, GameTag.ZONE_POSITION)))
+                    if (c != null) list.Add(ToSnapRecord(c));
+            }
+            catch { }
+            return list;
+        }
+
+        /// <summary>
+        /// The tavern row: in-PLAY minions and spells some other controller owns. During a shop that
+        /// is only the tavern (every hit across a whole solo match had controller 9, and the count
+        /// tracked the tier); in combat the same filter is the opponent's warband, which is why C
+        /// never calls this. Solo only — see <see cref="ShopSnap.Shop"/>.
+        /// </summary>
+        private static List<MinionRecord> ReadShop(GameV2 g, List<Entity> all)
+        {
+            var list = new List<MinionRecord>();
+            try
+            {
+                int us = g != null && g.Player != null ? g.Player.Id : -1;
+                var row = new List<Entity>();
+                foreach (var e in all)
+                {
+                    if (e == null) continue;
+                    int zone = Tag(e, GameTag.ZONE), type = Tag(e, GameTag.CARDTYPE), ctrl = Tag(e, GameTag.CONTROLLER);
+                    if (zone != (int)Zone.PLAY || ctrl == us || ctrl <= 0) continue;
+                    if (type != (int)CardType.MINION && type != (int)CardType.SPELL) continue;
+                    row.Add(e);
+                }
+                foreach (var e in row.OrderBy(e => Tag(e, GameTag.ZONE_POSITION)))
+                    list.Add(ToSnapRecord(e));
+            }
+            catch { }
+            return list;
+        }
+
+        /// <summary>
+        /// Enchantments on our hosts — the board, the hand, the hero and the player entity — with
+        /// identical ones (same host, card, source and script numbers) collapsed into one count.
+        /// A late board carries up to ~32 per minion, most of them repeats of the same buff.
+        /// </summary>
+        private static List<EnchantRecord> ReadEnchants(GameV2 g, List<Entity> all, List<MinionRecord> board, List<MinionRecord> hand)
+        {
+            var outp = new List<EnchantRecord>();
+            try
+            {
+                var hosts = new HashSet<int>();
+                foreach (var m in board) { int id; if (m.Tags != null && m.Tags.TryGetValue((int)GameTag.ENTITY_ID, out id)) hosts.Add(id); }
+                foreach (var m in hand) { int id; if (m.Tags != null && m.Tags.TryGetValue((int)GameTag.ENTITY_ID, out id)) hosts.Add(id); }
+                try { if (g.Player != null && g.Player.Hero != null) hosts.Add(g.Player.Hero.Id); } catch { }
+                try { if (g.PlayerEntity != null) hosts.Add(g.PlayerEntity.Id); } catch { }
+                if (hosts.Count == 0) return outp;
+
+                var byKey = new Dictionary<string, EnchantRecord>();
+                foreach (var e in all)
+                {
+                    if (e == null) continue;
+                    bool ench = false;
+                    try { ench = e.IsEnchantment; } catch { }
+                    if (!ench) continue;
+                    int host = Tag(e, GameTag.ATTACHED);
+                    if (!hosts.Contains(host)) continue;
+
+                    string source = null;
+                    int creator = Tag(e, GameTag.CREATOR);
+                    if (creator > 0)
+                    {
+                        try { Entity ce; if (g.Entities.TryGetValue(creator, out ce) && ce != null) source = ce.CardId; }
+                        catch { }
+                    }
+                    int n1 = Tag(e, GameTag.TAG_SCRIPT_DATA_NUM_1), n2 = Tag(e, GameTag.TAG_SCRIPT_DATA_NUM_2);
+                    string cardId = e.CardId ?? "";
+                    string key = host + "|" + cardId + "|" + source + "|" + n1 + "|" + n2;
+                    EnchantRecord r;
+                    if (byKey.TryGetValue(key, out r)) r.Count++;
+                    else
+                    {
+                        r = new EnchantRecord { Host = host, CardId = cardId, Source = source, Count = 1, N1 = n1, N2 = n2 };
+                        byKey[key] = r;
+                        outp.Add(r);
+                    }
+                }
+            }
+            catch { }
+            return outp;
         }
 
         private static List<MinionRecord> ReadBoard(GameV2 g)
