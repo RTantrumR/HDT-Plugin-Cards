@@ -336,7 +336,7 @@ namespace HsbgCardLookup.Ui
                 _config.DragFromDetail = v;
                 _status.Text = v
                     ? "Drag the detail portrait to pull out a floating card."
-                    : "Detail portrait drag-out off (click still opens the website).";
+                    : "Detail portrait drag-out off.";
                 Changed();
             }));
 
