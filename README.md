@@ -19,6 +19,14 @@ art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 - In-app patch-notes notifications
 - Card data and art self-update from hsbg.cards; the plugin auto-updates via GitHub Releases
 
+v0.5.0 Additions:
+- **UI Redesign**: Categorized settings pages with live previews, master toggles per feature, and visual keys for each display surface.
+- **Dark Gifts**: Hover-summoned list of available gifts and the guaranteed-tribe minion pool (customizable pool size).
+- **HUD Rework**: Trinket boxes now fill positionally (supports up to 4 trinkets for anomalies/transforms).
+- **MMR UX**: Separate draggable standings panel for opponent MMR, alongside the original portrait labels.
+- Performance: Enabled GZip compression for card data updates (87% reduction in bandwidth).
+- Smart search: "Dark Gift" as a category facet.
+
 v0.3 Additions: 
 - MMR and Opponents Tiers display in-lobby
 - Dark Gifts support in 3 modes - show relevant minions after turn 6 ; show available dark gifts ; show both available dark gifts and relevant minions with unique gifts applicable to them

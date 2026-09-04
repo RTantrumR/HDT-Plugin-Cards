@@ -35,7 +35,7 @@ namespace HsbgCardLookup.Ui
         private readonly Action _checkForUpdates; // runs a manual update check (toolbar ⟳ icon)
         private readonly string _version;        // shown small in the footer corner
 
-        // Drag-out state for the detail art (distinguishes a click → website from a drag → floating card).
+        // Drag-out state for the detail art (a plain click does nothing; a drag spawns a floating card).
         private Point _artDown;
         private bool _artDragging;
         private FloatingCard _dragCard;
@@ -248,10 +248,10 @@ namespace HsbgCardLookup.Ui
                 MaxHeight = 350,   // a bit shorter so a minion's Golden button + first related row fit without scroll
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Cursor = Cursors.Hand,
-                ToolTip = "Click to open on hsbg.cards · drag out for a floating card"
+                ToolTip = "Drag out for a floating card"
             };
-            // Detail portrait: a click deep-links to the website; a past-threshold drag pulls the card
-            // out as a free-floating raw card (FloatingCard) that follows the cursor until mouse-up.
+            // Detail portrait: a past-threshold drag pulls the card out as a free-floating raw card
+            // (FloatingCard) that follows the cursor until mouse-up. A plain click does nothing.
             _art.MouseLeftButtonDown += Art_Down;
             _art.MouseMove += Art_Move;
             _art.MouseLeftButtonUp += Art_Up;
@@ -911,24 +911,10 @@ namespace HsbgCardLookup.Ui
             _notice.Visibility = Visibility.Visible;
         }
 
-        /// <summary>Open the selected card's page on hsbg.cards (UTM-tagged; content = slug for
-        /// per-card click attribution). Best-effort — never throws into the UI.</summary>
-        private static void OpenOnWebsite(BgCard card)
-        {
-            if (card == null || string.IsNullOrEmpty(card.Slug)) return;
-            try
-            {
-                string slug = Uri.EscapeDataString(card.Slug);
-                Process.Start("https://hsbg.cards/card/" + slug
-                    + "?utm_source=hdt&utm_medium=plugin&utm_campaign=clickDetail&utm_content=" + slug);
-            }
-            catch { /* launching the default browser is best-effort */ }
-        }
-
         // ── Detail-art drag-out → floating card ──────────────────────────────────────────────────
         // Capture on mouse-down; if the pointer moves past the system drag threshold we spawn a
         // FloatingCard and keep it under the cursor (the captured MouseMove keeps firing past the
-        // window edge) until mouse-up. A press with no drag falls through to OpenOnWebsite.
+        // window edge) until mouse-up. A press with no drag does nothing.
 
         private void Art_Down(object sender, MouseButtonEventArgs e)
         {
@@ -956,11 +942,9 @@ namespace HsbgCardLookup.Ui
 
         private void Art_Up(object sender, MouseButtonEventArgs e)
         {
-            bool dragged = _artDragging;
             if (_art.IsMouseCaptured) _art.ReleaseMouseCapture();
             _artDragging = false;
             _dragCard = null;
-            if (!dragged) OpenOnWebsite(_selected);   // plain click → website (unchanged)
         }
 
         // ── Results-grid drag-out → floating card (opt-in) ───────────────────────────────────────
