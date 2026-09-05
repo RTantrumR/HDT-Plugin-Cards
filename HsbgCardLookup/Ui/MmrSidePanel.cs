@@ -38,6 +38,8 @@ namespace HsbgCardLookup.Ui
         public bool ShowRating { get; set; } = true;
         public bool ShowDeltas { get; set; } = true;
         public bool ShowTiers { get; set; } = true;
+        /// <summary>The minion-type icon column (most common type on the player's last-known board).</summary>
+        public bool ShowTribes { get; set; } = true;
         public bool DimDead { get; set; } = true;
         /// <summary>Duos: rows arrive team-ordered (pairs 0+1, 2+3, …) — a wider gap separates teams.</summary>
         public bool IsDuos { get; set; }
@@ -47,7 +49,7 @@ namespace HsbgCardLookup.Ui
 
         // Column order. The delta gets a column of its OWN, left of the rating, so a row with a delta
         // can't shove the rating and tier sideways — every rating in the list starts at the same x.
-        private const int ColPlace = 0, ColName = 1, ColDelta = 2, ColRating = 3, ColTier = 4, ColCount = 5;
+        private const int ColPlace = 0, ColName = 1, ColDelta = 2, ColRating = 3, ColTier = 4, ColTribe = 5, ColCount = 6;
 
         private readonly Border _root;
         private readonly Grid _list;                           // ONE grid: columns are shared by every row
@@ -59,6 +61,9 @@ namespace HsbgCardLookup.Ui
         private readonly TextBlock[] _ratings = new TextBlock[MaxSlots];
         private readonly TextBlock[] _arrows = new TextBlock[MaxSlots];
         private readonly Image[] _tiers = new Image[MaxSlots];
+        private readonly Ellipse[] _tribes = new Ellipse[MaxSlots];   // round type icon (ImageBrush fill)
+        private readonly TextBlock[] _tribeCounts = new TextBlock[MaxSlots];
+        private readonly StackPanel[] _tribeCells = new StackPanel[MaxSlots];   // icon + count, one grid cell
         private readonly FrameworkElement[][] _rowCells = new FrameworkElement[MaxSlots][];
         private readonly bool[] _colUsed = new bool[ColCount];
         private readonly Border _handle;
@@ -107,6 +112,7 @@ namespace HsbgCardLookup.Ui
             _cols[ColDelta] = new ColumnDefinition { Width = GridLength.Auto };
             _cols[ColRating] = new ColumnDefinition { Width = GridLength.Auto };
             _cols[ColTier] = new ColumnDefinition { Width = GridLength.Auto };
+            _cols[ColTribe] = new ColumnDefinition { Width = GridLength.Auto };
             foreach (var c in _cols) _list.ColumnDefinitions.Add(c);
 
             // Rows run team, team-divider, team, … so a duos place number can span its pair.
@@ -157,16 +163,26 @@ namespace HsbgCardLookup.Ui
                     };
                     var tier = new Image { Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center };
                     RenderOptions.SetBitmapScalingMode(tier, BitmapScalingMode.HighQuality);
+                    var tribe = new Ellipse { Stroke = TribeIcons.Ring, VerticalAlignment = VerticalAlignment.Center };
+                    var tribeCount = new TextBlock
+                    {
+                        Foreground = Brushes.White, FontWeight = FontWeights.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    var tribeCell = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                    tribeCell.Children.Add(tribe); tribeCell.Children.Add(tribeCount);
 
                     Place(place, ColPlace, row);
                     Place(name, ColName, row);
                     Place(arrow, ColDelta, row);
                     Place(rating, ColRating, row);
                     Place(tier, ColTier, row);
+                    Place(tribeCell, ColTribe, row);
 
                     _places[i] = place; _names[i] = name; _arrows[i] = arrow;
-                    _ratings[i] = rating; _tiers[i] = tier;
-                    _rowCells[i] = new FrameworkElement[] { place, name, arrow, rating, tier };
+                    _ratings[i] = rating; _tiers[i] = tier; _tribes[i] = tribe;
+                    _tribeCounts[i] = tribeCount; _tribeCells[i] = tribeCell;
+                    _rowCells[i] = new FrameworkElement[] { place, name, arrow, rating, tier, tribeCell };
                 }
 
                 // Duos: a dashed divider after every pair, so the list reads as 4 teams, not 8 solos.
@@ -365,7 +381,7 @@ namespace HsbgCardLookup.Ui
             // for the same reason a row of bare numbers is not a standings panel.
             // While arranging, the box shows regardless — otherwise turning every part off would make
             // Arrange bring the game forward and then display nothing to position.
-            bool anyContent = showNames || ShowRating || ShowDeltas || ShowTiers || _editing;
+            bool anyContent = showNames || ShowRating || ShowDeltas || ShowTiers || ShowTribes || _editing;
             int n = rows?.Count ?? 0;
             if (n == 0 || !anyContent || !Attach()) { Hide(); return; }
 
@@ -404,6 +420,17 @@ namespace HsbgCardLookup.Ui
                 var icon = ShowTiers && r.TavernTier >= 1 && r.TavernTier <= 7 ? TierIcon(r.TavernTier) : null;
                 _tiers[i].Source = icon;
                 _tiers[i].Visibility = icon != null ? Visibility.Visible : Visibility.Collapsed;
+
+                // Collapsed (not Hidden) when this player has no data, so the column keeps its width
+                // from the rows that do — a blank cell, not a missing one. The count only renders when
+                // the game would show one (a clear top tribe).
+                var tribeIcon = ShowTribes ? TribeIcons.BrushFor(r.Tribe) : null;
+                _tribes[i].Fill = tribeIcon;
+                _tribes[i].Visibility = tribeIcon != null ? Visibility.Visible : Visibility.Collapsed;
+                bool showCount = tribeIcon != null && r.TribeCount > 0;
+                _tribeCounts[i].Text = showCount ? r.TribeCount.ToString() : "";
+                _tribeCounts[i].Foreground = dim ? Dead : Brushes.White;
+                _tribeCounts[i].Visibility = showCount ? Visibility.Visible : Visibility.Collapsed;
             }
 
             for (int t = 0; t < _placeSpans.Length; t++)
@@ -431,6 +458,7 @@ namespace HsbgCardLookup.Ui
             _colUsed[ColDelta] = ShowDeltas;
             _colUsed[ColRating] = ShowRating;
             _colUsed[ColTier] = ShowTiers;
+            _colUsed[ColTribe] = ShowTribes;
 
             _root.Visibility = Visibility.Visible;
             Layout();
@@ -469,6 +497,10 @@ namespace HsbgCardLookup.Ui
             string[] heroes = { "Sire Denathrius", "Rafaam", "Queen Azshara", "Cariel Roame",
                                 "The Curator", "Illidan Stormrage", "Tess Greymane", "Reno Jackson" };
             int[] ratings = { 14872, 13561, 12208, 11440, 10653, 9781, 8944, 0 };
+            // The same spread the live feature shows mid-match: real tribes with the game's count, a
+            // tied board (no count), a board with no typed minions, and one with no data (blank cell).
+            string[] tribes = { "Elemental", "Mech", TribeTally.Mixed, "Dragon", null, TribeTally.None, "Beast", "Undead" };
+            int[] tribeCounts = { 4, 3, 0, 5, 0, 0, 4, 2 };
             for (int i = 0; i < names.Length; i++)
                 outp.Add(new LeaderboardOverlay.Row
                 {
@@ -478,6 +510,8 @@ namespace HsbgCardLookup.Ui
                     Rating = ratings[i],
                     Delta = i == 1 ? 213 : i == 4 ? -96 : 0,
                     TavernTier = 1 + (i * 5) % 7,
+                    Tribe = tribes[i],
+                    TribeCount = tribeCounts[i],
                     IsDead = duos ? i >= 6 : i == 7
                 });
             return outp;
@@ -532,6 +566,11 @@ namespace HsbgCardLookup.Ui
                 _ratings[i].Margin = new Thickness(6 * s, 1.5 * s, 0, 1.5 * s);
                 _tiers[i].Height = 20 * s;
                 _tiers[i].Margin = new Thickness(6 * s, 1.5 * s, 0, 1.5 * s);
+                _tribeCells[i].Margin = new Thickness(6 * s, 1.5 * s, 0, 1.5 * s);
+                _tribes[i].Width = _tribes[i].Height = 17 * s;   // reads as the tier shield's size (a disc fills its box, a shield doesn't)
+                _tribes[i].StrokeThickness = 1.2 * s;
+                _tribeCounts[i].FontSize = 13.5 * s;
+                _tribeCounts[i].Margin = new Thickness(3 * s, 0, 0, 0);
             }
 
             // Collapsing the ColumnDefinition itself (not just the cells) is what actually reclaims the

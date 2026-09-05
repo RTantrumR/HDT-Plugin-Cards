@@ -164,6 +164,11 @@ namespace HsbgCardLookup.Game
                     show = anyNow;
                 }
 
+                // All 3 Dark Gifts spent (button's NUM_2 = uses left hits 0, CANT_READY flips) → nothing
+                // can be offered for the rest of the match, so the panel stays away. Gated on the
+                // button being found: before that _uses is -1, never a false 0.
+                if (show && _buttonFound && _uses == 0) show = false;
+
                 string mode = NormMode(_config.DarkGiftMode);
                 string sig = show
                     ? $"{targetTurn}|{_locked}|{string.Join(",", _topTribes)}|{_tierMin}|{_tierMax}|{_lobbyTribes.Count}|{mode}"

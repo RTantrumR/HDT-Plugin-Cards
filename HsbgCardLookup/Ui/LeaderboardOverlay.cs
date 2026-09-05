@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Shapes;
 using Hearthstone_Deck_Tracker.API;   // Core.OverlayCanvas
 using HsbgCardLookup.Data;
 
@@ -25,6 +26,9 @@ namespace HsbgCardLookup.Ui
             public bool RatingPending;  // leaderboard blob not loaded yet → show "…" instead of 8000↓
             public int Delta;
             public int TavernTier;      // 1..7; 0 = unknown (icon hidden)
+            public string Tribe;        // the game's "most common minion type" for this player: a tribe
+                                        // name, TribeTally.Mixed ("All") or TribeTally.None; null = no data
+            public int TribeCount;      // the number the game shows with it ("4 Beasts"); 0 = none shown
             public bool IsDead;
             public bool IsLastOpponent;
             public bool IsCurrentOpponent;
@@ -73,12 +77,24 @@ namespace HsbgCardLookup.Ui
         private const double RefNoNameLift = 10.0;
         private const double RefOpponentShift = 30.0;
         private const double RefTierH = 35.0;
+        // Minion-type icon: a round art directly UNDER the tier icon, with the game's count ("4" of
+        // "4 Beasts") as a bold number to its right. Sized to LOOK the same as the tier icon: the
+        // shield PNG fills a 35px box but its body measures ~29×32 on screen, and a disc fills its box
+        // entirely — an equal 35px disc read clearly bigger (user screenshot 2026-09-05), a 24px one
+        // clearly smaller. 30px ≈ the shield's visible width; centred under the shield's 33px box.
+        // Fits the slot pitch (solo 92px, duos 78-82px: label −5 + tier 35 + type 30 = 60).
+        // When it shows, the ⚔ marker (which used to sit under the tier) moves right of icon + count.
+        private const double RefTribeH = 30.0;
+        private const double RefTribeGap = 3.0;
+        private const double RefTribeCountW = 16.0;   // room reserved for a one-digit count
 
         private readonly Border[] _labels = new Border[MaxSlots];
         private readonly TextBlock[] _names = new TextBlock[MaxSlots];
         private readonly TextBlock[] _ratings = new TextBlock[MaxSlots];
         private readonly TextBlock[] _arrows = new TextBlock[MaxSlots];
         private readonly Image[] _tiers = new Image[MaxSlots];
+        private readonly Ellipse[] _tribes = new Ellipse[MaxSlots];   // round type icon (ImageBrush fill)
+        private readonly TextBlock[] _tribeCounts = new TextBlock[MaxSlots];
         private readonly TextBlock[] _lastOpp = new TextBlock[MaxSlots];
         private readonly bool[] _shifted = new bool[MaxSlots];
 
@@ -92,6 +108,7 @@ namespace HsbgCardLookup.Ui
         public bool ShowRating { get; set; } = true;
         public bool ShowDeltas { get; set; } = true;
         public bool ShowTiers { get; set; } = true;
+        public bool ShowTribes { get; set; } = true;
         public bool ShowLastOpp { get; set; } = true;
         public bool DimDead { get; set; } = true;
         /// <summary>Duos layout: teamed slot geometry (rows arrive team-ordered from BgMmr).</summary>
@@ -144,6 +161,17 @@ namespace HsbgCardLookup.Ui
                     Stretch = Stretch.Uniform, IsHitTestVisible = false, Visibility = Visibility.Collapsed
                 };
                 RenderOptions.SetBitmapScalingMode(tier, BitmapScalingMode.HighQuality);
+                var tribe = new Ellipse
+                {
+                    Stroke = TribeIcons.Ring, IsHitTestVisible = false, Visibility = Visibility.Collapsed,
+                    Effect = new DropShadowEffect { BlurRadius = 3, ShadowDepth = 0, Opacity = 0.8 }
+                };
+                var tribeCount = new TextBlock
+                {
+                    Foreground = Brushes.White, FontWeight = FontWeights.Bold,
+                    IsHitTestVisible = false, Visibility = Visibility.Collapsed,
+                    Effect = new DropShadowEffect { BlurRadius = 3, ShadowDepth = 0, Opacity = 0.9 }
+                };
                 var swords = new TextBlock
                 {
                     Text = "⚔", Foreground = Swords, FontWeight = FontWeights.Bold,
@@ -151,7 +179,7 @@ namespace HsbgCardLookup.Ui
                     Effect = new DropShadowEffect { BlurRadius = 3, ShadowDepth = 0, Opacity = 0.9 }
                 };
                 _names[i] = name; _ratings[i] = rating; _arrows[i] = arrow;
-                _labels[i] = border; _tiers[i] = tier; _lastOpp[i] = swords;
+                _labels[i] = border; _tiers[i] = tier; _tribes[i] = tribe; _tribeCounts[i] = tribeCount; _lastOpp[i] = swords;
             }
         }
 
@@ -165,6 +193,8 @@ namespace HsbgCardLookup.Ui
             {
                 canvas.Children.Add(_labels[i]);
                 canvas.Children.Add(_tiers[i]);
+                canvas.Children.Add(_tribes[i]);
+                canvas.Children.Add(_tribeCounts[i]);
                 canvas.Children.Add(_lastOpp[i]);
             }
             canvas.SizeChanged += OnCanvasSizeChanged;
@@ -185,6 +215,8 @@ namespace HsbgCardLookup.Ui
                 {
                     canvas.Children.Remove(_labels[i]);
                     canvas.Children.Remove(_tiers[i]);
+                    canvas.Children.Remove(_tribes[i]);
+                    canvas.Children.Remove(_tribeCounts[i]);
                     canvas.Children.Remove(_lastOpp[i]);
                 }
             }
@@ -240,6 +272,15 @@ namespace HsbgCardLookup.Ui
                 }
                 else _tiers[i].Visibility = Visibility.Collapsed;
 
+                var tribeIcon = ShowTribes ? TribeIcons.BrushFor(r.Tribe) : null;
+                _tribes[i].Fill = tribeIcon;
+                _tribes[i].Opacity = dim ? 0.65 : 1.0;
+                _tribes[i].Visibility = tribeIcon != null ? Visibility.Visible : Visibility.Collapsed;
+                bool showCount = tribeIcon != null && r.TribeCount > 0;
+                _tribeCounts[i].Text = showCount ? r.TribeCount.ToString() : "";
+                _tribeCounts[i].Foreground = dim ? Dead : Brushes.White;
+                _tribeCounts[i].Visibility = showCount ? Visibility.Visible : Visibility.Collapsed;
+
                 _lastOpp[i].Visibility = ShowLastOpp && r.IsLastOpponent ? Visibility.Visible : Visibility.Collapsed;
             }
             UpdateLayout();
@@ -255,6 +296,8 @@ namespace HsbgCardLookup.Ui
             _shifted[i] = false;
             _labels[i].Visibility = Visibility.Collapsed;
             _tiers[i].Visibility = Visibility.Collapsed;
+            _tribes[i].Visibility = Visibility.Collapsed;
+            _tribeCounts[i].Visibility = Visibility.Collapsed;
             _lastOpp[i].Visibility = Visibility.Collapsed;
         }
 
@@ -304,10 +347,36 @@ namespace HsbgCardLookup.Ui
                 Canvas.SetLeft(t, tierLeft);
                 Canvas.SetTop(t, tierTop);
 
+                // Minion type: directly under the tier icon, sharing its left edge; its count sits
+                // right of it, vertically centred on the icon.
+                var m = _tribes[i];
+                m.Width = m.Height = RefTribeH * scale;
+                m.StrokeThickness = 1.5 * scale;
+                double tribeTop = tierTop + RefTierH * scale;
+                // The shield's box is 33 wide (35 tall × the PNG's 96:102); centre the disc under it.
+                double tribeLeft = tierLeft + (RefTierH * (96.0 / 102.0) - RefTribeH) * 0.5 * scale;
+                Canvas.SetLeft(m, tribeLeft);
+                Canvas.SetTop(m, tribeTop);
+
+                var c = _tribeCounts[i];
+                c.FontSize = 16.0 * scale;
+                c.Height = RefTribeH * scale;
+                c.Padding = new Thickness(0, 4.0 * scale, 0, 0);
+                double countLeft = tribeLeft + (RefTribeH + RefTribeGap) * scale;
+                Canvas.SetLeft(c, countLeft);
+                Canvas.SetTop(c, tribeTop);
+
+                // ⚔ keeps its old spot under the tier unless the type icon is there — then it steps
+                // right of the icon (and its count, when shown), so nothing overlaps.
                 var s = _lastOpp[i];
                 s.FontSize = 16.0 * scale;
-                Canvas.SetLeft(s, tierLeft + 4.0 * scale);
-                Canvas.SetTop(s, tierTop + RefTierH * scale);
+                bool tribeShown = m.Visibility == Visibility.Visible;
+                bool countShown = c.Visibility == Visibility.Visible;
+                double swordsLeft = !tribeShown ? tierLeft + 4.0 * scale
+                    : countShown ? countLeft + (RefTribeCountW + RefTribeGap) * scale
+                    : countLeft;
+                Canvas.SetLeft(s, swordsLeft);
+                Canvas.SetTop(s, tribeTop);
             }
         }
 

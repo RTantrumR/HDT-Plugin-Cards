@@ -9,6 +9,7 @@ using Hearthstone_Deck_Tracker;                 // Core
 using Hearthstone_Deck_Tracker.Enums;           // Region
 using HearthDb.Enums;                            // GameTag
 using HsbgCardLookup.Config;
+using HsbgCardLookup.Data;
 using HsbgCardLookup.Net;
 using HsbgCardLookup.Ui;
 
@@ -28,6 +29,13 @@ namespace HsbgCardLookup.Game
         private readonly PluginConfig _config;
         private readonly Dispatcher _ui;
         private readonly Action<string> _log;
+
+        // The game's own per-opponent minion-type counts (what its leaderboard tile shows), read from
+        // client memory — see LeaderboardRaceScry. Keyed by hero entity id; refreshed every RaceMs.
+        private readonly LeaderboardRaceScry _raceScry;
+        private Dictionary<int, Dictionary<int, int>> _races;
+        private DateTime _lastRaceRead = DateTime.MinValue;
+        private const int RaceMs = 2000;
 
         private DateTime _lastPoll = DateTime.MinValue;
         private volatile string _lastSig;
@@ -62,6 +70,7 @@ namespace HsbgCardLookup.Game
         public BgMmr(PluginConfig config, Dispatcher ui, Action<string> log)
         {
             _config = config; _ui = ui; _log = log;
+            _raceScry = new LeaderboardRaceScry(log);
             HookGameEvents();
         }
 
@@ -97,6 +106,17 @@ namespace HsbgCardLookup.Game
                     string region = CurrentRegion();
                     if (region != null) EnsureBlob(region, isDuos);
                     UpdateOpponentTracking();
+                    // Minion types: one memory walk per RaceMs while either surface wants them. A
+                    // failed walk keeps the last good counts rather than blanking the icons.
+                    if (TribesOnPortraits || TribesInPanel)
+                    {
+                        if (_races == null || (now - _lastRaceRead).TotalMilliseconds >= RaceMs)
+                        {
+                            _lastRaceRead = now;
+                            var r = _raceScry.Read();
+                            if (r != null) _races = r;
+                        }
+                    }
                     rows = isDuos ? ReadStandingsDuos() : ReadStandings();
                 }
 
@@ -107,11 +127,12 @@ namespace HsbgCardLookup.Game
                     + (_config.ShowMmrLabels ? "L" : "") + (_config.ShowMmrPanel ? "P" : "")
                     + "n" + _config.OpponentNameMode + (_config.ShowMmrRating ? "r" : "")
                     + (_config.ShowMmrDeltas ? "a" : "") + "t" + _config.TavernTierMode
-                    + (_config.ShowLastOpponent ? "o" : "") + (_config.DimDeadPlayers ? "d" : "");
+                    + (_config.ShowLastOpponent ? "o" : "") + (_config.DimDeadPlayers ? "d" : "")
+                    + "T" + _config.OpponentTribeMode;
                 string sig = show
                     ? flags + "|" + string.Join(",", rows.Select(r =>
                         r.Place + ":" + r.Name + "/" + r.HeroName +
-                        "=" + r.Rating + "/" + r.Delta + "/" + r.TavernTier +
+                        "=" + r.Rating + "/" + r.Delta + "/" + r.TavernTier + "/" + r.Tribe + r.TribeCount +
                         (r.IsDead ? "d" : "") + (r.IsLastOpponent ? "l" : "") + (r.IsCurrentOpponent ? "c" : "")))
                     : "0";
                 if (sig == _lastSig) return;
@@ -128,7 +149,7 @@ namespace HsbgCardLookup.Game
         {
             _lastSig = null;   // any toggle change → rebuild both surfaces on the next poll
             bool master = _config.ShowOpponentMmr;
-            bool portraitAny = master && (_config.ShowMmrLabels || TiersOnPortraits || _config.ShowLastOpponent);
+            bool portraitAny = master && (_config.ShowMmrLabels || TiersOnPortraits || TribesOnPortraits || _config.ShowLastOpponent);
             bool panel = master && _config.ShowMmrPanel;
             Marshal(() =>
             {
@@ -233,6 +254,7 @@ namespace HsbgCardLookup.Game
                         name = string.IsNullOrEmpty(heroName) ? "?" : heroName;
                     }
 
+                    string tribe = TribeFor(e.Id, out int tribeCount);
                     var row = new LeaderboardOverlay.Row
                     {
                         Name = name,
@@ -242,6 +264,8 @@ namespace HsbgCardLookup.Game
                         RatingPending = pending,
                         Delta = delta,
                         TavernTier = pid > 0 && _lastTier.TryGetValue(pid, out var lt) ? lt : 0,
+                        Tribe = tribe,
+                        TribeCount = tribeCount,
                         IsDead = pid > 0 && _dead.Contains(pid),
                         IsLastOpponent = pid > 0 && pid == _lastOpponentId,
                         IsCurrentOpponent = pid > 0 && pid == _trackedOpponentId
@@ -253,6 +277,17 @@ namespace HsbgCardLookup.Game
             }
             catch { }
             return outp;
+        }
+
+        // The game's own "most common minion type" for a player, from the counts its leaderboard tile
+        // holds (LeaderboardRaceScry), decided with the client's exact rule (TribeTally). Live for
+        // every player from the first turn — NOT last-fought data. Null = no counts for that hero
+        // (walk failed, or the server hasn't sent any yet), which the surfaces render as nothing.
+        private string TribeFor(int heroEntityId, out int count)
+        {
+            count = 0;
+            if (heroEntityId <= 0 || _races == null || (!TribesOnPortraits && !TribesInPanel)) return null;
+            return _races.TryGetValue(heroEntityId, out var counts) ? TribeTally.Dominant(counts, out count) : null;
         }
 
         // Exact-case lookup first, then case-insensitive via the canonical-name index (other data
@@ -278,6 +313,7 @@ namespace HsbgCardLookup.Game
         private sealed class DuoRec
         {
             public int Pid;
+            public int EntityId;       // hero entity — the key HDT's last-known-board lookup takes
             public string CardId;
             public string HeroName;    // fallback display name (bot / blank-name lobby slot)
             public int Place;          // 0 = unknown
@@ -357,10 +393,10 @@ namespace HsbgCardLookup.Game
                     try { heroName = e.Card?.Name; } catch { }
 
                     if (!recs.TryGetValue(pid, out var rec))
-                        recs[pid] = new DuoRec { Pid = pid, CardId = cid, HeroName = heroName, Place = place, InPlay = inPlay };
+                        recs[pid] = new DuoRec { Pid = pid, EntityId = e.Id, CardId = cid, HeroName = heroName, Place = place, InPlay = inPlay };
                     else if (inPlay && !rec.InPlay)   // ghost hero copies — prefer the in-play entity
                     {
-                        rec.CardId = cid; rec.HeroName = heroName; rec.Place = place; rec.InPlay = true;
+                        rec.EntityId = e.Id; rec.CardId = cid; rec.HeroName = heroName; rec.Place = place; rec.InPlay = true;
                     }
                 }
                 foreach (var pid in ffPids)
@@ -378,6 +414,7 @@ namespace HsbgCardLookup.Game
                     int rating = 0, delta = 0; bool pending = _players == null;
                     if (name != null) LookupRating(name, out rating, out delta, out pending);
                     else name = string.IsNullOrEmpty(p.HeroName) ? "?" : p.HeroName;
+                    string tribe = TribeFor(p.EntityId, out int tribeCount);
 
                     outp.Add(new LeaderboardOverlay.Row
                     {
@@ -388,6 +425,8 @@ namespace HsbgCardLookup.Game
                         RatingPending = pending,
                         Delta = delta,
                         TavernTier = _lastTier.TryGetValue(p.Pid, out var lt) ? lt : 0,
+                        Tribe = tribe,
+                        TribeCount = tribeCount,
                         IsDead = _dead.Contains(p.Pid),
                         IsLastOpponent = p.Pid == _lastOpponentId,
                         // Both members of the opposing team lean out with their portraits.
@@ -500,7 +539,7 @@ namespace HsbgCardLookup.Game
                 // Portraits/Panel/Both/Off) and the ⚔ marker are all INDEPENDENT, so e.g. tiers can
                 // sit by the portraits with the label box entirely off ("tiers only") — or live only
                 // in the panel with nothing at the portraits at all.
-                bool portraitAny = _config.ShowMmrLabels || TiersOnPortraits || _config.ShowLastOpponent;
+                bool portraitAny = _config.ShowMmrLabels || TiersOnPortraits || TribesOnPortraits || _config.ShowLastOpponent;
                 if (any && portraitAny)
                 {
                     _overlay.ShowNames = _config.ShowMmrLabels
@@ -508,6 +547,7 @@ namespace HsbgCardLookup.Game
                     _overlay.ShowRating = _config.ShowMmrLabels && _config.ShowMmrRating;
                     _overlay.ShowDeltas = _config.ShowMmrLabels && _config.ShowMmrDeltas;
                     _overlay.ShowTiers = TiersOnPortraits;
+                    _overlay.ShowTribes = TribesOnPortraits;
                     _overlay.ShowLastOpp = _config.ShowLastOpponent;
                     _overlay.DimDead = _config.DimDeadPlayers;
                     _overlay.SetStandings(rows);
@@ -548,32 +588,34 @@ namespace HsbgCardLookup.Game
             _panel.ShowRating = _config.ShowMmrRating;
             _panel.ShowDeltas = _config.ShowMmrDeltas;
             _panel.ShowTiers = TiersInPanel;
+            _panel.ShowTribes = TribesInPanel;
             _panel.DimDead = _config.DimDeadPlayers;
         }
 
-        // TavernTierMode ("Off"/"Portraits"/"Panel"/"Both"; unknown/empty = Both) → per-surface bools.
-        /// <summary>Where tavern-tier icons go, resolved from TavernTierMode. Static so anything that
-        /// renders the same surfaces (the settings preview) reads the axis through this one rule instead
-        /// of re-implementing it and drifting.</summary>
-        internal static bool TiersOnPortraitsFor(PluginConfig config)
-        {
-            var m = config.TavernTierMode;
-            return string.IsNullOrEmpty(m)
-                || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(m, "Portraits", StringComparison.OrdinalIgnoreCase);
-        }
+        // Location axes ("Off"/"Portraits"/"Panel"/"Both"; unknown/empty = Both) → per-surface bools.
+        // Static so anything that renders the same surfaces (the settings preview) reads an axis
+        // through this one rule instead of re-implementing it and drifting.
+        private static bool OnPortraits(string mode) =>
+            string.IsNullOrEmpty(mode)
+            || string.Equals(mode, "Both", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "Portraits", StringComparison.OrdinalIgnoreCase);
+
+        private static bool InPanel(string mode) =>
+            string.IsNullOrEmpty(mode)
+            || string.Equals(mode, "Both", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "Panel", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Where tavern-tier icons go, resolved from TavernTierMode.</summary>
+        internal static bool TiersOnPortraitsFor(PluginConfig config) => OnPortraits(config.TavernTierMode);
+        internal static bool TiersInPanelFor(PluginConfig config) => InPanel(config.TavernTierMode);
+        /// <summary>Where the opponents' minion-type icons go, resolved from OpponentTribeMode.</summary>
+        internal static bool TribesOnPortraitsFor(PluginConfig config) => OnPortraits(config.OpponentTribeMode);
+        internal static bool TribesInPanelFor(PluginConfig config) => InPanel(config.OpponentTribeMode);
 
         private bool TiersOnPortraits => TiersOnPortraitsFor(_config);
-
-        internal static bool TiersInPanelFor(PluginConfig config)
-        {
-            var m = config.TavernTierMode;
-            return string.IsNullOrEmpty(m)
-                || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase);
-        }
-
         private bool TiersInPanel => TiersInPanelFor(_config);
+        private bool TribesOnPortraits => TribesOnPortraitsFor(_config);
+        private bool TribesInPanel => TribesInPanelFor(_config);
 
         private void HideIfShown()
         {
@@ -701,6 +743,7 @@ namespace HsbgCardLookup.Game
             _dead.Clear(); _lastTier.Clear(); _teammate.Clear();
             _trackedOpponentId = 0; _trackedOpponentTeammateId = 0;
             _combatOpponentId = 0; _lastOpponentId = 0; _wasCombat = false;
+            _races = null; _lastRaceRead = DateTime.MinValue; _raceScry.ResetMatch();
         }
 
         private static IEnumerable<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity> Snapshot(

@@ -365,6 +365,21 @@ namespace HsbgCardLookup.Ui
                     var img = new Image { Width = cardW, Stretch = Stretch.Uniform };
                     ArtImage.SetDecode(img, decode);
                     ArtImage.SetCard(img, m.Card);
+                    // The card's name sits BEHIND the art: it shows while the render is still loading
+                    // and stays if the render never arrives (a card missing from the art pack and the
+                    // CDN used to leave a bordered, card-sized hole — live-reported 2026-09-05). The
+                    // WrapPanel gives every cell the row's full height, so the name centres in it.
+                    var name = new TextBlock
+                    {
+                        Text = m.Card?.Name ?? "", Foreground = UiKit.TextSecondary,
+                        FontSize = Math.Max(11, cardW * 0.09), FontWeight = FontWeights.SemiBold,
+                        TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
+                        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(6), Width = cardW - 12
+                    };
+                    var cell = new Grid { Width = cardW };
+                    cell.Children.Add(name);
+                    cell.Children.Add(img);
                     _artWrap.Children.Add(new Border
                     {
                         BorderBrush = m.Emph == 2 ? UniqueBrush : TribeBrush,
@@ -372,7 +387,7 @@ namespace HsbgCardLookup.Ui
                         CornerRadius = new CornerRadius(10),
                         Padding = new Thickness(2),
                         Margin = new Thickness(0, 0, ArtGap, ArtGap),
-                        Child = img
+                        Child = cell
                     });
                 }
 

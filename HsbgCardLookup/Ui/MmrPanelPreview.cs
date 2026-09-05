@@ -100,6 +100,7 @@ namespace HsbgCardLookup.Ui
                 _panel.ShowRating = _config.ShowMmrRating;
                 _panel.ShowDeltas = _config.ShowMmrDeltas;
                 _panel.ShowTiers = Game.BgMmr.TiersInPanelFor(_config);
+                _panel.ShowTribes = Game.BgMmr.TribesInPanelFor(_config);
                 _panel.DimDead = _config.DimDeadPlayers;
                 _panel.IsDuos = _duos;
 
