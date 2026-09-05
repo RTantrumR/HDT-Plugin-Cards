@@ -84,6 +84,11 @@ namespace HsbgCardLookup.Config
         public bool ShowLastOpponent { get; set; } = true;
         // Content: gray out players who are already dead.
         public bool DimDeadPlayers { get; set; } = true;
+        // Where each opponent's most common minion type shows (an icon under the tavern-tier icon by
+        // the portrait / a column in the panel): "Off", "Portraits", "Panel", "Both" (default) — the
+        // same location axis as TavernTierMode. The type comes from HDT's last-known board snapshot
+        // of that player, so it is blank until they've been fought once.
+        public string OpponentTribeMode { get; set; } = "Both";
         // The standings panel's placement (canvas fractions, like the trinket boxes).
         public HudPlacement MmrPanelHud { get; set; } = new HudPlacement();
 

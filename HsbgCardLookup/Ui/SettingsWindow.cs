@@ -457,10 +457,10 @@ namespace HsbgCardLookup.Ui
                 _status.Text = v
                     ? "Standings panel on — drag it anywhere over the game; drag its top-right corner to resize."
                     : "Standings panel off.";
-                NormalizeTierMode();   // panel off → panel-involving tier modes snap to their fallback
+                NormalizeLocationModes();   // panel off → panel-involving tier/type modes snap to their fallback
                 Changed();
                 UpdateArrangeRow();
-                foreach (var r in _modeRefresh) r();   // the tier cycler skips panel options while it is off
+                foreach (var r in _modeRefresh) r();   // the tier/type cyclers skip panel options while it is off
             }, get: () => _config.ShowMmrPanel));
 
             // ── What ───────────────────────────────────────────────────────────────────────────
@@ -488,7 +488,7 @@ namespace HsbgCardLookup.Ui
                 Changed();
             }));
 
-            NormalizeTierMode();   // e.g. a fresh config: panel off + mode "Both" → show as "Portraits"
+            NormalizeLocationModes();   // e.g. a fresh config: panel off + mode "Both" → show as "Portraits"
             stack.Children.Add(CycleRow("Tavern tiers",
                 new[] { "Both", "Portraits", "Panel", "Off" },
                 new[] { "Both", "Portraits", "Panel", "Off" },
@@ -499,9 +499,17 @@ namespace HsbgCardLookup.Ui
                 () => _config.TavernTierMode, v => _config.TavernTierMode = v,
                 // The two panel-involving locations simply aren't offered while the panel is off,
                 // rather than being shown greyed out.
-                v => _config.ShowMmrPanel
-                     || (!string.Equals(v, "Both", StringComparison.OrdinalIgnoreCase)
-                         && !string.Equals(v, "Panel", StringComparison.OrdinalIgnoreCase))));
+                PanelLocationSelectable));
+
+            stack.Children.Add(CycleRow("Minion types",
+                new[] { "Both", "Portraits", "Panel", "Off" },
+                new[] { "Both", "Portraits", "Panel", "Off" },
+                new[] { "Each player's most common minion type — under the tier icon by the portrait, and in the panel.",
+                        "Type icon under each leaderboard portrait's tier icon only.",
+                        "Type icon inside the side panel only.",
+                        "No minion-type icons anywhere." },
+                () => _config.OpponentTribeMode, v => _config.OpponentTribeMode = v,
+                PanelLocationSelectable));
 
             stack.Children.Add(ToggleRow("Mark last fought opponent (⚔)", _config.ShowLastOpponent, v =>
             {
@@ -544,18 +552,30 @@ namespace HsbgCardLookup.Ui
             return _hudPreview.Root;
         }
 
-        // With the panel surface off, the panel-involving tier modes make no sense — snap them to the
+        // With the panel surface off, the panel-involving locations make no sense — snap them to the
         // equivalent panel-less choice ("Both"→"Portraits", "Panel"→"Off") so the selection always
-        // sits on an option that's actually selectable.
-        private void NormalizeTierMode()
+        // sits on an option that's actually selectable. Applies to every Off/Portraits/Panel/Both axis
+        // (tavern tiers, minion types).
+        private void NormalizeLocationModes()
         {
             if (_config.ShowMmrPanel) return;
-            var m = _config.TavernTierMode;
-            if (string.IsNullOrEmpty(m) || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase))
-                _config.TavernTierMode = "Portraits";
-            else if (string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase))
-                _config.TavernTierMode = "Off";
+            _config.TavernTierMode = PanelLessMode(_config.TavernTierMode);
+            _config.OpponentTribeMode = PanelLessMode(_config.OpponentTribeMode);
         }
+
+        private static string PanelLessMode(string m)
+        {
+            if (string.IsNullOrEmpty(m) || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)) return "Portraits";
+            if (string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase)) return "Off";
+            return m;
+        }
+
+        // CycleRow gate for a location axis: the panel-involving choices are offered only while the
+        // panel surface is on.
+        private bool PanelLocationSelectable(string v) =>
+            _config.ShowMmrPanel
+            || (!string.Equals(v, "Both", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(v, "Panel", StringComparison.OrdinalIgnoreCase));
 
         private void BuildDarkGifts()
         {
@@ -853,9 +873,17 @@ namespace HsbgCardLookup.Ui
                 _status.Text = hints != null && i < hints.Length ? hints[i] : label;
                 Changed();
             };
-            left.MouseLeftButtonUp += (s, e) => { e.Handled = true; step(-1); };
-            right.MouseLeftButtonUp += (s, e) => { e.Handled = true; step(+1); };
-            box.MouseLeftButtonUp += (s, e) => { e.Handled = true; step(+1); };
+            // ONE handler, on the box, and the direction comes from WHERE the release landed — not from
+            // which glyph caught the event. The arrow glyphs are a few px wide and nothing captures
+            // the mouse, so a quick click that let go a pixel off "◄" used to fall through to the
+            // box's forward handler: two lefts + two rights no longer round-tripped (live-reported
+            // 2026-09-05). The whole left strip (padding + glyph + its margin, with slack) steps back.
+            const double backZoneW = 26;
+            box.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                step(e.GetPosition(box).X < backZoneW ? -1 : +1);
+            };
             box.Cursor = Cursors.Hand;
 
             DockPanel.SetDock(box, Dock.Right);
