@@ -34,7 +34,7 @@ namespace HsbgCardLookup
         private Game.BgHud _bgHud;                               // always-on trinkets/anomaly HUD
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
-        private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
+        private Game.DarkGiftWatcher _darkGifts;                  // opt-in Dark Gift list (“?” marker by the button)
         private Ui.ArrangeBanner _arrangeBanner;                  // in-game strip shown while positioning
         private Ui.SearchButton _searchButton;                    // in-game 🔍 button by the card-list book
         private SettingsWindow _settings;
@@ -436,7 +436,7 @@ namespace HsbgCardLookup
         {
             _bgHud?.OnSettingsChanged();    // show/hide the trinkets/anomaly HUD per its toggles
             _bgMmr?.OnSettingsChanged();    // opponent-MMR reader on/off
-            _darkGifts?.OnSettingsChanged(); // Dark Gift hover panel on/off
+            _darkGifts?.OnSettingsChanged(); // Dark Gift panel on/off
             _searchButton?.OnSettingsChanged(); // in-game search button on/off
         }
 
@@ -534,7 +534,7 @@ namespace HsbgCardLookup
             _bgHud?.Poll();      // throttled read of trinkets/anomaly → always-on HUD
             _recorder?.Poll();   // opt-in per-match board snapshots → CSV at match end
             _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
-            _darkGifts?.Poll();  // opt-in Dark Gift list (shows while hovering the Dark Discovery button)
+            _darkGifts?.Poll();  // opt-in Dark Gift list (“?” marker above the Dark Discovery button)
             _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
             PollBackgroundUpdateCheck(); // re-attempt every 20 min so a long session isn't frozen at launch-time state
         }

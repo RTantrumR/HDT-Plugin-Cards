@@ -14,32 +14,32 @@ using HsbgCardLookup.Ui;
 namespace HsbgCardLookup.Game
 {
     /// <summary>
-    /// Opt-in in-match feature: the Dark Gift list panel, summoned by HOVERING the in-game Dark
-    /// Discovery button. The hover signal is HearthMirror's <c>GetBigCardState()</c> — the game's own
-    /// "enlarged tooltip card" state, whose CardId equals the hovered entity's card id — no
-    /// screen-geometry guessing. (Nightmare Lord Xavius' hero power follows the same offering rules,
-    /// but is deliberately NOT a trigger — user direction.)
+    /// Opt-in in-match feature: the Dark Gift list panel, opened by CLICKING the "?" marker that sits
+    /// just above the in-game Dark Discovery button (<see cref="DarkGiftMarker"/>). It used to summon
+    /// itself on hovering that button, off HearthMirror's <c>GetBigCardState()</c>; the panel is big,
+    /// so hovering the button to read its own tooltip kept throwing it across the board. Now nothing
+    /// appears unless the player asks for it, and it lands out of the way (pinned top-right) when it
+    /// does. (Nightmare Lord Xavius' hero power follows the same offering rules, but is deliberately
+    /// NOT a trigger — user direction.)
     ///
-    /// The panel spawns about-centered — its right edge ~350px (scaled by HS width) LEFT of the
-    /// cursor-on-button, so the button stays clickable and its tooltip readable — and lists every
-    /// Dark Gift still obtainable this game (offerable-now glowing / future dimmed / expired omitted),
-    /// floats guaranteed-tribe-relevant gifts to the top in green (from turn 6 one offer is the
-    /// player's most common minion type). It appears once the button has been hovered for a short
-    /// dwell (so a cursor sweeping past it doesn't flash the panel) and stays while hovered, while
-    /// the cursor is on the panel, or a short linger. The header carries only NON-duplicated info
-    /// (the button's own tooltip already states tier/uses/cost).
+    /// The marker is on screen only while the panel would have something to say: in a Battlegrounds
+    /// match, with at least one gift still offerable and at least one of the three uses left. Clicking
+    /// it toggles the panel, which lists every Dark Gift still obtainable this game (offerable-now
+    /// glowing / future dimmed / expired omitted) and floats guaranteed-tribe-relevant gifts to the
+    /// top in green (from turn 6 one offer is the player's most common minion type). It closes on the
+    /// marker again, on the panel's ✕, on a click anywhere outside it, and by itself the moment the
+    /// player presses the real button. The header carries only NON-duplicated info (the button's own
+    /// tooltip already states tier/uses/cost).
     ///
     /// Live state read off the button entity (BG36_Button_DarkGift, probe-verified 2026-08-05):
     /// TAG_SCRIPT_DATA_NUM_2 = uses left, NUM_3/NUM_4 = current min/max offered tier, LOCK_VISUAL =
-    /// pre-turn-3 lock. Driven by <c>IPlugin.OnUpdate</c> (hover checked every tick for snappiness;
-    /// entity reads throttled). Pure read — never mutates the game.
+    /// pre-turn-3 lock, EXHAUSTED = pressed this turn. Driven by <c>IPlugin.OnUpdate</c> (entity reads
+    /// throttled). Pure read — never mutates the game.
     /// </summary>
     public sealed class DarkGiftWatcher
     {
         private const string ButtonCardId = "BG36_Button_DarkGift";
         private const int StateMs = 500;     // entity re-read throttle
-        private const int LingerMs = 400;    // bridge unhover → panel-hover (and tooltip flicker)
-        private const int ShowDelayMs = 100; // hover dwell before the panel appears
 
         private readonly CardStore _store;
         private readonly PluginConfig _config;
@@ -47,19 +47,19 @@ namespace HsbgCardLookup.Game
         private readonly Action<string> _log;
 
         private DateTime _lastStateRead = DateTime.MinValue;
-        private DateTime _lastHoverUtc = DateTime.MinValue;
-        private DateTime _hoverSince = DateTime.MinValue;   // start of the current hover streak
-        private bool _dwellMet;                             // streak has passed ShowDelayMs
         private volatile string _lastSig;
-        private bool _visibleNow;
+        private volatile bool _open;          // the player has the panel open (toggled by the marker)
+        private bool _markerShown;            // last value pushed to the marker (avoids marshalling every tick)
         private volatile bool _lastHadPool;   // a pool was rendered on the last content build (mode cycling)
         private readonly bool _preview;       // a detached instance driving a settings preview
         private DarkGiftPanel _panel;
+        private DarkGiftMarker _marker;       // created and touched on the canvas thread only
 
         // Live state (refreshed on the throttle; read on the OnUpdate thread only).
         private int _buttonId = -1;
         private bool _buttonFound;
         private bool _locked;
+        private bool _exhausted;              // button pressed this turn (clears next turn)
         private int _uses = -1, _tierMin, _tierMax;
         private int _turn;
         private readonly List<string> _topTribes = new List<string>();   // most common board type(s)
@@ -77,10 +77,6 @@ namespace HsbgCardLookup.Game
         private uint _lastFgPid;
         private bool _lastFgIsHs;
 
-#if DEBUG
-        private string _lastBigCard;   // hover-signal verification logging (Debug builds only)
-#endif
-
         public DarkGiftWatcher(CardStore store, PluginConfig config, Dispatcher ui, Action<string> log)
             : this(store, config, ui, log, preview: false) { }
 
@@ -95,7 +91,7 @@ namespace HsbgCardLookup.Game
             if (!preview) HookGameEvents();
         }
 
-        // ── Poll (OnUpdate thread, ~100ms — hover must feel instant) ────────────────────────────────
+        // ── Poll (OnUpdate thread, ~100ms; entity reads throttled to StateMs) ───────────────────────
         public void Poll()
         {
             try
@@ -116,67 +112,39 @@ namespace HsbgCardLookup.Game
 
                 if (!isBg || _ended || !IsForeground()) { HideIfShown(); return; }
 
-                // Hover signal: the game's big-card (tooltip) state. Checked every tick.
-                string big = null;
-                try
-                {
-                    var b = HearthMirror.Reflection.Client?.GetBigCardState();
-                    if (b.HasValue) big = b.Value.CardId;
-                }
-                catch { }
-#if DEBUG
-                if (big != _lastBigCard) { _lastBigCard = big; _log?.Invoke("[DarkGifts] bigCard=" + (big ?? "(none)")); }
-#endif
+                // Plain throttle, no "read again immediately while the button is missing" clause: the
+                // read sweeps every entity, and a lobby where Dark Gifts are simply not active would
+                // pay for that sweep on every 100ms tick of the whole match.
                 var now = DateTime.UtcNow;
-                bool hoverBtn = string.Equals(big, ButtonCardId, StringComparison.OrdinalIgnoreCase);
-                if (hoverBtn)
-                {
-                    // A gap longer than the linger starts a NEW hover streak; a shorter tooltip
-                    // flicker doesn't restart the dwell (same bridge the linger already provides).
-                    if ((now - _lastHoverUtc).TotalMilliseconds > LingerMs) _hoverSince = now;
-                    _lastHoverUtc = now;
-                    if ((now - _hoverSince).TotalMilliseconds >= ShowDelayMs) _dwellMet = true;
-                }
-
-                bool panelUnderMouse = _panel != null && _panel.IsUnderMouse;
-                bool lingering = (now - _lastHoverUtc).TotalMilliseconds < LingerMs;
-                if (!lingering && !panelUnderMouse) _dwellMet = false;   // hover ended → re-dwell next time
-                bool show = _dwellMet;
-
-                if (show && ((now - _lastStateRead).TotalMilliseconds >= StateMs || !_buttonFound))
+                if ((now - _lastStateRead).TotalMilliseconds >= StateMs)
                 {
                     _lastStateRead = now;
                     ReadLiveState();
                 }
 
-                // The rules only need the turn — the button entity just enriches the header — so a
-                // button hover always shows the panel.
+                // The rules only need the turn — the button entity just enriches the header.
                 int targetTurn = _turn;
 
-                // Nothing offerable yet (locked, pre-turn-3) → no panel at all. This also suppresses
-                // the game's own big-card presentations of the LOCKED button (e.g. the match-start
-                // intro splash), which fire GetBigCardState without any hover.
-                if (show)
-                {
-                    bool anyNow = false;
-                    foreach (var g2 in _gifts ?? DarkGifts.All)
-                        if (PossibleInLobby(g2) && g2.IsCurrent(targetTurn)) { anyNow = true; break; }
-                    show = anyNow;
-                }
+                // Is there anything to say at all? The marker requires the Dark Discovery BUTTON ENTITY
+                // to exist — that, not the calendar, is what says this lobby runs Dark Gifts (the old
+                // hover trigger got this for free, since only a real button can be hovered). Then:
+                // nothing offerable yet (every gift's min turn is 3, which is also the button's
+                // unlock), or all 3 uses spent (NUM_2 hits 0, CANT_READY flips) → no marker, no panel.
+                bool anyNow = false;
+                foreach (var g2 in _gifts ?? DarkGifts.All)
+                    if (PossibleInLobby(g2) && g2.IsCurrent(targetTurn)) { anyNow = true; break; }
+                bool available = _buttonFound && _uses != 0 && anyNow;
 
-                // All 3 Dark Gifts spent (button's NUM_2 = uses left hits 0, CANT_READY flips) → nothing
-                // can be offered for the rest of the match, so the panel stays away. Gated on the
-                // button being found: before that _uses is -1, never a false 0.
-                if (show && _buttonFound && _uses == 0) show = false;
+                if (!available) _open = false;
+                bool show = _open;
 
                 string mode = NormMode(_config.DarkGiftMode);
-                string sig = show
-                    ? $"{targetTurn}|{_locked}|{string.Join(",", _topTribes)}|{_tierMin}|{_tierMax}|{_lobbyTribes.Count}|{mode}"
+                string sig = available
+                    ? $"{show}|{targetTurn}|{_locked}|{string.Join(",", _topTribes)}|{_tierMin}|{_tierMax}|{_lobbyTribes.Count}|{mode}"
                     : "hidden";
-                if (sig == _lastSig) return;
-                bool fresh = show && !_visibleNow;   // hidden → shown: re-anchor at the cursor
-                _visibleNow = show;
+                if (sig == _lastSig && _markerShown == available) return;
                 _lastSig = sig;
+                _markerShown = available;
 
                 List<DarkGiftPanel.Row> rows = null;
                 List<DarkGiftPanel.MinionArt> minions = null;
@@ -190,13 +158,14 @@ namespace HsbgCardLookup.Game
                     poolCaption = content.PoolCaption;
                     minions = content.Minions;
                     poolTotal = content.PoolTotal;
-                    if (content.Suppress) _visibleNow = false;
                 }
 
 #if DEBUG
-                _log?.Invoke("[DarkGifts] panel " + (rows == null ? "hide" : $"show ({rows.Count} rows, fresh={fresh}, \"{header}\")"));
+                _log?.Invoke("[DarkGifts] marker " + (available ? "on" : "off") + ", panel "
+                    + (rows == null ? "hide" : $"show ({rows.Count} rows, \"{header}\")"));
 #endif
-                Marshal(() => ApplyUi(rows, header, poolCaption, minions, poolTotal, fresh));
+                bool markerVisible = available;
+                Marshal(() => ApplyUi(markerVisible, rows, header, poolCaption, minions, poolTotal));
             }
             catch { /* OnUpdate must never throw */ }
         }
@@ -263,7 +232,15 @@ namespace HsbgCardLookup.Game
                 {
                     _buttonFound = true;
                     _buttonId = btn.Id;
-                    _uses = Tag(btn, GameTag.TAG_SCRIPT_DATA_NUM_2);
+                    int uses = Tag(btn, GameTag.TAG_SCRIPT_DATA_NUM_2);
+                    bool exhausted = Tag(btn, GameTag.EXHAUSTED) != 0;
+                    // The player just pressed the real button — the three choices are coming up, so
+                    // the panel gets out of the way (it would be covering them). EXHAUSTED flips on
+                    // the press and clears next turn, so only its RISING edge counts; the uses
+                    // countdown is the backup signal in case the two tags land in different frames.
+                    if ((exhausted && !_exhausted) || (_uses > 0 && uses >= 0 && uses < _uses)) _open = false;
+                    _exhausted = exhausted;
+                    _uses = uses;
                     _tierMin = Tag(btn, GameTag.TAG_SCRIPT_DATA_NUM_3);
                     _tierMax = Tag(btn, GameTag.TAG_SCRIPT_DATA_NUM_4);
                     _locked = Tag(btn, GameTag.LOCK_VISUAL) != 0;
@@ -654,16 +631,20 @@ namespace HsbgCardLookup.Game
             return string.Join(" • ", parts);
         }
 
-        // ── Panel (UI thread) ───────────────────────────────────────────────────────────────────────
-        private void ApplyUi(List<DarkGiftPanel.Row> rows, string header, string poolCaption,
-            List<DarkGiftPanel.MinionArt> minions, int poolTotal, bool fresh)
+        // ── Marker + panel (canvas thread) ──────────────────────────────────────────────────────────
+        private void ApplyUi(bool markerVisible, List<DarkGiftPanel.Row> rows, string header,
+            string poolCaption, List<DarkGiftPanel.MinionArt> minions, int poolTotal)
         {
             try
             {
+                EnsureMarker();
+                _marker.SetVisible(markerVisible);
+                _marker.SetOpen(rows != null);
+
                 if (rows == null) { _panel?.Hide(); return; }
                 EnsurePanel();
-                _panel.SetContent(header, rows, poolCaption, minions, poolTotal);   // sets window width…
-                if (fresh) _panel.PlaceForSummon();   // …which the cursor-referenced placement uses
+                _panel.SetContent(header, rows, poolCaption, minions, poolTotal);   // sets the panel width…
+                _panel.PlaceTopRight();   // …which the right-edge pin uses, so this runs on every build
                 _panel.Show();
             }
             catch (Exception ex) { try { _log?.Invoke("[DarkGifts] ApplyUi error: " + ex.Message); } catch { } }
@@ -674,22 +655,48 @@ namespace HsbgCardLookup.Game
             if (_panel != null) return;
             _panel = new DarkGiftPanel();
             _panel.ModeCycleRequested += CycleMode;
+            _panel.CloseRequested += ClosePanel;
+        }
+
+        private void EnsureMarker()
+        {
+            if (_marker != null) return;
+            _marker = new DarkGiftMarker(_log);
+            _marker.Clicked += ToggleOpen;
+        }
+
+        // Canvas thread (the marker's click). The next poll (~100ms) builds or drops the content.
+        private void ToggleOpen()
+        {
+            _open = !_open;
+            _lastSig = null;
+        }
+
+        // Canvas thread: the panel's ✕, and the mouse hook's click-off. A click ON the marker is not a
+        // click-off — the marker's own toggle handles it, and closing here too would just reopen it.
+        private void ClosePanel()
+        {
+            if (_marker != null && _marker.IsUnderMouse) return;
+            _open = false;
+            _lastSig = null;
         }
 
         private void HideIfShown()
         {
             _lastSig = null;
-            _visibleNow = false;
-            _dwellMet = false;   // a hover after this hide starts a fresh dwell
-            if (_panel != null) { var p = _panel; Marshal(() => { try { p.Hide(); } catch { } }); }
+            _open = false;
+            _markerShown = false;
+            var p = _panel; var m = _marker;
+            if (p != null || m != null)
+                Marshal(() => { try { p?.Hide(); m?.SetVisible(false); } catch { } });
         }
 
         public void CloseAll()
         {
-            var p = _panel;
-            _panel = null;
-            if (p == null) return;
-            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() => p.Close())); }
+            var p = _panel; var m = _marker;
+            _panel = null; _marker = null;
+            if (p == null && m == null) return;
+            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() => { p?.Close(); m?.Close(); })); }
             catch { }
         }
 
@@ -701,12 +708,11 @@ namespace HsbgCardLookup.Game
 
         private void ResetMatch()
         {
-            _buttonId = -1; _buttonFound = false; _uses = -1; _locked = false;
+            _buttonId = -1; _buttonFound = false; _uses = -1; _locked = false; _exhausted = false;
             _topTribes.Clear();
             _lobbyTribes.Clear();
             _gifts = null;   // re-resolve next match (picks up background data refreshes)
-            _lastSig = null; _visibleNow = false;
-            _lastHoverUtc = DateTime.MinValue; _hoverSince = DateTime.MinValue; _dwellMet = false;
+            _lastSig = null; _open = false; _markerShown = false;
         }
 
         // ── Foreground gating (mirrors BgMmr/BgHud) ─────────────────────────────────────────────────
