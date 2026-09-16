@@ -31,12 +31,13 @@ namespace HsbgCardLookup.Ui
     /// </summary>
     public sealed class DarkGiftMarker
     {
-        // Measured off assets/Dark Gifts Showcase_both.png (a 1738x1079 crop whose offset was fixed by
-        // the game's book/gear pills, already calibrated in SearchButton): the Dark Discovery gem is a
-        // ~76px circle centred at (1593, 312), its "uses left" badge reaching up to y ~= 247. The
-        // marker sits centred above it, just clear of that badge. NEEDS A LIVE CHECK.
+        // Calibrated LIVE (2026-09-16), which moved RefCx 33px right of the screenshot-derived guess:
+        // the first build logged its rect at canvas 1919x1079, the user marked where the marker had
+        // actually landed, and the gem's axis — read off its crisp "uses left" badge — sat 33px to the
+        // right of that. So the gem's centre line is x ~= 1626 and its badge reaches up to y ~= 247;
+        // the marker sits centred on that line, its bottom just clear of the badge.
         private const double RefW = 1920, RefH = 1080;
-        private const double RefCx = 1593, RefCy = 222, RefD = 38;
+        private const double RefCx = 1626, RefCy = 222, RefD = 38;
         private const double MinScale = 0.60, MaxScale = 2.00;
 
         // The game's own pills are near-black with a worn-metal rim (SearchButton matches them); the
@@ -50,7 +51,7 @@ namespace HsbgCardLookup.Ui
         private readonly Action<string> _log;
         private Border _root;
         private TextBlock _glyph;
-        private bool _attached, _open, _hover;
+        private bool _attached, _open, _hover, _dim;
         private string _lastLayoutLog;
 
         /// <summary>Raised on the canvas thread when the marker is clicked.</summary>
@@ -106,6 +107,24 @@ namespace HsbgCardLookup.Ui
             ApplyColors();
         }
 
+        /// <summary>Dimmed = there IS a Dark Discovery button, but the panel would come up empty in the
+        /// current display mode (minions-only before the guaranteed-type rule is live, say). The marker
+        /// stays where it is instead of vanishing — its spot should be predictable — but it is faded
+        /// and does not respond to a click, since opening nothing is worse than not opening. Canvas
+        /// thread.</summary>
+        public void SetDimmed(bool dim)
+        {
+            if (_dim == dim) return;
+            _dim = dim;
+            if (_root != null)
+            {
+                _root.Opacity = dim ? 0.45 : 1.0;
+                _root.Cursor = dim ? Cursors.Arrow : Cursors.Hand;
+                _root.ToolTip = dim ? "Dark Gifts — nothing to show yet" : "Dark Gifts";
+            }
+            ApplyColors();
+        }
+
         /// <summary>Remove the marker from the canvas (plugin unload). Canvas thread.</summary>
         public void Close()
         {
@@ -147,6 +166,7 @@ namespace HsbgCardLookup.Ui
             _root.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
+                if (_dim) return;
                 try { Clicked?.Invoke(); } catch { }
             };
 
@@ -158,10 +178,11 @@ namespace HsbgCardLookup.Ui
         private void ApplyColors()
         {
             if (_root == null) return;
-            Color rim = _open ? UiKit.Accent : _hover ? RimHover : RimColor;
-            _root.Background = new SolidColorBrush(_hover ? FaceHover : FaceColor);
+            bool hot = _hover && !_dim;   // a dimmed marker does not light up under the cursor either
+            Color rim = _open ? UiKit.Accent : hot ? RimHover : RimColor;
+            _root.Background = new SolidColorBrush(hot ? FaceHover : FaceColor);
             _root.BorderBrush = new SolidColorBrush(rim);
-            _glyph.Foreground = new SolidColorBrush(_open || _hover ? rim : GlyphColor);
+            _glyph.Foreground = new SolidColorBrush(_open || hot ? rim : GlyphColor);
         }
 
         private void Layout()

@@ -136,15 +136,25 @@ namespace HsbgCardLookup.Game
                 bool available = _buttonFound && _uses != 0 && anyNow;
 
                 if (!available) _open = false;
-                bool show = _open;
 
                 string mode = NormMode(_config.DarkGiftMode);
                 string sig = available
-                    ? $"{show}|{targetTurn}|{_locked}|{string.Join(",", _topTribes)}|{_tierMin}|{_tierMax}|{_lobbyTribes.Count}|{mode}"
+                    ? $"{_open}|{targetTurn}|{_locked}|{string.Join(",", _topTribes)}|{_tierMin}|{_tierMax}|{_lobbyTribes.Count}|{mode}"
                     : "hidden";
                 if (sig == _lastSig && _markerShown == available) return;
                 _lastSig = sig;
                 _markerShown = available;
+
+                // The content is built whether or not the panel is open: the marker has to know
+                // whether clicking it would produce anything. It can't — minions-only mode draws
+                // nothing until the guaranteed-type rule is live at turn 6 — and a marker that opens
+                // an empty panel is the complaint this dimming answers. Built once per signature
+                // change, not per tick: BuildContent walks the whole card store for the pool.
+                var content = available ? BuildContent(targetTurn, mode) : null;
+                bool hasContent = content != null && !content.Suppress && content.Rows != null
+                    && (content.Rows.Count > 0 || content.PoolCaption != null);
+                if (!hasContent) _open = false;   // next tick's signature differs → one extra rebuild, then stable
+                bool show = _open && hasContent;
 
                 List<DarkGiftPanel.Row> rows = null;
                 List<DarkGiftPanel.MinionArt> minions = null;
@@ -152,7 +162,6 @@ namespace HsbgCardLookup.Game
                 string header = null, poolCaption = null;
                 if (show)
                 {
-                    var content = BuildContent(targetTurn, mode);
                     rows = content.Rows;
                     header = content.Header;
                     poolCaption = content.PoolCaption;
@@ -161,11 +170,11 @@ namespace HsbgCardLookup.Game
                 }
 
 #if DEBUG
-                _log?.Invoke("[DarkGifts] marker " + (available ? "on" : "off") + ", panel "
+                _log?.Invoke("[DarkGifts] marker " + (!available ? "off" : hasContent ? "on" : "dimmed") + ", panel "
                     + (rows == null ? "hide" : $"show ({rows.Count} rows, \"{header}\")"));
 #endif
-                bool markerVisible = available;
-                Marshal(() => ApplyUi(markerVisible, rows, header, poolCaption, minions, poolTotal));
+                bool markerVisible = available, markerDim = !hasContent;
+                Marshal(() => ApplyUi(markerVisible, markerDim, rows, header, poolCaption, minions, poolTotal));
             }
             catch { /* OnUpdate must never throw */ }
         }
@@ -632,13 +641,14 @@ namespace HsbgCardLookup.Game
         }
 
         // ── Marker + panel (canvas thread) ──────────────────────────────────────────────────────────
-        private void ApplyUi(bool markerVisible, List<DarkGiftPanel.Row> rows, string header,
+        private void ApplyUi(bool markerVisible, bool markerDim, List<DarkGiftPanel.Row> rows, string header,
             string poolCaption, List<DarkGiftPanel.MinionArt> minions, int poolTotal)
         {
             try
             {
                 EnsureMarker();
                 _marker.SetVisible(markerVisible);
+                _marker.SetDimmed(markerDim);
                 _marker.SetOpen(rows != null);
 
                 if (rows == null) { _panel?.Hide(); return; }
