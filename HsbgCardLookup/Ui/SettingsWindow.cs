@@ -623,7 +623,7 @@ namespace HsbgCardLookup.Ui
             stack.Children.Add(new TextBlock
             {
                 Text = "In match: a “?” sits above the Dark Discovery button — click it and the panel opens "
-                     + "in the top-right corner. Close it with the “?”, the ✕, or a click anywhere else. "
+                     + "in the top-right corner. Close it with the ✕ or a click anywhere else. "
                      + "Scroll it with the wheel; right-click it to cycle these modes.",
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap

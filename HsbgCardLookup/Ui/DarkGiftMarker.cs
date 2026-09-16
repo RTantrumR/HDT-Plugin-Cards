@@ -26,22 +26,25 @@ namespace HsbgCardLookup.Ui
     /// ARE the attachment mechanism — hence the one-line-per-change layout log, which is the ground
     /// truth for calibrating against a screenshot.
     ///
-    /// The marker keeps a high Z index: the panel opens pinned to the top-right corner and covers this
-    /// spot, and the marker has to stay clickable on top of it to work as an on/off toggle.
+    /// While the panel is open the marker is HIDDEN, not layered on top of it: the panel opens pinned
+    /// to the top-right corner and covers this spot, and a "?" floating over the panel that explains
+    /// the gifts reads like a smudge on it. Closing is then the panel's own ✕, a click outside it, or
+    /// the press of the real button.
     /// </summary>
     public sealed class DarkGiftMarker
     {
-        // Calibrated LIVE (2026-09-16), which moved RefCx 33px right of the screenshot-derived guess:
-        // the first build logged its rect at canvas 1919x1079, the user marked where the marker had
-        // actually landed, and the gem's axis — read off its crisp "uses left" badge — sat 33px to the
-        // right of that. So the gem's centre line is x ~= 1626 and its badge reaches up to y ~= 247;
-        // the marker sits centred on that line, its bottom just clear of the badge.
+        // Calibrated LIVE off a DESKTOP capture (2026-09-16) — a Hearthstone-internal screenshot does
+        // not contain HDT's overlay, so the marker cannot be measured in one. With marker and gem in
+        // the same frame no crop offset has to be guessed: the marker's 34px face equals its 34 DIP,
+        // so that capture is 1:1 with canvas coordinates, and the gem's axis — the centre of its
+        // "uses left" badge ring, confirmed by the centre of its two side clamps — sat 16px left of
+        // where the logged rect had put the marker. Hence 1609. The badge's top edge is y ~= 251, so
+        // the marker's bottom clears it by ~10px.
         private const double RefW = 1920, RefH = 1080;
-        private const double RefCx = 1626, RefCy = 222, RefD = 38;
+        private const double RefCx = 1609, RefCy = 222, RefD = 38;
         private const double MinScale = 0.60, MaxScale = 2.00;
 
-        // The game's own pills are near-black with a worn-metal rim (SearchButton matches them); the
-        // open state swaps the rim/glyph to the plugin's gold accent so the toggle reads as "on".
+        // The game's own pills are near-black with a worn-metal rim (SearchButton matches them).
         private static readonly Color FaceColor = Color.FromArgb(0xE6, 0x22, 0x1C, 0x18);
         private static readonly Color FaceHover = Color.FromArgb(0xF0, 0x33, 0x2B, 0x25);
         private static readonly Color RimColor = Color.FromRgb(0x8F, 0x88, 0x7E);
@@ -51,7 +54,7 @@ namespace HsbgCardLookup.Ui
         private readonly Action<string> _log;
         private Border _root;
         private TextBlock _glyph;
-        private bool _attached, _open, _hover, _dim;
+        private bool _attached, _hover, _dim;
         private string _lastLayoutLog;
 
         /// <summary>Raised on the canvas thread when the marker is clicked.</summary>
@@ -96,15 +99,6 @@ namespace HsbgCardLookup.Ui
             }
             _root.Visibility = Visibility.Visible;
             Layout();
-        }
-
-        /// <summary>The panel's open state — the marker shows it (gold rim), so the toggle reads as on
-        /// or off at a glance. Canvas thread.</summary>
-        public void SetOpen(bool open)
-        {
-            if (_open == open) return;
-            _open = open;
-            ApplyColors();
         }
 
         /// <summary>Dimmed = there IS a Dark Discovery button, but the panel would come up empty in the
@@ -170,8 +164,6 @@ namespace HsbgCardLookup.Ui
                 try { Clicked?.Invoke(); } catch { }
             };
 
-            // Above the panel, which opens over this spot — the marker is the toggle that closes it.
-            Panel.SetZIndex(_root, 50);
             try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
         }
 
@@ -179,10 +171,9 @@ namespace HsbgCardLookup.Ui
         {
             if (_root == null) return;
             bool hot = _hover && !_dim;   // a dimmed marker does not light up under the cursor either
-            Color rim = _open ? UiKit.Accent : hot ? RimHover : RimColor;
             _root.Background = new SolidColorBrush(hot ? FaceHover : FaceColor);
-            _root.BorderBrush = new SolidColorBrush(rim);
-            _glyph.Foreground = new SolidColorBrush(_open || hot ? rim : GlyphColor);
+            _root.BorderBrush = new SolidColorBrush(hot ? RimHover : RimColor);
+            _glyph.Foreground = new SolidColorBrush(hot ? RimHover : GlyphColor);
         }
 
         private void Layout()

@@ -26,10 +26,10 @@ namespace HsbgCardLookup.Game
     /// match, with at least one gift still offerable and at least one of the three uses left. Clicking
     /// it toggles the panel, which lists every Dark Gift still obtainable this game (offerable-now
     /// glowing / future dimmed / expired omitted) and floats guaranteed-tribe-relevant gifts to the
-    /// top in green (from turn 6 one offer is the player's most common minion type). It closes on the
-    /// marker again, on the panel's ✕, on a click anywhere outside it, and by itself the moment the
-    /// player presses the real button. The header carries only NON-duplicated info (the button's own
-    /// tooltip already states tier/uses/cost).
+    /// top in green (from turn 6 one offer is the player's most common minion type). The panel covers
+    /// the marker's spot, so the marker hides while it is open and the way out is the panel's ✕, a
+    /// click anywhere outside it, or pressing the real button. The header carries only NON-duplicated
+    /// info (the button's own tooltip already states tier/uses/cost).
     ///
     /// Live state read off the button entity (BG36_Button_DarkGift, probe-verified 2026-08-05):
     /// TAG_SCRIPT_DATA_NUM_2 = uses left, NUM_3/NUM_4 = current min/max offered tier, LOCK_VISUAL =
@@ -647,9 +647,11 @@ namespace HsbgCardLookup.Game
             try
             {
                 EnsureMarker();
-                _marker.SetVisible(markerVisible);
+                // Hidden while the panel is up — the panel covers this spot, and a "?" sitting on top
+                // of the thing it opens looks like a blemish on it (user-reported). The panel's own ✕
+                // and the click-off take over as the way out.
+                _marker.SetVisible(markerVisible && rows == null);
                 _marker.SetDimmed(markerDim);
-                _marker.SetOpen(rows != null);
 
                 if (rows == null) { _panel?.Hide(); return; }
                 EnsurePanel();
