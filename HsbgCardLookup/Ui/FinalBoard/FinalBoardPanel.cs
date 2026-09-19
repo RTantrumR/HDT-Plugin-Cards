@@ -64,6 +64,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private const double BandH = 58;
         private const double ContentLift = 15;
         private const double BandLift = ContentLift + 30;
+        // The turn sub-view is pulled up into the strip the band lift leaves empty under the band.
+        private const double TurnViewLift = 30;
 
         // Reign's sizes, and they matter: HDT's Trinket/HeroPower are drawn for 110x110.
         private const double MinionSize = 134;
@@ -100,8 +102,11 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private TextBlock _rank, _mmr, _turn, _hero, _biggest, _duration;
 
         private readonly FinalBoardStatsView _stats = new FinalBoardStatsView();
+        private readonly FinalBoardTurnView _turnView = new FinalBoardTurnView();
         private readonly FinalBoardOptions _options;
+        private MatchStats _currentStats;
         private StackPanel _boardView;
+        private ScrollViewer _scroll;
         private Border _tabBoard, _tabStats;
         private StackPanel _chrome;
         private Border _chromeBar;
@@ -125,6 +130,14 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// showing only a board is not the player deciding they prefer boards.</summary>
         private bool _showStats = _rememberedStats;
 
+        /// <summary>
+        /// The turn sub-view is open, under the Stats tab. It has no tab of its own and is never
+        /// remembered: a panel opens on the table, and the turn is one click and one Esc deep.
+        /// </summary>
+        private bool _showTurn;
+
+        public bool InTurnView => _showTurn;
+
         /// <param name="options">
         /// What to draw. Null means everything, which is what the PNG export and any caller with no
         /// config wants — a record that has been filtered down on screen is still whole on disk.
@@ -132,6 +145,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
         public FinalBoardPanel(FinalBoardOptions options = null)
         {
             _options = options ?? new FinalBoardOptions();
+            _stats.TurnClicked = OpenTurn;
+            _turnView.Back = () => Back();
 
             _trinkets = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             _powers = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -171,6 +186,33 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         /// <summary>Rendered size in canvas units, i.e. reference size times the current scale.</summary>
         public Size RenderedSize => new Size(PanelW * _scale.ScaleX, _root.ActualHeight * _scale.ScaleY);
+
+        /// <summary>
+        /// Keep the panel no taller than <paramref name="maxRef"/> reference pixels by giving the
+        /// scrolling body only the height that is left, after everything that does not scroll —
+        /// the chrome, the header, the band, the footer — has taken its own. Called by the host
+        /// after every layout that could change the height; the export never calls it.
+        /// </summary>
+        public bool LimitHeight(double maxRef)
+        {
+            if (_scroll == null || maxRef <= 0) return false;
+            // Read, never re-lay out: the first version reset MaxHeight to unlimited and forced a
+            // layout to measure, which raised SizeChanged, which called this again — HDT's UI thread
+            // spun on that forever (2026-09-06). The scroll viewer already knows its content's full
+            // height (ExtentHeight) whatever its current limit, and the rest of the panel is the
+            // root's height less the viewer's own.
+            double others = _root.ActualHeight - _scroll.ActualHeight;
+            double content = _scroll.ExtentHeight;
+            if (others < 0 || content <= 0) return false;
+            double allowed = Math.Max(120, maxRef - others);
+            double wanted = content > allowed ? allowed : double.PositiveInfinity;
+            bool same = double.IsPositiveInfinity(wanted)
+                ? double.IsPositiveInfinity(_scroll.MaxHeight)
+                : Math.Abs(wanted - _scroll.MaxHeight) < 0.5;
+            if (same) return false;
+            _scroll.MaxHeight = wanted;
+            return true;   // a layout follows; the host fits again on its SizeChanged
+        }
 
         public double Scale
         {
@@ -351,7 +393,24 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _boardView.Children.Add(boardBox);
             rows.Children.Add(_boardView);
 
-            rows.Children.Add(_stats.Root);
+            // The stats table and the turn view scroll when the panel would otherwise be taller than
+            // the screen: a 19-turn table at the panel's preferred scale does not fit a 1080p
+            // client, and shrinking the whole panel to fit it made every number smaller for the
+            // sake of the last rows. The host sets the limit (LimitHeight); unlimited by default,
+            // which is what the PNG export wants.
+            var scrolling = new StackPanel();
+            scrolling.Children.Add(_stats.Root);
+            scrolling.Children.Add(_turnView.Root);
+            _scroll = new ScrollViewer
+            {
+                Content = scrolling,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Background = Brushes.Transparent,   // hit-testable, so the wheel reaches it
+                Padding = new Thickness(0),
+            };
+            try { _scroll.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = UiKit.ThinScrollBarStyle(4); } catch { }
+            rows.Children.Add(_scroll);
 
             var footer = new Grid { Margin = new Thickness(4, 6, 4, 0) };
             footer.Children.Add(_playerName);
@@ -414,6 +473,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             b.MouseLeftButtonUp += (s, e) =>
             {
                 _showStats = _rememberedStats = stats;   // a real choice, so it is the one remembered
+                _showTurn = false;
                 ApplyView();
                 e.Handled = true;
             };
@@ -421,7 +481,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         /// <param name="action">Read late: the host wires the callbacks after construction.</param>
-        private static Border GlyphButton(Shape glyph, string tooltip, Brush hover, Func<Action> action)
+        internal static Border GlyphButton(Shape glyph, string tooltip, Brush hover, Func<Action> action)
         {
             var rest = UiKit.TextMuted;
             glyph.Stroke = rest;
@@ -493,13 +553,45 @@ namespace HsbgCardLookup.Ui.FinalBoard
             if (!stats && board) _showStats = false;
             else if (stats && !board) _showStats = true;
 
+            bool turn = _showTurn && _showStats && stats;
+
             Show(_tabStats, stats && board);
             Show(_tabBoard, stats && board);
 
             _boardView.Visibility = (!_showStats && board) ? Visibility.Visible : Visibility.Collapsed;
-            _stats.Root.Visibility = (_showStats && stats) ? Visibility.Visible : Visibility.Collapsed;
+            _stats.Root.Visibility = (_showStats && stats && !turn) ? Visibility.Visible : Visibility.Collapsed;
+            _turnView.Root.Visibility = turn ? Visibility.Visible : Visibility.Collapsed;
+            // The band sits 30px above its row's floor (BandLift), and that empty strip is air the
+            // turn view does not need: three boards with their headers are tall, so the sub-view
+            // is pulled up into it (user, 2026-09-06). The lift is on the scroll viewer, not inside
+            // it — content above a scroll viewer's origin is clipped, a child of the Grid drawn
+            // over the band row is not. Hiding the header and painting for the sub-view was tried
+            // the same day and turned down: the hero and Reign's art stay.
+            if (_scroll != null) _scroll.Margin = turn ? new Thickness(0, -TurnViewLift, 0, 0) : new Thickness(0);
             Paint(_tabStats, _showStats);
             Paint(_tabBoard, !_showStats);
+        }
+
+        // ── the turn sub-view ───────────────────────────────────────────────────────────────────
+
+        internal void OpenTurn(int index)
+        {
+            var s = _currentStats;
+            if (s == null || s.Turns == null || index < 0 || index >= s.Turns.Count) return;
+            _turnView.Show(s, index, m => new HdtControls.BattlegroundsMinion(EntityFor(m.CardId, m.Tags)));
+            _showStats = true;
+            _showTurn = true;
+            ApplyView();
+        }
+
+        /// <summary>Step out of the turn sub-view. False when there was nothing to step out of —
+        /// which is how the host knows an Esc should close the panel instead.</summary>
+        public bool Back()
+        {
+            if (!_showTurn) return false;
+            _showTurn = false;
+            ApplyView();
+            return true;
         }
 
         private static void Show(UIElement el, bool on)
@@ -600,6 +692,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _emptyBoard.Visibility = _board.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
             var biggest = rec.Stats != null ? CardOf(rec.Stats.HighestMinionCardId) : null;
+            _currentStats = rec.Stats;
+            _showTurn = false;
             _stats.Show(rec.Stats, biggest != null ? biggest.Name : null, _options);
             ApplyView();
         }
@@ -672,6 +766,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             catch { _art = null; }
             return _art;
         }
+
 
         /// <summary>The Dark Gift medallion, loaded once on the same terms as the panel artwork.
         /// Reign's, converted from his WebP; a bigger source can replace the file alone.</summary>

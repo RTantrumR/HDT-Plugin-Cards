@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Game.FinalBoard;
@@ -30,6 +31,12 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private const double TierIconH = 20;
 
         private readonly StackPanel _root = new StackPanel();
+
+        /// <summary>
+        /// A turn row was clicked, with its index into <see cref="MatchStats.Turns"/>. Only rows of
+        /// turns that carry a shop snapshot are clickable, and none are while this is unset.
+        /// </summary>
+        public Action<int> TurnClicked;
 
         public FrameworkElement Root => _root;
 
@@ -258,17 +265,13 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         // ── the series ──────────────────────────────────────────────────────────────────────────
-        private static UIElement TurnTable(MatchStats s)
+        private UIElement TurnTable(MatchStats s)
         {
             var rows = new StackPanel();
             rows.Children.Add(HeaderRow());
 
-            bool alt = false;
-            foreach (var t in s.Turns)
-            {
-                rows.Children.Add(TurnRow(t, alt));
-                alt = !alt;
-            }
+            for (int i = 0; i < s.Turns.Count; i++)
+                rows.Children.Add(TurnRow(s.Turns[i], i, (i & 1) == 1));
             return rows;
         }
 
@@ -320,7 +323,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return tb;
         }
 
-        private static UIElement TurnRow(TurnStat t, bool alt)
+        private UIElement TurnRow(TurnStat t, int index, bool alt)
         {
             var g = Row();
             g.Height = RowH;
@@ -340,8 +343,26 @@ namespace HsbgCardLookup.Ui.FinalBoard
             for (int i = 0; i < Kinds.Length; i++)
                 if (counts[i] > 0) Put(g, Heads.Length + i, KindCell(Kinds[i], counts[i]));
 
-            if (!alt) return g;
-            return new Border { Background = UiKit.Br(Color.FromArgb(0x1A, 0x39, 0x47, 0x5E)), Child = g };
+            // Transparent rather than no background: a row has to be hit-testable for the click
+            // below to reach it, and a Border with nothing painted is not.
+            var rest = alt ? UiKit.Br(Color.FromArgb(0x1A, 0x39, 0x47, 0x5E)) : Brushes.Transparent;
+            var row = new Border { Background = rest, Child = g };
+            var onClick = TurnClicked;
+            if (onClick == null || (t.SnapStart == null && t.SnapEnd == null && t.SnapPreCombat == null))
+                return row;
+
+            // A turn with snapshots opens on a click. The press is swallowed so the host does not
+            // read it as the start of a panel drag; the release is the click, as on the tabs.
+            row.Cursor = Cursors.Hand;
+            row.MouseEnter += (s, e) => row.Background = HoverBg;
+            row.MouseLeave += (s, e) => row.Background = rest;
+            row.MouseLeftButtonDown += (s, e) => e.Handled = true;
+            row.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                try { onClick(index); } catch { }
+            };
+            return row;
         }
 
         /// <summary>A zero renders as nothing at all — an empty cell says "none of these" faster than a nought does, and keeps the eye on the turns where something happened.</summary>
@@ -506,6 +527,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         private static readonly Brush Green = Frozen(Color.FromRgb(0x6D, 0xEB, 0x6C));
         private static readonly Brush Red = Frozen(Color.FromRgb(0xEC, 0x69, 0x69));
+        private static readonly Brush HoverBg = Frozen(Color.FromArgb(0x40, 0x39, 0x47, 0x5E));
 
         private static Brush Frozen(Color c)
         {

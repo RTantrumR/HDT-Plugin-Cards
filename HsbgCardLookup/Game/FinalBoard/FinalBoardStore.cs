@@ -93,6 +93,22 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// Write one record. Atomic: a temp file is written and flushed first, then swapped in, so a
         /// crash mid-write cannot leave a half-JSON file that <see cref="Load"/> would then skip.
         /// </summary>
+        /// <summary>Remove one record and its file. Used when a live record turns out to have been
+        /// written under a key HDT then did not use, and its content has moved to HDT's.</summary>
+        public bool Delete(string gameId)
+        {
+            if (string.IsNullOrEmpty(gameId)) return false;
+            string path;
+            if (_paths.TryGetValue(gameId, out path))
+            {
+                try { if (File.Exists(path)) File.Delete(path); }
+                catch (Exception ex) { Log("Delete failed for " + gameId + ": " + ex.Message); return false; }
+            }
+            _paths.Remove(gameId);
+            _byId.Remove(gameId);
+            return true;
+        }
+
         public bool Save(FinalBoardRecord rec)
         {
             if (rec == null || string.IsNullOrEmpty(rec.GameId)) return false;
@@ -226,6 +242,8 @@ namespace HsbgCardLookup.Game.FinalBoard
             if (rec.Placement == 0 && g.Placement != 0) { rec.Placement = g.Placement; changed = true; }
             if (string.IsNullOrEmpty(rec.EndedAt) && !string.IsNullOrEmpty(g.EndTime)) { rec.EndedAt = g.EndTime; changed = true; }
             if (string.IsNullOrEmpty(rec.HeroCardId) && !string.IsNullOrEmpty(g.Hero)) { rec.HeroCardId = g.Hero; changed = true; }
+            if (g.Duos && !rec.Duos) { rec.Duos = true; changed = true; }
+            if (g.FriendlyGame && !rec.FriendlyGame) { rec.FriendlyGame = true; changed = true; }
             if ((rec.Board == null || rec.Board.Count == 0))
             {
                 var board = BoardOf(g);

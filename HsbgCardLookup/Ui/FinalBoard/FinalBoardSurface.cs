@@ -52,6 +52,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// </summary>
         public Action Closed;
 
+        /// <summary>How much bigger than its 920px reference the panel is drawn when the client has the width (user, 2026-09-06: "scaled up by like 20-25%").</summary>
+        private const double PreferredScale = 1.18;
+        private bool _fitting;   // LimitHeight re-lays out the panel, which raises SizeChanged, which calls back here
+
         // Gesture state; canvas thread only (the low-level hook posts back onto it).
         private bool _dragging, _moved;
         private Point _startCursor;
@@ -93,6 +97,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _wrap.Children.Add(_toast);
 
             _panel.Root.MouseLeftButtonDown += (s, e) => { e.Handled = true; BeginDrag(e); };
+            // A turn row opening its snapshots makes the panel taller after it was fitted, so it
+            // is fitted again: on a canvas it now overflows it scales down, and the position is
+            // re-clamped so the new bottom stays on screen.
+            _panel.Root.SizeChanged += (s, e) => { if (IsVisible && !_dragging) FitAndPlace(); };
             try { OverlayExtensions.SetIsOverlayHitTestVisible(_panel.Root, true); } catch { }
 
             _toastHide = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
@@ -131,6 +139,19 @@ namespace HsbgCardLookup.Ui.FinalBoard
             bool was = IsVisible;
             HideCore();
             if (was) { try { Closed?.Invoke(); } catch { } }
+        }
+
+        /// <summary>Debug scaffolding: open one turn's sub-view on the shown match. Canvas thread.</summary>
+        public void OpenTurn(int index)
+        {
+            if (IsVisible) _panel.OpenTurn(index);
+        }
+
+        /// <summary>Esc: a sub-view steps back to the table; the top level closes the panel.</summary>
+        public void Escape()
+        {
+            if (IsVisible && _panel.Back()) return;
+            Hide();
         }
 
         private void HideCore()
@@ -216,7 +237,21 @@ namespace HsbgCardLookup.Ui.FinalBoard
             double w = _panel.Root.ActualWidth, h = _panel.Root.ActualHeight;
             if (w <= 0 || h <= 0) return;
 
-            _panel.Scale = Math.Min(1.0, Math.Min(cw * 0.96 / w, ch * 0.94 / h));
+            // Width decides the scale, height decides how much of the body scrolls. The panel is
+            // drawn a fifth larger than its reference size wherever the client is wide enough,
+            // and never shrunk for height: a long match scrolls its table instead of shrinking
+            // every number on the screen to fit the last rows.
+            if (_fitting) return;
+            _fitting = true;
+            try
+            {
+                _panel.Scale = Math.Min(PreferredScale, cw * 0.96 / w);
+                // A changed limit re-lays the panel out and raises SizeChanged, which brings us
+                // back here with the new height; placing now would use the old one.
+                if (_panel.LimitHeight(ch * 0.94 / _panel.Scale)) return;
+            }
+            catch (Exception ex) { _log?.Invoke("[FinalBoardSurface] fit error: " + ex.Message); return; }
+            finally { _fitting = false; }
 
             var size = _panel.RenderedSize;
             double left, top;

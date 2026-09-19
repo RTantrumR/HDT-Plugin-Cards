@@ -88,6 +88,26 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// <summary>The live counters, or null outside a match.</summary>
         public MatchStats Current => _stats;
 
+        /// <summary>
+        /// Bumped every time the stats reach a state worth having on disk: a shop turn closed with
+        /// its three snapshots, or a combat resolved. <see cref="FinalBoardCapture"/> compares it to
+        /// the revision it last wrote and saves on any change — so each turn is on disk the moment
+        /// it is complete, and a crash costs at most the turn in progress.
+        /// </summary>
+        public int Revision { get; private set; }
+
+        /// <summary>
+        /// Continue an earlier record's stats instead of starting fresh — the case where HDT (or the
+        /// plugin) restarted mid-match and the turns already written must not be replaced by the
+        /// few that follow. Only takes effect before the match's first poll has created its own.
+        /// </summary>
+        public void Adopt(MatchStats s)
+        {
+            if (s == null || _stats != null) return;
+            if (s.Turns == null) s.Turns = new List<TurnStat>();
+            _stats = s;
+        }
+
         /// <summary>Called by <see cref="FinalBoardCapture"/> when it writes the record.</summary>
         public MatchStats TakeSnapshot()
         {
@@ -224,6 +244,7 @@ namespace HsbgCardLookup.Game.FinalBoard
                 _turn.Turn, _turn.TavernTier, _turn.Actions, _turn.ShopSeconds, _turn.GoldSpent,
                 _turn.GoldLeftover, _turn.MinionsBought, _turn.MinionsSold, _turn.Rolls));
             _combatDealt = _combatTaken = 0;
+            Revision++;
         }
 
         /// <summary>
@@ -259,6 +280,7 @@ namespace HsbgCardLookup.Game.FinalBoard
 
             Log(string.Format("combat after turn {0} | {1} | dealt={2} taken={3} (hp {4}->{5})",
                 t.Turn, t.CombatResult, t.DamageDealt, t.DamageTaken, t.HeroHpStart, t.HeroHpEnd));
+            Revision++;
         }
 
         /// <summary>
@@ -653,7 +675,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             s.Board != null ? s.Board.Count : 0, s.Hand != null ? s.Hand.Count : 0,
             s.Shop != null ? s.Shop.Count.ToString() : "-", s.Enchants != null ? s.Enchants.Count : 0);
 
-        private static bool IsDuos(GameV2 g)
+        internal static bool IsDuos(GameV2 g)
         {
             try { return g.IsBattlegroundsDuosMatch; } catch { return false; }
         }

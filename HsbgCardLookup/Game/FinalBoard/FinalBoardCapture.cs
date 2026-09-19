@@ -52,6 +52,13 @@ namespace HsbgCardLookup.Game.FinalBoard
         private Extras _pending;
         private HashSet<string> _knownIds;
 
+        // The record of the match in progress, written to disk every time the tracker's revision
+        // moves — each closed turn and each resolved combat. A crash, a mid-match restart or an HDT
+        // that never records the game can then cost at most the turn in progress, never the match.
+        private FinalBoardRecord _live;
+        private int _savedRevision;
+        private bool _keyWarned;
+
         public FinalBoardCapture(PluginConfig config, FinalBoardStore store, Action<string> log)
         {
             _config = config;
@@ -77,6 +84,9 @@ namespace HsbgCardLookup.Game.FinalBoard
                     _finished = false;
                     _pending = null;
                     _knownIds = null;
+                    _live = null;
+                    _savedRevision = 0;
+                    _keyWarned = false;
                 }
                 if (_endFlag)
                 {
@@ -90,12 +100,27 @@ namespace HsbgCardLookup.Game.FinalBoard
                     }
                 }
 
-                if (_config.RecordMatchHistory) _tracker.Poll();
+                if (_config.RecordMatchHistory)
+                {
+                    var g = Core.Game;
+                    if (_tracker.Current == null) TryAdopt(g);
+                    _tracker.Poll();
+                    if (_tracker.Revision != _savedRevision) SaveLive(g, "turn");
+                }
 
                 if (_finished || !_endedAt.HasValue) return;
                 if ((now - _endedAt.Value).TotalSeconds > CaptureWindowSeconds)
                 {
                     _finished = true;
+                    // HDT did not record the game. Ours is on disk already; close it out with what
+                    // the end of the match can still tell us, so it renders as a finished match.
+                    if (_live != null)
+                    {
+                        _live.EndedAt = DateTime.Now.ToString("o");
+                        _live.Stats = _tracker.TakeSnapshot();
+                        if (_live.Board == null || _live.Board.Count == 0) _live.Board = LastBoard(_live.Stats);
+                        SaveLive(Core.Game, "match end without HDT's record");
+                    }
                     Log("gave up waiting for HDT to record the match; tier-A data will still be imported on the next load");
                     return;
                 }
@@ -131,6 +156,20 @@ namespace HsbgCardLookup.Game.FinalBoard
             var rec = _store.Find(game.StartTime);
             if (rec == null) { Log("merge failed: record missing right after import"); return; }
 
+            // Normally HDT's key is the one the per-turn saves already used, so rec IS the live
+            // record and the import has just filled in placement, rating and the final board. If
+            // the keys differ, the live copy is a duplicate the moment its stats land on HDT's.
+            if (_live != null && !ReferenceEquals(_live, rec))
+            {
+                Log("key mismatch: turns were saved under " + _live.GameId + ", HDT recorded " + game.StartTime + " — moving them");
+                if (string.IsNullOrEmpty(rec.HeroPowerCardId)) rec.HeroPowerCardId = _live.HeroPowerCardId;
+                if (rec.Trinkets == null) rec.Trinkets = _live.Trinkets;
+                if (rec.AnomalyDbfId == 0) { rec.AnomalyDbfId = _live.AnomalyDbfId; rec.AnomalyCardId = _live.AnomalyCardId; }
+                rec.DarkGiftLobby |= _live.DarkGiftLobby;
+                _store.Delete(_live.GameId);
+                _live = rec;
+            }
+
             var x = _pending ?? ReadExtras();
             rec.Source = "live";
             rec.HeroPowerCardId = x.HeroPowerCardId;
@@ -149,6 +188,150 @@ namespace HsbgCardLookup.Game.FinalBoard
                 rec.MmrDelta.HasValue ? rec.MmrDelta.Value.ToString("+#;-#;0") : "?",
                 rec.HeroPowerCardId ?? "-", x.HeroPowerVia,
                 rec.Trinkets != null ? rec.Trinkets.Count : 0, rec.AnomalyCardId ?? "-", rec.Turns));
+        }
+
+        // ── the live record ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The key HDT will file this match under, computed the way HDT computes it at the end:
+        /// <c>CurrentGameStats.StartTime.ToString("o")</c> (GameEventHandler.HandleGameEnd →
+        /// BattlegroundsLastGames.AddGame, read from the decompiled 1.51.15). Using the same rule
+        /// from turn one is what lets the end-of-match import land on the record the turns were
+        /// already written to. One known exception: after a reconnect HDT restores the ORIGINAL
+        /// start time at the very end, from an internal field this plugin cannot read — that case
+        /// surfaces as a key mismatch in <see cref="TryMerge"/>, which moves the turns across.
+        /// Null outside a match.
+        /// </summary>
+        private static string LiveKey(GameV2 g)
+        {
+            try
+            {
+                var stats = g != null ? g.CurrentGameStats : null;
+                if (stats == null || stats.StartTime == DateTime.MinValue) return null;
+                return stats.StartTime.ToString("o");
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// A match already on disk under this key — HDT or the plugin restarted mid-match — is
+        /// continued, not replaced: the tracker adopts its stats before it would create its own.
+        /// </summary>
+        private void TryAdopt(GameV2 g)
+        {
+            try
+            {
+                if (g == null || !g.IsBattlegroundsMatch) return;
+                var key = LiveKey(g);
+                if (key == null) return;
+                var rec = _store.Find(key);
+                if (rec == null || rec.Stats == null || rec.Stats.Turns == null || rec.Stats.Turns.Count == 0) return;
+                _tracker.Adopt(rec.Stats);
+                _live = rec;
+                _savedRevision = _tracker.Revision;
+                Log("resuming " + key + " from disk: " + rec.Stats.Turns.Count + " turn(s) already recorded");
+            }
+            catch (Exception ex) { Log("adopt failed: " + ex.Message); }
+        }
+
+        /// <summary>Write the match in progress: whatever the tracker has, plus everything about the
+        /// match that can be read now. Cheap enough to run once per turn (measured and logged).</summary>
+        private void SaveLive(GameV2 g, string why)
+        {
+            try
+            {
+                var key = LiveKey(g);
+                if (key == null)
+                {
+                    if (!_keyWarned) { Log("no game key yet — the turn stays in memory until there is one"); _keyWarned = true; }
+                    return;
+                }
+
+                var rec = _live;
+                if (rec != null && !string.Equals(rec.GameId, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    // The key moved under us (a reconnect restoring the original start time). Follow
+                    // it: same record, new name — unless that name is already taken, in which case
+                    // both stay and the end-of-match merge sorts it out.
+                    if (_store.Find(key) == null)
+                    {
+                        _store.Delete(rec.GameId);
+                        rec.GameId = key;
+                        rec.StartedAt = key;
+                        Log("game key changed to " + key + "; the record follows it");
+                    }
+                    else rec = null;
+                }
+                if (rec == null) rec = _store.Find(key);
+                if (rec == null) rec = new FinalBoardRecord { GameId = key, StartedAt = key };
+                _live = rec;
+
+                rec.Source = "live";
+                FillLive(g, rec);
+                if (rec.Stats == null || _tracker.Current != null) rec.Stats = _tracker.Current ?? rec.Stats;
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                bool ok = _store.Save(rec);
+                _savedRevision = _tracker.Revision;
+                int turns = rec.Stats != null && rec.Stats.Turns != null ? rec.Stats.Turns.Count : 0;
+                Log(string.Format("{0}: {1} {2} | turns={3} ({4}ms)", why, ok ? "saved" : "SAVE FAILED", rec.GameId, turns, sw.ElapsedMilliseconds));
+            }
+            catch (Exception ex) { Log("SaveLive error: " + ex.Message); }
+        }
+
+        /// <summary>
+        /// The facts about the match readable while it runs. The hero is resolved the way HDT
+        /// resolves it for its own store (the leaderboard entity's card, skin folded to the base
+        /// hero) so the live record and a later import agree on the id.
+        /// </summary>
+        private void FillLive(GameV2 g, FinalBoardRecord rec)
+        {
+            try
+            {
+                if (g == null) return;
+                rec.Duos = MatchStatsTracker.IsDuos(g);
+                try
+                {
+                    int me = g.Player != null ? g.Player.Id : -1;
+                    Entity hero = null;
+                    if (me >= 0 && g.Entities != null)
+                        foreach (var e in g.Entities.Values.ToList())
+                            if (e != null && e.HasTag(GameTag.PLAYER_LEADERBOARD_PLACE) && e.IsControlledBy(me)) { hero = e; break; }
+                    if (hero != null && !string.IsNullOrEmpty(hero.CardId))
+                        rec.HeroCardId = BattlegroundsUtils.GetOriginalHeroId(hero.CardId) ?? hero.CardId;
+                }
+                catch { }
+                if (string.IsNullOrEmpty(rec.HeroName)) rec.HeroName = HeroNameOf(rec.HeroCardId);
+                try
+                {
+                    var s = g.CurrentGameStats;
+                    if (s != null && rec.Rating == 0 && s.BattlegroundsRating > 0) rec.Rating = s.BattlegroundsRating;
+                }
+                catch { }
+
+                var x = ReadExtras();
+                if (!string.IsNullOrEmpty(x.PlayerName)) rec.PlayerName = x.PlayerName;
+                if (x.Turns > rec.Turns) rec.Turns = x.Turns;
+                if (!string.IsNullOrEmpty(x.HeroPowerCardId)) rec.HeroPowerCardId = x.HeroPowerCardId;
+                if (x.Trinkets != null && x.Trinkets.Count > 0) rec.Trinkets = x.Trinkets;
+                if (x.AnomalyDbfId > 0) { rec.AnomalyDbfId = x.AnomalyDbfId; rec.AnomalyCardId = x.AnomalyCardId; }
+                rec.DarkGiftLobby |= x.DarkGiftLobby;
+            }
+            catch (Exception ex) { Log("FillLive error: " + ex.Message); }
+        }
+
+        /// <summary>The last board the turns saw — the pre-combat one of the final turn, which for a
+        /// match HDT never recorded is the closest thing to a final board there is.</summary>
+        private static List<MinionRecord> LastBoard(MatchStats s)
+        {
+            if (s == null || s.Turns == null) return null;
+            for (int i = s.Turns.Count - 1; i >= 0; i--)
+            {
+                var t = s.Turns[i];
+                var snap = t.SnapPreCombat ?? t.SnapEnd ?? t.SnapStart;
+                if (snap != null && snap.Board != null && snap.Board.Count > 0) return snap.Board;
+            }
+            return null;
         }
 
         // ── reads ───────────────────────────────────────────────────────────────────────────────

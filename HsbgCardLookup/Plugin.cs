@@ -122,15 +122,16 @@ namespace HsbgCardLookup
                             };
                         }
                         _finalBoardSurface.Show(rec);
-                        // Esc dismisses, for exactly as long as the panel is up. The consumer runs on
-                        // the hook thread and only decides; the hide itself is marshalled.
+                        // Esc steps back out of a sub-view, or dismisses, for exactly as long as the
+                        // panel is up. The consumer runs on the hook thread and only decides; the
+                        // action itself is marshalled.
                         if (_hotkey != null)
                             _hotkey.EscapeConsumer = fg =>
                             {
                                 if (!IsOurForeground(fg)) return false;
                                 var surface = _finalBoardSurface;
                                 if (surface == null) return false;
-                                try { canvas.Dispatcher.BeginInvoke(new Action(() => { try { surface.Hide(); } catch { } })); }
+                                try { canvas.Dispatcher.BeginInvoke(new Action(() => { try { surface.Escape(); } catch { } })); }
                                 catch { return false; }
                                 return true;
                             };
@@ -219,6 +220,31 @@ namespace HsbgCardLookup
                     _ui?.BeginInvoke(new Action(() =>
                     {
                         var png = System.IO.Path.Combine(PluginConfig.DataDir, "final-board-debug.png");
+                        // SCAFFOLDING too: a marker file next to the PNG makes the newest match open
+                        // on the canvas by itself a few seconds after load, so the live panel can be
+                        // exercised and screenshotted without a click in the settings window.
+                        // If the marker holds a number, that turn's sub-view is opened as well.
+                        var marker = System.IO.Path.Combine(PluginConfig.DataDir, "final-board-autoshow");
+                        if (System.IO.File.Exists(marker))
+                            System.Threading.Tasks.Task.Delay(6000).ContinueWith(_ =>
+                            {
+                                Log("[FinalBoard] debug auto-show");
+                                ShowMatch(newest);
+                                int turn;
+                                string text = null;
+                                try { text = System.IO.File.ReadAllText(marker).Trim(); } catch { }
+                                if (int.TryParse(text, out turn) && turn > 0)
+                                    System.Threading.Tasks.Task.Delay(2000).ContinueWith(__ =>
+                                    {
+                                        try
+                                        {
+                                            var c = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+                                            c?.Dispatcher.BeginInvoke(new Action(() => _finalBoardSurface?.OpenTurn(turn - 1)));
+                                            Log("[FinalBoard] debug auto-show turn " + turn);
+                                        }
+                                        catch (Exception ex) { Log("[FinalBoard] debug auto-show turn failed: " + ex.Message); }
+                                    });
+                            });
                         Ui.FinalBoard.FinalBoardExport.RenderAsync(newest, png,
                             written => Log("[FinalBoard] debug render: " + (written ?? "FAILED")),
                             options: _config.FinalBoardDisplay, chrome: true);
