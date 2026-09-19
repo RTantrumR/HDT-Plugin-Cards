@@ -113,6 +113,7 @@
     <Compile Include="Game\DarkGifts.cs" />
     <Compile Include="Game\DarkGiftWatcher.cs" />
     <Compile Include="Ui\DarkGiftPanel.cs" />
+    <Compile Include="Ui\DarkGiftMarker.cs" />
     <Compile Include="Game\BgMmr.cs" />
     <Compile Include="Ui\LeaderboardOverlay.cs" />
     <Compile Include="Ui\MmrSidePanel.cs" />

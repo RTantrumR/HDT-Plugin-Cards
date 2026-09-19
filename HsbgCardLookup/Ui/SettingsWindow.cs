@@ -260,12 +260,12 @@ namespace HsbgCardLookup.Ui
                 }, BuildMmr));
 
             stack.Children.Add(CategoryRow("Dark Gifts",
-                "Hover the Dark Discovery button for the gift list.",
+                "A “?” by the Dark Discovery button opens the gift list.",
                 () => _config.ShowDarkGifts, v =>
                 {
                     _config.ShowDarkGifts = v;
                     _status.Text = v
-                        ? "Hover the Dark Discovery button in a match to see which Dark Gifts are still obtainable."
+                        ? "In a match, click the “?” above the Dark Discovery button to see which Dark Gifts are still obtainable."
                         : "Dark Gift list off.";
                     Changed();
                 }, BuildDarkGifts));
@@ -589,7 +589,7 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(new TextBlock
             {
-                Text = "What the hover panel shows. Right-clicking the panel in game cycles these too.",
+                Text = "What the panel shows. Right-clicking the panel in game cycles these too.",
                 Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -622,7 +622,8 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(new TextBlock
             {
-                Text = "In match: the panel appears beside the Dark Discovery button while you hover it. "
+                Text = "In match: a “?” sits above the Dark Discovery button — click it and the panel opens "
+                     + "in the top-right corner. Close it with the ✕ or a click anywhere else. "
                      + "Scroll it with the wheel; right-click it to cycle these modes.",
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
