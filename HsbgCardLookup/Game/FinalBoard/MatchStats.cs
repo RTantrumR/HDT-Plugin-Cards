@@ -300,6 +300,25 @@ namespace HsbgCardLookup.Game.FinalBoard
         public List<MinionRecord> Shop { get; set; }
 
         /// <summary>
+        /// The trinkets held at this moment, lesser first (entity order). Empty = captured and none
+        /// held, which is the truth for every turn before the first one is offered; null = not
+        /// captured. FULL tag dictionaries, unlike the board: there are at most two, and what makes
+        /// a per-turn trinket record worth keeping (script data, charges) is outside the board
+        /// whitelist.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<MinionRecord> Trinkets { get; set; }
+
+        /// <summary>
+        /// The hero power at this moment, full tags — so EXHAUSTED says whether it had been used by
+        /// then, and the script numbers carry the ones that count up. Resolved by
+        /// <c>FinalBoardCapture.ResolveHeroPower</c>, the same rule the end-of-match record uses, so
+        /// the header and the turns can never name different hero powers. Null = not resolved.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public MinionRecord HeroPower { get; set; }
+
+        /// <summary>
         /// Every enchantment attached to a board minion, a card in hand, the hero or the player
         /// entity, identical ones collapsed into a count. Raw on purpose: the shop's own markers and
         /// [DNT] bookkeeping are in here too, because filtering at capture would throw away what a

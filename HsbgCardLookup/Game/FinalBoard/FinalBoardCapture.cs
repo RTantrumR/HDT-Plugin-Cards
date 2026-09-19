@@ -389,6 +389,19 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// </summary>
         private static void ReadHeroPower(GameV2 g, Extras x)
         {
+            string via;
+            var e = ResolveHeroPower(g, out via);
+            if (e == null) return;
+            x.HeroPowerCardId = e.CardId;
+            x.HeroPowerVia = via;
+        }
+
+        /// <summary>The player's hero-power entity by the rule above, or null. Shared with the
+        /// per-turn snapshots (<see cref="MatchStatsTracker"/>) so the two can never drift onto
+        /// different hero powers; <paramref name="via"/> names the route for the log.</summary>
+        internal static Entity ResolveHeroPower(GameV2 g, out string via)
+        {
+            via = "none";
             try
             {
                 int id = 0;
@@ -398,15 +411,14 @@ namespace HsbgCardLookup.Game.FinalBoard
                     Entity e;
                     if (g.Entities != null && g.Entities.TryGetValue(id, out e) && e != null && !string.IsNullOrEmpty(e.CardId))
                     {
-                        x.HeroPowerCardId = e.CardId;
-                        x.HeroPowerVia = "HERO_POWER_ENTITY";
-                        return;
+                        via = "HERO_POWER_ENTITY";
+                        return e;
                     }
                 }
 
                 int me = -1;
                 try { if (g.Player != null) me = g.Player.Id; } catch { }
-                if (me < 0 || g.Entities == null) return;
+                if (me < 0 || g.Entities == null) return null;
 
                 Entity best = null;
                 foreach (var e in g.Entities.Values.ToList())
@@ -420,13 +432,11 @@ namespace HsbgCardLookup.Game.FinalBoard
                     if (best == null) { best = e; continue; }
                     if (InPlay(e) && !InPlay(best)) best = e;
                 }
-                if (best != null)
-                {
-                    x.HeroPowerCardId = best.CardId;
-                    x.HeroPowerVia = InPlay(best) ? "fallback:play" : "fallback:any";
-                }
+                if (best == null) return null;
+                via = InPlay(best) ? "fallback:play" : "fallback:any";
+                return best;
             }
-            catch { }
+            catch { return null; }
         }
 
         private static bool InPlay(Entity e)
@@ -504,7 +514,11 @@ namespace HsbgCardLookup.Game.FinalBoard
             catch { return null; }
         }
 
-        private static MinionRecord ToRecord(Entity e)
+        /// <summary>An entity as card id + its FULL tag dictionary. Shared with the per-turn
+        /// snapshots for the hero power and the trinkets, where there are at most three per
+        /// snapshot and the tags that matter (EXHAUSTED, script data) are outside the board
+        /// whitelist.</summary>
+        internal static MinionRecord ToRecord(Entity e)
         {
             var tags = new Dictionary<int, int>();
             try

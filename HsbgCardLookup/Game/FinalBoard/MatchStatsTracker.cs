@@ -237,6 +237,8 @@ namespace HsbgCardLookup.Game.FinalBoard
                     Board = board,
                     Hand = hand,
                     Enchants = ReadEnchants(g, all, board, hand),
+                    Trinkets = ReadTrinkets(g),
+                    HeroPower = ReadHeroPowerSnap(g),
                 };
                 Log(string.Format("turn {0} snapshot C | {1} ({2}ms to read)", _turn.Turn, Counts(_turn.SnapPreCombat), (int)sw.ElapsedMilliseconds));
             }
@@ -664,6 +666,8 @@ namespace HsbgCardLookup.Game.FinalBoard
                     Hand = hand,
                     Shop = IsDuos(g) ? null : ReadShop(g, all),
                     Enchants = ReadEnchants(g, all, board, hand),
+                    Trinkets = ReadTrinkets(g),
+                    HeroPower = ReadHeroPowerSnap(g),
                 };
                 _lastSnapMs = (int)sw.ElapsedMilliseconds;
                 return snap;
@@ -671,9 +675,11 @@ namespace HsbgCardLookup.Game.FinalBoard
             catch { return null; }
         }
 
-        private static string Counts(ShopSnap s) => s == null ? "-" : string.Format("board={0} hand={1} shop={2} ench={3}",
+        private static string Counts(ShopSnap s) => s == null ? "-" : string.Format("board={0} hand={1} shop={2} ench={3} trinkets={4} hp={5}",
             s.Board != null ? s.Board.Count : 0, s.Hand != null ? s.Hand.Count : 0,
-            s.Shop != null ? s.Shop.Count.ToString() : "-", s.Enchants != null ? s.Enchants.Count : 0);
+            s.Shop != null ? s.Shop.Count.ToString() : "-", s.Enchants != null ? s.Enchants.Count : 0,
+            s.Trinkets != null ? s.Trinkets.Count.ToString() : "-",
+            s.HeroPower != null ? s.HeroPower.CardId : "-");
 
         internal static bool IsDuos(GameV2 g)
         {
@@ -777,6 +783,36 @@ namespace HsbgCardLookup.Game.FinalBoard
             }
             catch { }
             return outp;
+        }
+
+        /// <summary>The trinkets held right now. Empty until the game offers the first one, which is
+        /// a real reading and not a failure — only a throw gives null. Full tags, see
+        /// <see cref="ShopSnap.Trinkets"/>.</summary>
+        private static List<MinionRecord> ReadTrinkets(GameV2 g)
+        {
+            try
+            {
+                var list = new List<MinionRecord>();
+                var trinkets = g != null && g.Player != null && g.Player.Trinkets != null
+                    ? g.Player.Trinkets.ToList() : new List<Entity>();
+                foreach (var t in trinkets.OrderBy(t => t != null ? t.Id : 0))
+                    if (t != null) list.Add(FinalBoardCapture.ToRecord(t));
+                return list;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>The hero power right now, through the end-of-match record's own resolver so the
+        /// two can never disagree. Null when it cannot be resolved.</summary>
+        private static MinionRecord ReadHeroPowerSnap(GameV2 g)
+        {
+            try
+            {
+                string via;
+                var e = FinalBoardCapture.ResolveHeroPower(g, out via);
+                return e != null ? FinalBoardCapture.ToRecord(e) : null;
+            }
+            catch { return null; }
         }
 
         private static List<MinionRecord> ReadBoard(GameV2 g)
