@@ -494,6 +494,9 @@ namespace HsbgCardLookup.Game
 
         private static string TribeName(int race)
         {
+            // TAG_RACE.ABERRATION by number: HearthDb 36.4.2 (the newest HDT ships) still
+            // predates the tribe, so there is no Race member to switch on.
+            if (race == 126) return "Aberration";
             switch ((Race)race)
             {
                 case Race.BEAST: return "Beast";

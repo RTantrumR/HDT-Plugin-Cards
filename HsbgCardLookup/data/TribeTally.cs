@@ -22,6 +22,7 @@ namespace HsbgCardLookup.Data
         {
             { 11, "Undead" }, { 14, "Murloc" }, { 15, "Demon" }, { 17, "Mech" }, { 18, "Elemental" },
             { 20, "Beast" }, { 23, "Pirate" }, { 24, "Dragon" }, { 43, "Quilboar" }, { 92, "Naga" },
+            { 126, "Aberration" },
         };
 
         /// <summary>The tribe to show and its count. <paramref name="raceCounts"/> is race id → count

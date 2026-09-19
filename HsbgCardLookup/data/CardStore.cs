@@ -65,7 +65,7 @@ namespace HsbgCardLookup.Data
             }
         }
         private static readonly string[] TribeOrder =
-            { "Beast", "Demon", "Dragon", "Elemental", "Mech", "Murloc", "Naga", "Pirate", "Quilboar", "Undead", "All" };
+            { "Aberration", "Beast", "Demon", "Dragon", "Elemental", "Mech", "Murloc", "Naga", "Pirate", "Quilboar", "Undead", "All" };
 
         // Dev-only: local web-app public/ art folder (used only when PluginConfig.UseLocalDevArt is on).
         private static readonly string WebAppPublicDir =

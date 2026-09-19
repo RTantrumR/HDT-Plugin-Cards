@@ -317,7 +317,7 @@ namespace HsbgCardLookup.Game
         {
             { "INVALID", 0 }, { "UNDEAD", 11 }, { "MURLOC", 14 }, { "DEMON", 15 }, { "MECHANICAL", 17 },
             { "ELEMENTAL", 18 }, { "BEAST", 20 }, { "PET", 20 }, { "PIRATE", 23 }, { "DRAGON", 24 },
-            { "BLANK", 25 }, { "ALL", 26 }, { "QUILBOAR", 43 }, { "NAGA", 92 },
+            { "BLANK", 25 }, { "ALL", 26 }, { "QUILBOAR", 43 }, { "NAGA", 92 }, { "ABERRATION", 126 },
         };
 
         private static long ToLong(object v)
