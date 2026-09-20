@@ -83,12 +83,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private const double DarkGiftMarkSize = 110;
         private const double HeroPowerSize = 130;
 
-        // The turn sub-view's own strip. Small on purpose: three boards plus their headers already
-        // need two lift hacks to fit a 1080p client, so the per-turn hero power and trinkets are a
-        // reminder of what was in play, not a second detail row. Sized for THREE trinkets — a run
-        // that swaps a Greater trinket ends the match holding three (2026-09-20 record).
-        private const double TurnPowerSize = 52;
-        private const double TurnTrinketSize = 54;
+        // How far a medallion fades when the turn on screen predates owning it.
+        private const double NotYetOwned = 0.28;
         private const double AnomalyW = 90, AnomalyH = 130;
 
         // Two trinkets at 135 no longer fit Reign's 200 column, and neither did a hero power beside
@@ -112,6 +108,9 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private readonly FinalBoardTurnView _turnView = new FinalBoardTurnView();
         private readonly FinalBoardOptions _options;
         private MatchStats _currentStats;
+        /// <summary>The record on screen — kept because the turn sub-view re-skins the header's
+        /// medallions per turn and has to be able to put them back.</summary>
+        private FinalBoardRecord _currentRec;
         private StackPanel _boardView;
         private ScrollViewer _scroll;
         private Border _tabBoard, _tabStats;
@@ -585,7 +584,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         {
             var s = _currentStats;
             if (s == null || s.Turns == null || index < 0 || index >= s.Turns.Count) return;
-            _turnView.Detail = _options.TurnDetailRow ? (Func<TurnStat, UIElement>)TurnDetail : null;
+            _turnView.TurnShown = _options.TurnDetailRow ? (Action<TurnStat>)ShowTurnMedallions : null;
             _turnView.Hand = _options.TurnHand ? (Func<ShopSnap, MinionRecord, UIElement>)HandVisual : null;
             _turnView.Show(s, index, MinionVisual);
             _showStats = true;
@@ -653,38 +652,22 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         /// <summary>
-        /// The turn's hero power and trinkets, in a strip under the title — captured per snapshot
-        /// since 2026-09-19 and, until now, rendered nowhere. Sourced from the start of the turn,
-        /// falling back to the later moments when the opening read failed; the countdown and the
-        /// spent/unspent state live in each one's tooltip.
+        /// Re-point the header's medallions at one turn: what the hero power and the trinkets were
+        /// doing THEN, on the pieces the composition already draws beside the portrait.
+        ///
+        /// Drawing a second set per turn was the obvious thing and the wrong one — the medallions
+        /// are right there, and the sub-view's scarcest resource is height. The cost is that the
+        /// header stops being purely end-of-match while a turn is open: a trinket bought on turn 10
+        /// is faded on turn 3 and says so. That is the timeline the panel could not show before.
         /// </summary>
-        private UIElement TurnDetail(TurnStat t)
+        private void ShowTurnMedallions(TurnStat t)
         {
-            if (t == null) return null;
-            var power = First(t, s => s.HeroPower);
-            var trinkets = First(t, s => s.Trinkets != null && s.Trinkets.Count > 0 ? s.Trinkets : null);
-            if (power == null && trinkets == null) return null;
-
-            var row = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 2),
-            };
-            if (power != null)
-                Hover(row, new HdtControls.HeroPower(EntityFor(power.CardId, power.Tags)),
-                      TurnPowerSize, FinalBoardTips.Power(power));
-            foreach (var tr in trinkets ?? new List<MinionRecord>())
-            {
-                if (tr == null || string.IsNullOrEmpty(tr.CardId)) continue;
-                Hover(row, new HdtControls.Trinket(EntityFor(tr.CardId, tr.Tags)),
-                      TurnTrinketSize, FinalBoardTips.Trinket(tr));
-            }
-            return row.Children.Count == 0 ? null : (UIElement)row;
+            if (t == null || _currentRec == null) return;
+            FillMedallions(_currentRec, t);
         }
 
-        /// <summary>The first of A/B/C that has the thing — absence at one moment is a failed read,
-        /// not an absent trinket, so the strip asks the next moment rather than showing nothing.</summary>
+        /// <summary>The first of A/B/C that has the thing. Absence at one moment is a failed read,
+        /// not an absent trinket, so this asks the next moment rather than reporting nothing.</summary>
         private static T First<T>(TurnStat t, Func<ShopSnap, T> pick) where T : class
         {
             foreach (var s in new[] { t.SnapStart, t.SnapEnd, t.SnapPreCombat })
@@ -696,12 +679,35 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return null;
         }
 
-        /// <summary>Place one of HDT's clipping controls at strip size and give it its tooltip. The
-        /// Viewbox is what makes Trinket/HeroPower scale instead of crop (see <see cref="Add"/>).</summary>
-        private static void Hover(Panel host, FrameworkElement control, double size, UIElement tip)
+        private static List<MinionRecord> TrinketsAt(TurnStat t) =>
+            First(t, s => s.Trinkets != null && s.Trinkets.Count > 0 ? s.Trinkets : null);
+
+        /// <summary>The first turn on which a trinket is in the record's hands, or 0 when the turn
+        /// series never mentions it — which is what an old record without per-turn trinkets looks
+        /// like, and is why the tooltip then says nothing about when it arrived.</summary>
+        private int AcquiredOn(string cardId)
+        {
+            var turns = _currentStats?.Turns;
+            if (turns == null || string.IsNullOrEmpty(cardId)) return 0;
+            foreach (var t in turns)
+            {
+                var held = TrinketsAt(t);
+                if (held == null) continue;
+                foreach (var tr in held)
+                    if (tr != null && string.Equals(tr.CardId, cardId, StringComparison.Ordinal)) return t.Turn;
+            }
+            return 0;
+        }
+
+        /// <summary>Place one of HDT's clipping controls and give it its tooltip. The Viewbox is
+        /// what makes Trinket/HeroPower scale instead of crop (see <see cref="Add"/>); a faded one
+        /// is something the player did not have yet, and still says so on hover.</summary>
+        private static void Hover(Panel host, FrameworkElement control, double w, double h,
+                                  Thickness margin, UIElement tip, bool owned)
         {
             control.IsHitTestVisible = false;
-            var box = new Viewbox { Width = size, Height = size, Stretch = Stretch.Uniform, Child = control };
+            var box = new Viewbox { Width = w, Height = h, Stretch = Stretch.Uniform, Margin = margin, Child = control };
+            if (!owned) box.Opacity = NotYetOwned;
             if (tip == null) { box.IsHitTestVisible = false; host.Children.Add(box); return; }
             var hit = new Border { Background = Brushes.Transparent, Child = box };
             UiKit.Tip(hit, tip);
@@ -727,6 +733,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
         {
             if (!_showTurn) return false;
             _showTurn = false;
+            // The header's medallions were showing one turn's state; the match owns them again.
+            if (_currentRec != null) FillMedallions(_currentRec, null);
             ApplyView();
             return true;
         }
@@ -781,43 +789,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _portrait.SetCardIdFromCard(heroCard, CardAssetType.Hero);
             Show(_portrait, heroCard != null && _options.HeroPortrait);
 
-            _trinkets.Children.Clear();
-            _powers.Children.Clear();
-            if (_options.DetailRow)
-            {
-                foreach (var t in rec.Trinkets ?? new List<MinionRecord>())
-                {
-                    if (t == null || string.IsNullOrEmpty(t.CardId)) continue;
-                    // Negative, and it has to be: a third of the 135 box is the transparent margin
-                    // HDT leaves around the ring, so a positive gap between the boxes reads as a
-                    // large one between the medallions. −8 a side leaves about 15px of real air.
-                    Add(_trinkets, new HdtControls.Trinket(EntityFor(t.CardId, t.Tags)),
-                        TrinketSize, TrinketSize, new Thickness(-8, 0, -8, 0));
-                }
-                if (!string.IsNullOrEmpty(rec.HeroPowerCardId))
-                    Add(_powers, new HdtControls.HeroPower(EntityFor(rec.HeroPowerCardId, null)),
-                        HeroPowerSize, HeroPowerSize, new Thickness(0));
-                var anomaly = CardOf(rec.AnomalyCardId);
-                if (anomaly != null)
-                {
-                    var img = new HdtControls.CardImage();
-                    img.SetCardIdFromCard(anomaly, CardAssetType.FullImage);
-                    Add(_powers, img, AnomalyW, AnomalyH, new Thickness(6, 0, 0, 0));
-                }
-                else
-                {
-                    // A Dark Gift lobby leaves this slot empty: the mechanic is a button entity, not
-                    // an anomaly, so there is no card for HDT to draw and the board came out with a
-                    // blank beside the hero power. The medallion goes there — it is the one place in
-                    // the composition that says what kind of lobby this was, which is what tells two
-                    // seasons apart. A real anomaly still wins the slot: that is a fact about the
-                    // match, and the Dark Gift is the season it was played in.
-                    var mark = rec.DarkGiftLobby ? LoadDarkGiftMark() : null;
-                    if (mark != null)
-                        Add(_powers, new Image { Source = mark }, DarkGiftMarkSize, DarkGiftMarkSize,
-                            new Thickness(6, 0, 0, 0));
-                }
-            }
+            FillMedallions(rec, null);
 
             _board.Children.Clear();
             foreach (var m in rec.Board ?? new List<MinionRecord>())
@@ -829,10 +801,101 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _emptyBoard.Visibility = _board.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
             var biggest = rec.Stats != null ? CardOf(rec.Stats.HighestMinionCardId) : null;
+            _currentRec = rec;
             _currentStats = rec.Stats;
             _showTurn = false;
             _stats.Show(rec.Stats, biggest != null ? biggest.Name : null, _options);
             ApplyView();
+        }
+
+        /// <summary>
+        /// The medallions either side of the portrait: trinkets left, hero power and the anomaly
+        /// (or the Dark Gift mark) right.
+        ///
+        /// With <paramref name="turn"/> null this is the match — what the player finished holding.
+        /// With a turn it is that moment instead: each trinket carries the text the shop would have
+        /// shown then, a trinket bought later is faded and says which turn it arrived on, and the
+        /// hero power is the one that was actually in play. That last part matters more than it
+        /// sounds: a hero power can be SPENT mid-match (Growing Collection is consumed on turn 8
+        /// and the end-of-match record correctly has none), so the match's own slot is empty for
+        /// the whole run while turns 1-8 each had one to show.
+        ///
+        /// The anomaly slot never varies by turn — it is a fact about the lobby.
+        /// </summary>
+        private void FillMedallions(FinalBoardRecord rec, TurnStat turn)
+        {
+            _trinkets.Children.Clear();
+            _powers.Children.Clear();
+            if (!_options.DetailRow) return;
+
+            var held = turn != null ? TrinketsAt(turn) : null;
+            foreach (var t in Medallions(rec, held))
+            {
+                if (t == null || string.IsNullOrEmpty(t.CardId)) continue;
+                var now = Held(held, t.CardId);
+                bool owned = turn == null || now != null;
+                var tip = turn == null
+                    ? FinalBoardTips.Trinket(t)
+                    : (now != null ? FinalBoardTips.Trinket(now) : FinalBoardTips.Unowned(t.CardId, AcquiredOn(t.CardId)));
+                // Negative, and it has to be: a third of the 135 box is the transparent margin
+                // HDT leaves around the ring, so a positive gap between the boxes reads as a
+                // large one between the medallions. −8 a side leaves about 15px of real air.
+                Hover(_trinkets, new HdtControls.Trinket(EntityFor(t.CardId, t.Tags)),
+                      TrinketSize, TrinketSize, new Thickness(-8, 0, -8, 0), tip, owned);
+            }
+
+            var power = turn != null ? First(turn, s => s.HeroPower) : null;
+            if (power != null)
+                Hover(_powers, new HdtControls.HeroPower(EntityFor(power.CardId, power.Tags)),
+                      HeroPowerSize, HeroPowerSize, new Thickness(0), FinalBoardTips.Power(power), true);
+            else if (!string.IsNullOrEmpty(rec.HeroPowerCardId))
+                Hover(_powers, new HdtControls.HeroPower(EntityFor(rec.HeroPowerCardId, null)),
+                      HeroPowerSize, HeroPowerSize, new Thickness(0),
+                      turn == null ? FinalBoardTips.Power(rec.HeroPowerCardId) : FinalBoardTips.Spent(rec.HeroPowerCardId),
+                      turn == null);
+
+            var anomaly = CardOf(rec.AnomalyCardId);
+            if (anomaly != null)
+            {
+                var img = new HdtControls.CardImage();
+                img.SetCardIdFromCard(anomaly, CardAssetType.FullImage);
+                Add(_powers, img, AnomalyW, AnomalyH, new Thickness(6, 0, 0, 0));
+            }
+            else
+            {
+                // A Dark Gift lobby leaves this slot empty: the mechanic is a button entity, not
+                // an anomaly, so there is no card for HDT to draw and the board came out with a
+                // blank beside the hero power. The medallion goes there — it is the one place in
+                // the composition that says what kind of lobby this was, which is what tells two
+                // seasons apart. A real anomaly still wins the slot: that is a fact about the
+                // match, and the Dark Gift is the season it was played in.
+                var mark = rec.DarkGiftLobby ? LoadDarkGiftMark() : null;
+                if (mark != null)
+                    Add(_powers, new Image { Source = mark }, DarkGiftMarkSize, DarkGiftMarkSize,
+                        new Thickness(6, 0, 0, 0));
+            }
+        }
+
+        /// <summary>Which trinket slots to draw: the match's, in its order, plus anything the turn
+        /// holds that the match's list does not mention. The extra case is not hypothetical — a
+        /// Greater trinket can replace a lesser one, so a turn can hold a medallion the final
+        /// record never shows.</summary>
+        private static IEnumerable<MinionRecord> Medallions(FinalBoardRecord rec, List<MinionRecord> held)
+        {
+            var outp = new List<MinionRecord>(rec.Trinkets ?? new List<MinionRecord>());
+            if (held != null)
+                foreach (var h in held)
+                    if (h != null && !string.IsNullOrEmpty(h.CardId) && Held(outp, h.CardId) == null)
+                        outp.Add(h);
+            return outp;
+        }
+
+        private static MinionRecord Held(List<MinionRecord> list, string cardId)
+        {
+            if (list == null) return null;
+            foreach (var m in list)
+                if (m != null && string.Equals(m.CardId, cardId, StringComparison.Ordinal)) return m;
+            return null;
         }
 
         /// <summary>A cell with nothing to say shows an em dash rather than an empty gap: the band is

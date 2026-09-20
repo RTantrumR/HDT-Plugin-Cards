@@ -121,6 +121,17 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return box;
         }
 
+        /// <summary>The hero power from a card id alone — the end-of-match header, which stores no
+        /// tags, so this is the card's opening text rather than any particular moment's.</summary>
+        internal static UIElement Power(string cardId)
+        {
+            if (string.IsNullOrEmpty(cardId)) return null;
+            var box = Box(CardText.Name(cardId));
+            var text = CardText.Render(cardId, 0, 0, 0);
+            if (!string.IsNullOrEmpty(text)) box.Children.Add(Body(text));
+            return box;
+        }
+
         /// <summary>A trinket's name and its current text — the same "(N left!)" the shop shows.</summary>
         internal static UIElement Trinket(MinionRecord trinket)
         {
@@ -128,6 +139,34 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var box = Box(CardText.Name(trinket.CardId));
             var text = Describe(trinket);
             if (!string.IsNullOrEmpty(text)) box.Children.Add(Body(text));
+            return box;
+        }
+
+        /// <summary>
+        /// A medallion the player did not have yet on the turn being viewed. It still names the
+        /// card, because a faded picture with no tooltip reads as a rendering fault rather than as
+        /// a fact about the match — and the fact is the interesting part: which turn it arrived on.
+        /// </summary>
+        internal static UIElement Unowned(string cardId, int acquiredOnTurn)
+        {
+            if (string.IsNullOrEmpty(cardId)) return null;
+            var box = Box(CardText.Name(cardId));
+            box.Children.Add(Note(acquiredOnTurn > 0
+                ? "acquired on turn " + acquiredOnTurn.ToString(CultureInfo.InvariantCulture)
+                : "not held on this turn"));
+            return box;
+        }
+
+        /// <summary>
+        /// The match's hero power, on a turn whose own snapshots have none. That is the truth for
+        /// a power that gets consumed — Growing Collection is spent on turn 8 — so the medallion
+        /// fades and says so rather than pretending the power was still there.
+        /// </summary>
+        internal static UIElement Spent(string cardId)
+        {
+            if (string.IsNullOrEmpty(cardId)) return null;
+            var box = Box(CardText.Name(cardId));
+            box.Children.Add(Note("not in play on this turn"));
             return box;
         }
 

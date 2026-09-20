@@ -34,13 +34,19 @@ namespace HsbgCardLookup.Ui.FinalBoard
         // bottom, which is why the label above each board keeps its distance (HeadGap).
         private const double MinionSize = 110;
         private const double MinionGap = -5;
-        // The hand sits under its board and reads as subordinate to it. Positive gap, unlike the
-        // board's overlap: hand cards carry no frame that draws past their box, so a negative one
-        // would just make them touch.
-        private const double HandSize = 74;
+        // The hand shares the board's row. Positive gap, unlike the board's overlap: hand cards
+        // carry no frame that draws past their box, so a negative one would just make them touch.
         private const double HandGap = 2;
-        private const double HeadGap = 12;
-        private const double BoardGap = 12;
+        private const double DividerW = 24;
+        // What the row has to fit into: the content width less both arrow columns, less a little
+        // so a full row never sits flush against an arrow.
+        private const double RowW = ContentW - 2 * ArrowW - 10;
+        // Clearance, and it is not decoration. A taunt frame, a divine shield and a golden frame
+        // all draw past a minion's box top and bottom, and the stat numbers sit on that overshoot,
+        // so both gaps have to clear it or one row's numbers crowd the next row's cards. Raised
+        // from 12/12 once the hand moved onto the board's own row and gave the height back.
+        private const double HeadGap = 16;
+        private const double BoardGap = 18;
 
         private readonly Grid _root = new Grid { Width = ContentW, HorizontalAlignment = HorizontalAlignment.Left };
 
@@ -53,9 +59,9 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// <summary>The back arrow was clicked. The view never hides itself — whoever hosts it owns that.</summary>
         public Action Back;
 
-        /// <summary>A strip of the turn's hero power and trinkets, built by the host because it owns
-        /// the HDT controls. Null draws nothing and costs no height.</summary>
-        public Func<TurnStat, UIElement> Detail;
+        /// <summary>Which turn is now on screen, raised on every render including an arrow step.
+        /// The host re-points its header medallions at it.</summary>
+        public Action<TurnStat> TurnShown;
 
         /// <summary>Draws one card held in hand, same contract as the minion renderer. Null leaves
         /// the hand out entirely.</summary>
@@ -79,17 +85,54 @@ namespace HsbgCardLookup.Ui.FinalBoard
             if (_stats == null || _stats.Turns == null || _index < 0 || _index >= _stats.Turns.Count) return;
             var t = _stats.Turns[_index];
 
+            _fixed = Fixed.For(t);
+            // What was POWERING this turn goes on the medallions the header already draws beside
+            // the portrait, rather than on a strip of its own: three boards barely fit a 1080p
+            // client, and a second row of trinkets was buying nothing the header could not carry.
+            try { TurnShown?.Invoke(t); } catch { }
+
             var col = new StackPanel();
             col.Children.Add(TopBar(t));
-            // What was POWERING the boards below, once for the turn rather than once per snapshot:
-            // three boards already strain a 1080p client's height, and a hero power that changed
-            // between A and C says so in its own tooltip.
-            UIElement detail = null;
-            try { detail = Detail?.Invoke(t); } catch { }
-            if (detail != null) col.Children.Add(detail);
             col.Children.Add(Body(t));
             _root.Children.Add(col);
         }
+
+        /// <summary>
+        /// Which of the turn's three numbers never moved, and therefore belong on the title line
+        /// instead of on all three state headers.
+        ///
+        /// Height is the scarce thing in this view, and most of what a state header repeats is not
+        /// news: health only changes in combat, so within a turn it is almost always one number
+        /// written three times, and the tavern tier changes at most once. Saying it once at the top
+        /// says the same thing and gives a board row back.
+        /// </summary>
+        private sealed class Fixed
+        {
+            public bool Health, Tier, Gold;   // true = constant across the turn, hoisted to the title
+            public int HealthValue, TierValue, GoldValue;
+
+            public static Fixed For(TurnStat t)
+            {
+                var f = new Fixed();
+                var snaps = new List<ShopSnap>();
+                foreach (var s in new[] { t.SnapStart, t.SnapEnd, t.SnapPreCombat }) if (s != null) snaps.Add(s);
+                if (snaps.Count == 0) return f;
+
+                f.HealthValue = snaps[0].HeroHp;
+                f.TierValue = snaps[0].TavernTier;
+                f.GoldValue = snaps[0].Gold;
+                f.Health = f.Tier = f.Gold = true;
+                foreach (var s in snaps)
+                {
+                    if (s.HeroHp != f.HealthValue) f.Health = false;
+                    if (s.TavernTier != f.TierValue) f.Tier = false;
+                    if (s.Gold != f.GoldValue) f.Gold = false;
+                }
+                return f;
+            }
+        }
+
+        private Fixed _fixed = new Fixed();
 
         // ── the back arrow and the title ────────────────────────────────────────────────────────
 
@@ -105,7 +148,6 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var title = new TextBlock
             {
                 FontSize = 15,
-                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false,
             };
@@ -113,7 +155,20 @@ namespace HsbgCardLookup.Ui.FinalBoard
             name.FontWeight = FontWeights.SemiBold;
             title.Inlines.Add(name);
             title.Inlines.Add(Ink("  of " + _stats.Turns.Count.ToString(CultureInfo.InvariantCulture), UiKit.TextMuted));
-            Put(g, 1, title);
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            };
+            row.Children.Add(title);
+            // Whatever held still all turn is stated once, here, and left out of the state headers.
+            if (_fixed.Gold) { row.Children.Add(Dot()); row.Children.Add(Num(_fixed.GoldValue, Gold)); row.Children.Add(Word("gold")); }
+            if (_fixed.Health) { row.Children.Add(Dot()); row.Children.Add(Num(_fixed.HealthValue, Red)); row.Children.Add(Word("health")); }
+            if (_fixed.Tier) { row.Children.Add(Dot()); AddTier(row, _fixed.TierValue); }
+            Put(g, 1, row);
             return g;
         }
 
@@ -156,7 +211,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private UIElement Snapshots(TurnStat t)
         {
             var box = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            box.Children.Add(Snapshot("Start of turn", t.SnapStart));
+            box.Children.Add(Snapshot("Start of turn", t.SnapStart, opening: true));
             box.Children.Add(Snapshot("End of turn", t.SnapEnd));
             if (t.SnapEnd != null && t.SnapPreCombat != null)
             {
@@ -169,93 +224,168 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return box;
         }
 
-        private UIElement Snapshot(string label, ShopSnap s, string changes = null)
+        /// <param name="opening">A — where gold is the bankroll the turn started with and is always
+        /// worth a slot, as opposed to the leftover the later moments report.</param>
+        private UIElement Snapshot(string label, ShopSnap s, string changes = null, bool opening = false)
         {
             if (s == null) return Head(label, "not captured");
 
             var box = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
-            box.Children.Add(StateHead(label, s, changes));
+            box.Children.Add(StateHead(label, s, changes, opening));
 
-            // A taunt frame draws past its minion's box, so the row keeps clearance below.
-            var board = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, BoardGap),
-            };
-            foreach (var m in s.Board ?? new List<MinionRecord>())
-            {
-                if (m == null || string.IsNullOrEmpty(m.CardId)) continue;
-                var el = _minion != null ? _minion(s, m) : null;
-                if (el == null) continue;
-                // Hit-testing is the caller's business now: it decides whether this minion has
-                // anything to say on hover, and hands back something hoverable when it does. The
-                // press itself is never handled here, so it still bubbles to the panel's drag.
-                board.Children.Add(new Viewbox
-                {
-                    Width = MinionSize,
-                    Height = MinionSize,
-                    Stretch = Stretch.Uniform,
-                    Margin = new Thickness(MinionGap, 0, MinionGap, 0),
-                    Child = el,
-                });
-            }
-            if (board.Children.Count == 0)
-            {
-                var empty = Line("Empty board", 12, UiKit.TextMuted);
-                empty.Margin = new Thickness(0, 6, 0, 10);
-                board.Children.Add(empty);
-            }
-            box.Children.Add(board);
-
-            var hand = HandRow(s);
-            if (hand != null) box.Children.Add(hand);
+            box.Children.Add(CardRow(s));
             return box;
         }
 
         /// <summary>
-        /// What was still in hand at this moment, under the board and smaller than it — a card the
-        /// player held is context for the board, not part of it.
+        /// The board and the hand on ONE row, split by a marked divider — and the whole row scaled
+        /// down until it fits rather than wrapping or growing.
         ///
-        /// Nothing is drawn for a hand that was EMPTY; the row appears only when there is something
-        /// in it. The distinction the record makes between "empty" and "not captured" is deliberate
-        /// (a failed read used to be indistinguishable from an empty hand), but it belongs in the
-        /// record — a line saying the hand was empty on every early turn would be noise here.
+        /// The hand used to sit on a line of its own under each board. That was honest and it cost
+        /// a third of the view: with three moments per turn a 1080p client could see about 1.8 of
+        /// them, before any of the breathing room the stat numbers still need. Here the hand costs
+        /// no height at all, and what it costs instead is size — seven minions plus four cards come
+        /// out around 79px rather than 110. That trade is the point: a minion the eye can still
+        /// read, in a turn the eye can see all of.
         /// </summary>
-        private UIElement HandRow(ShopSnap s)
+        private UIElement CardRow(ShopSnap s)
         {
-            if (Hand == null || s?.Hand == null || s.Hand.Count == 0) return null;
+            var board = new List<UIElement>();
+            foreach (var m in s.Board ?? new List<MinionRecord>())
+            {
+                if (m == null || string.IsNullOrEmpty(m.CardId)) continue;
+                var el = _minion != null ? _minion(s, m) : null;
+                if (el != null) board.Add(el);
+            }
+
+            var hand = new List<UIElement>();
+            double handAspect = 0;
+            if (Hand != null && s.Hand != null)
+                foreach (var m in s.Hand)
+                {
+                    if (m == null || string.IsNullOrEmpty(m.CardId)) continue;
+                    var el = Hand(s, m);
+                    if (el == null) continue;
+                    hand.Add(el);
+                    handAspect += Aspect(el);
+                }
 
             var row = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, -6, 0, BoardGap),
+                Margin = new Thickness(0, 0, 0, BoardGap),
             };
-            foreach (var m in s.Hand)
+            if (board.Count == 0)
             {
-                if (m == null || string.IsNullOrEmpty(m.CardId)) continue;
-                var el = Hand(s, m);
-                if (el == null) continue;
-                // Height only: a spell's full card and a minion's square tile have different
-                // shapes, and matching their HEIGHT is what makes a mixed hand read as one row.
+                // Said even when the hand is not empty: otherwise a row holding one card reads as
+                // a board of one, and "you went into this with nothing on the field" is the more
+                // important half of that moment.
+                var empty = Line("Empty board", 12, UiKit.TextMuted);
+                empty.Margin = new Thickness(0, 6, 0, 10);
+                row.Children.Add(empty);
+                if (hand.Count == 0) return row;
+            }
+
+            double divider = hand.Count > 0 ? DividerW : 0;
+            double size = Size(board.Count, hand.Count, handAspect, divider);
+
+            foreach (var el in board)
+                // Hit-testing is the caller's business: it decides whether a card has anything to
+                // say on hover and hands back something hoverable when it does. The press is never
+                // handled here, so it still bubbles up to the panel's drag.
                 row.Children.Add(new Viewbox
                 {
-                    Height = HandSize,
+                    Width = size,
+                    Height = size,
+                    Stretch = Stretch.Uniform,
+                    Margin = new Thickness(MinionGap, 0, MinionGap, 0),
+                    Child = el,
+                });
+
+            if (divider > 0) row.Children.Add(Divider(size));
+
+            foreach (var el in hand)
+                // Height only, no width: a spell's full card and a minion's square tile are
+                // different shapes, and it is matching their HEIGHT that makes a mixed hand read
+                // as one row rather than a ragged one.
+                row.Children.Add(new Viewbox
+                {
+                    Height = size,
                     Stretch = Stretch.Uniform,
                     Margin = new Thickness(HandGap, 0, HandGap, 0),
                     Child = el,
                 });
-            }
-            if (row.Children.Count == 0) return null;
 
-            var label = Line("in hand", 11, UiKit.TextMuted);
-            label.HorizontalAlignment = HorizontalAlignment.Center;
-            label.Margin = new Thickness(0, 0, 0, 2);
-            var box = new StackPanel();
-            box.Children.Add(label);
-            box.Children.Add(row);
-            return box;
+            return row;
+        }
+
+        /// <summary>The largest card size at which everything on the row still fits the width
+        /// between the two arrows, capped at the size a board alone is drawn at.</summary>
+        private static double Size(int boardCount, int handCount, double handAspect, double divider)
+        {
+            double slots = boardCount + handAspect;
+            if (slots <= 0) return MinionSize;
+            double fixedPart = 2 * MinionGap * boardCount + 2 * HandGap * handCount + divider;
+            double fit = (RowW - fixedPart) / slots;
+            return fit < MinionSize ? fit : MinionSize;
+        }
+
+        /// <summary>
+        /// A card's natural shape, so the row can budget width for it before it is in the tree. Read
+        /// from an explicit Width/Height when the host set one, else measured. Anything that cannot
+        /// answer counts as square, which is what a minion is.
+        /// </summary>
+        private static double Aspect(UIElement el)
+        {
+            try
+            {
+                var fe = el as FrameworkElement;
+                if (fe != null && !double.IsNaN(fe.Width) && !double.IsNaN(fe.Height)
+                    && fe.Width > 0 && fe.Height > 0)
+                    return fe.Width / fe.Height;
+                el.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var d = el.DesiredSize;
+                if (d.Width > 0 && d.Height > 0) return d.Width / d.Height;
+            }
+            catch { }
+            return 1;
+        }
+
+        /// <summary>
+        /// The mark between the board and the hand. It carries the word "hand" turned on its side
+        /// because the one thing this view cannot spend is vertical space — a caption under the
+        /// cards would cost a line on every one of the three moments, and this costs none.
+        /// </summary>
+        private static UIElement Divider(double size)
+        {
+            var line = new Border
+            {
+                Width = 1,
+                Height = size * 0.55,
+                Background = UiKit.StrokeBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var label = new TextBlock
+            {
+                Text = "hand",
+                FontSize = 9.5,
+                Foreground = UiKit.TextMuted,
+                LayoutTransform = new RotateTransform(-90),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(2, 0, 0, 0),
+                IsHitTestVisible = false,
+            };
+            var g = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(7, 0, 3, 0),
+                IsHitTestVisible = false,
+            };
+            g.Children.Add(line);
+            g.Children.Add(label);
+            return g;
         }
 
         /// <summary>A header with only words after the label: "not captured", "nothing changed".</summary>
@@ -268,33 +398,38 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         /// <summary>
-        /// The label, then the three numbers in the colours the game gives them — gold in gold,
-        /// health in blood red, the tier as its own medallion — so the row reads at a glance from
-        /// the board below rather than as a line of grey text above it.
+        /// The label, then only the numbers that this moment does not share with the rest of the
+        /// turn — in the colours the game gives them, gold in gold, health in blood red, the tier
+        /// as its own medallion.
+        ///
+        /// Two rules decide what survives. A number that never moved all turn was already said on
+        /// the title line, so it is not said again. And gold LEFT is only news when there is some:
+        /// the whole point of the figure is unspent money, so a zero at the end of a turn — the
+        /// good case, and the common one — is silence rather than a slot.
         /// </summary>
-        private static UIElement StateHead(string label, ShopSnap s, string changes)
+        private UIElement StateHead(string label, ShopSnap s, string changes, bool opening)
         {
             var row = HeadRow();
             row.Children.Add(HeadLabel(label));
-            row.Children.Add(Num(s.Gold, Gold));
-            row.Children.Add(Word("gold"));
-            row.Children.Add(Dot());
-            row.Children.Add(Num(s.HeroHp, Red));
-            row.Children.Add(Word("health"));
-            row.Children.Add(Dot());
-            var tier = UiKit.TierIcon(s.TavernTier, 18);
-            if (tier != null)
+            if (!_fixed.Gold && (opening || s.Gold > 0))
             {
-                tier.IsHitTestVisible = false;
-                tier.VerticalAlignment = VerticalAlignment.Center;
-                tier.Margin = new Thickness(0, 0, 4, 0);
-                row.Children.Add(tier);
+                row.Children.Add(Num(s.Gold, Gold));
+                row.Children.Add(Word(opening ? "gold" : "gold left"));
             }
-            row.Children.Add(Num(s.TavernTier, UiKit.TextSecondary));
-            if (tier == null) row.Children.Add(Word("tier"));
+            if (!_fixed.Health)
+            {
+                Sep(row);
+                row.Children.Add(Num(s.HeroHp, Red));
+                row.Children.Add(Word("health"));
+            }
+            if (!_fixed.Tier)
+            {
+                Sep(row);
+                AddTier(row, s.TavernTier);
+            }
             if (changes != null)
             {
-                var note = Word("—   " + changes);
+                var note = Word(row.Children.Count > 1 ? "—   " + changes : changes);
                 note.Margin = new Thickness(14, 0, 0, 0);
                 row.Children.Add(note);
             }
@@ -326,6 +461,27 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         private static TextBlock Word(string text) => Line(text, 13, UiKit.TextMuted);
+
+        /// <summary>A separator only between things that are actually there: with the fixed numbers
+        /// gone a header can start at its second figure, and a leading "·" would read as a gap.</summary>
+        private static void Sep(Panel row)
+        {
+            if (row.Children.Count > 1) row.Children.Add(Dot());
+        }
+
+        private static void AddTier(Panel row, int tier)
+        {
+            var icon = UiKit.TierIcon(tier, 18);
+            if (icon != null)
+            {
+                icon.IsHitTestVisible = false;
+                icon.VerticalAlignment = VerticalAlignment.Center;
+                icon.Margin = new Thickness(0, 0, 4, 0);
+                row.Children.Add(icon);
+            }
+            row.Children.Add(Num(tier, UiKit.TextSecondary));
+            if (icon == null) row.Children.Add(Word("tier"));
+        }
 
         private static TextBlock Dot()
         {
