@@ -100,13 +100,8 @@ namespace HsbgCardLookup.Game
         }
 
         // Site card text is HTML-ish (<b>…</b>) and may be multi-line; the panel renders plain text
-        // with its own keyword coloring.
-        private static string CleanText(string t)
-        {
-            if (string.IsNullOrEmpty(t)) return "";
-            t = System.Text.RegularExpressions.Regex.Replace(t, "<[^>]+>", "");
-            return System.Text.RegularExpressions.Regex.Replace(t, @"\s+", " ").Trim();
-        }
+        // with its own keyword coloring. Same job the Final Board's tooltips do, so same rule.
+        private static string CleanText(string t) => Data.CardText.StripMarkup(t);
 
         public static readonly IReadOnlyList<DarkGift> All = new[]
         {

@@ -45,18 +45,64 @@ namespace HsbgCardLookup.Ui
         /// </summary>
         public static void Tip(FrameworkElement el, string text)
         {
+            Tip(el, new TextBlock
+            {
+                Text = text, Foreground = TextPrimary, FontSize = 12,
+                TextWrapping = TextWrapping.Wrap, MaxWidth = 300
+            });
+        }
+
+        /// <summary>
+        /// The same tooltip around arbitrary content — a stack of rows rather than one sentence.
+        /// Same chrome and the same timings, so a card's enchantment list and a settings "?" behave
+        /// identically under the cursor.
+        ///
+        /// <c>BetweenShowDelay</c> is zeroed here: these sit shoulder to shoulder in rows of eight,
+        /// and the stock 100ms grace makes sweeping along a board feel like the tooltip is lagging
+        /// a card behind the cursor.
+        /// </summary>
+        public static void Tip(FrameworkElement el, UIElement content)
+        {
             el.ToolTip = new ToolTip
             {
                 Background = Br(PanelBg), BorderBrush = StrokeBrush, BorderThickness = new Thickness(1),
                 Padding = new Thickness(9, 6, 9, 6), HasDropShadow = true,
-                Content = new TextBlock
-                {
-                    Text = text, Foreground = TextPrimary, FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap, MaxWidth = 300
-                }
+                Content = content
             };
             ToolTipService.SetInitialShowDelay(el, 120);
             ToolTipService.SetShowDuration(el, 30000);
+            ToolTipService.SetBetweenShowDelay(el, 0);
+        }
+
+        // ---- keyword colouring ----
+
+        public static readonly Brush StatBrush    = Frozen(Color.FromRgb(0x4A, 0xDE, 0x80));  // +X/+Y buffs
+        public static readonly Brush KeywordBrush = Frozen(Color.FromRgb(0xE8, 0xB5, 0x4B));  // keywords (accent gold)
+
+        // Word-level colour highlighting: stat gains in green, keyword-ish terms in gold, rest default.
+        private static readonly System.Text.RegularExpressions.Regex Highlight =
+            new System.Text.RegularExpressions.Regex(
+                @"(?<stat>\+\d+(?:/\+\d+)?(?:\s+(?:Attack|Health))?)|" +
+                @"(?<kw>Divine Shield|Windfury|Stealth|Venomous|Reborn|Golden|Immune|Deathrattles?|Battlecr(?:y|ies)|Rally|Spellcrafts?|Start of Combat|Magnetize|Blood Gems|Taunt)",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>Append text to a TextBlock with the buffs and keywords picked out in colour, the
+        /// way the Dark Gift list reads them.</summary>
+        public static void ColorRuns(TextBlock tb, string text)
+        {
+            if (tb == null || string.IsNullOrEmpty(text)) return;
+            int pos = 0;
+            foreach (System.Text.RegularExpressions.Match m in Highlight.Matches(text))
+            {
+                if (m.Index > pos) tb.Inlines.Add(new Run(text.Substring(pos, m.Index - pos)));
+                tb.Inlines.Add(new Run(m.Value)
+                {
+                    Foreground = m.Groups["stat"].Success ? StatBrush : KeywordBrush,
+                    FontWeight = FontWeights.SemiBold
+                });
+                pos = m.Index + m.Length;
+            }
+            if (pos < text.Length) tb.Inlines.Add(new Run(text.Substring(pos)));
         }
 
         private static SolidColorBrush Frozen(Color c)

@@ -34,6 +34,11 @@ namespace HsbgCardLookup.Ui.FinalBoard
         // bottom, which is why the label above each board keeps its distance (HeadGap).
         private const double MinionSize = 110;
         private const double MinionGap = -5;
+        // The hand sits under its board and reads as subordinate to it. Positive gap, unlike the
+        // board's overlap: hand cards carry no frame that draws past their box, so a negative one
+        // would just make them touch.
+        private const double HandSize = 74;
+        private const double HandGap = 2;
         private const double HeadGap = 12;
         private const double BoardGap = 12;
 
@@ -41,16 +46,26 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         private MatchStats _stats;
         private int _index;
-        private Func<MinionRecord, UIElement> _minion;
+        private Func<ShopSnap, MinionRecord, UIElement> _minion;
 
         public FrameworkElement Root => _root;
 
         /// <summary>The back arrow was clicked. The view never hides itself — whoever hosts it owns that.</summary>
         public Action Back;
 
+        /// <summary>A strip of the turn's hero power and trinkets, built by the host because it owns
+        /// the HDT controls. Null draws nothing and costs no height.</summary>
+        public Func<TurnStat, UIElement> Detail;
+
+        /// <summary>Draws one card held in hand, same contract as the minion renderer. Null leaves
+        /// the hand out entirely.</summary>
+        public Func<ShopSnap, MinionRecord, UIElement> Hand;
+
         /// <param name="index">Which of <see cref="MatchStats.Turns"/> to open on.</param>
-        /// <param name="minion">Draws one stored minion — the caller's HDT control.</param>
-        public void Show(MatchStats s, int index, Func<MinionRecord, UIElement> minion)
+        /// <param name="minion">Draws one stored minion — the caller's HDT control. It is handed the
+        /// owning snapshot as well as the record, because what a minion is worth hovering for (its
+        /// enchantments) lives on the snapshot, not on the minion.</param>
+        public void Show(MatchStats s, int index, Func<ShopSnap, MinionRecord, UIElement> minion)
         {
             _stats = s;
             _index = index;
@@ -66,6 +81,12 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
             var col = new StackPanel();
             col.Children.Add(TopBar(t));
+            // What was POWERING the boards below, once for the turn rather than once per snapshot:
+            // three boards already strain a 1080p client's height, and a hero power that changed
+            // between A and C says so in its own tooltip.
+            UIElement detail = null;
+            try { detail = Detail?.Invoke(t); } catch { }
+            if (detail != null) col.Children.Add(detail);
             col.Children.Add(Body(t));
             _root.Children.Add(col);
         }
@@ -165,17 +186,17 @@ namespace HsbgCardLookup.Ui.FinalBoard
             foreach (var m in s.Board ?? new List<MinionRecord>())
             {
                 if (m == null || string.IsNullOrEmpty(m.CardId)) continue;
-                var el = _minion != null ? _minion(m) : null;
+                var el = _minion != null ? _minion(s, m) : null;
                 if (el == null) continue;
-                var fe = el as FrameworkElement;
-                if (fe != null) fe.IsHitTestVisible = false;
+                // Hit-testing is the caller's business now: it decides whether this minion has
+                // anything to say on hover, and hands back something hoverable when it does. The
+                // press itself is never handled here, so it still bubbles to the panel's drag.
                 board.Children.Add(new Viewbox
                 {
                     Width = MinionSize,
                     Height = MinionSize,
                     Stretch = Stretch.Uniform,
                     Margin = new Thickness(MinionGap, 0, MinionGap, 0),
-                    IsHitTestVisible = false,
                     Child = el,
                 });
             }
@@ -186,6 +207,54 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 board.Children.Add(empty);
             }
             box.Children.Add(board);
+
+            var hand = HandRow(s);
+            if (hand != null) box.Children.Add(hand);
+            return box;
+        }
+
+        /// <summary>
+        /// What was still in hand at this moment, under the board and smaller than it — a card the
+        /// player held is context for the board, not part of it.
+        ///
+        /// Nothing is drawn for a hand that was EMPTY; the row appears only when there is something
+        /// in it. The distinction the record makes between "empty" and "not captured" is deliberate
+        /// (a failed read used to be indistinguishable from an empty hand), but it belongs in the
+        /// record — a line saying the hand was empty on every early turn would be noise here.
+        /// </summary>
+        private UIElement HandRow(ShopSnap s)
+        {
+            if (Hand == null || s?.Hand == null || s.Hand.Count == 0) return null;
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, -6, 0, BoardGap),
+            };
+            foreach (var m in s.Hand)
+            {
+                if (m == null || string.IsNullOrEmpty(m.CardId)) continue;
+                var el = Hand(s, m);
+                if (el == null) continue;
+                // Height only: a spell's full card and a minion's square tile have different
+                // shapes, and matching their HEIGHT is what makes a mixed hand read as one row.
+                row.Children.Add(new Viewbox
+                {
+                    Height = HandSize,
+                    Stretch = Stretch.Uniform,
+                    Margin = new Thickness(HandGap, 0, HandGap, 0),
+                    Child = el,
+                });
+            }
+            if (row.Children.Count == 0) return null;
+
+            var label = Line("in hand", 11, UiKit.TextMuted);
+            label.HorizontalAlignment = HorizontalAlignment.Center;
+            label.Margin = new Thickness(0, 0, 0, 2);
+            var box = new StackPanel();
+            box.Children.Add(label);
+            box.Children.Add(row);
             return box;
         }
 

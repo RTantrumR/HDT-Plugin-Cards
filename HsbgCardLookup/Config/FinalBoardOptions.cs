@@ -29,6 +29,14 @@ namespace HsbgCardLookup.Config
         public bool Counters { get; set; } = true;
         public bool TurnTable { get; set; } = true;
 
+        /// <summary>The hero power and trinkets drawn inside a turn's sub-view. Its own switch and
+        /// not part of <see cref="TurnTable"/>: the table is the list of turns, this is what is
+        /// drawn once one of them is opened.</summary>
+        public bool TurnDetailRow { get; set; } = true;
+
+        /// <summary>The cards still in hand at each of a turn's three moments.</summary>
+        public bool TurnHand { get; set; } = true;
+
         // ── the Board view ──────────────────────────────────────────────────────────────────────
         public bool DetailRow { get; set; } = true;
         public bool Board { get; set; } = true;
@@ -68,6 +76,12 @@ namespace HsbgCardLookup.Config
                         Get = o => o.Counters, Set = (o, v) => o.Counters = v },
             new Block { Group = "Stats", Label = "Turn-by-turn table", Desc = "One row per turn: tier, health, the fight, gold and what you did.",
                         Get = o => o.TurnTable, Set = (o, v) => o.TurnTable = v },
+            new Block { Group = "Stats", Label = "Hero power and trinkets per turn", Desc = "Inside an opened turn: what was powering that board, hover for its state.",
+                        Parent = "Turn-by-turn table",
+                        Get = o => o.TurnDetailRow, Set = (o, v) => o.TurnDetailRow = v },
+            new Block { Group = "Stats", Label = "Cards in hand per turn", Desc = "Inside an opened turn: what you were still holding at each moment.",
+                        Parent = "Turn-by-turn table",
+                        Get = o => o.TurnHand, Set = (o, v) => o.TurnHand = v },
 
             new Block { Group = "Board", Label = "Hero power, trinkets, anomaly", Desc = "Only ever there for matches recorded with the plugin running.",
                         Get = o => o.DetailRow, Set = (o, v) => o.DetailRow = v },

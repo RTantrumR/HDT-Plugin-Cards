@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -106,8 +105,6 @@ namespace HsbgCardLookup.Ui
         private static readonly Brush PanelBg = Frozen(Color.FromArgb(0xEE, 0x10, 0x14, 0x1C));
         private static readonly Brush RowBg = Frozen(Color.FromArgb(0xFF, 0x1A, 0x21, 0x30));
         private static readonly Brush RowBgDim = Frozen(Color.FromArgb(0xFF, 0x14, 0x19, 0x24));
-        private static readonly Brush StatBrush = Frozen(Color.FromRgb(0x4A, 0xDE, 0x80));    // +X/+Y buffs
-        private static readonly Brush KeywordBrush = Frozen(Color.FromRgb(0xE8, 0xB5, 0x4B)); // keywords (accent gold)
         private static readonly Color TribeColor = Color.FromRgb(0x4A, 0xDE, 0x80);   // Emph 1 (green)
         private static readonly Color UniqueColor = Color.FromRgb(0xC0, 0x84, 0xFC);  // Emph 2 (purple)
         private static readonly Brush TribeBrush = Frozen(TribeColor);
@@ -485,28 +482,9 @@ namespace HsbgCardLookup.Ui
             return box;
         }
 
-        // Word-level color highlighting: stat gains in green, keyword-ish terms in gold, rest default.
-        private static readonly Regex Highlight = new Regex(
-            @"(?<stat>\+\d+(?:/\+\d+)?(?:\s+(?:Attack|Health))?)|" +
-            @"(?<kw>Divine Shield|Windfury|Stealth|Venomous|Reborn|Golden|Immune|Deathrattles?|Battlecr(?:y|ies)|Rally|Spellcrafts?|Start of Combat|Magnetize|Blood Gems|Taunt)",
-            RegexOptions.Compiled);
-
-        private static void AddColoredRuns(TextBlock tb, string text)
-        {
-            if (string.IsNullOrEmpty(text)) return;
-            int pos = 0;
-            foreach (Match m in Highlight.Matches(text))
-            {
-                if (m.Index > pos) tb.Inlines.Add(new Run(text.Substring(pos, m.Index - pos)));
-                tb.Inlines.Add(new Run(m.Value)
-                {
-                    Foreground = m.Groups["stat"].Success ? StatBrush : KeywordBrush,
-                    FontWeight = FontWeights.SemiBold
-                });
-                pos = m.Index + m.Length;
-            }
-            if (pos < text.Length) tb.Inlines.Add(new Run(text.Substring(pos)));
-        }
+        // Word-level colour highlighting: stat gains in green, keyword-ish terms in gold. Shared with
+        // the Final Board's enchantment tooltips, which read the same kind of sentence.
+        private static void AddColoredRuns(TextBlock tb, string text) => UiKit.ColorRuns(tb, text);
 
         // ── Wheel forwarding (low-level mouse hook, active only while visible) ──────────────────────
         // The cursor sits on the game's button while the panel is up, so WPF never receives the wheel.

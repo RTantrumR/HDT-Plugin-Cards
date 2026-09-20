@@ -82,6 +82,13 @@ namespace HsbgCardLookup.Ui.FinalBoard
         // its own — 110 puts its ring level with the hero power's beside it.
         private const double DarkGiftMarkSize = 110;
         private const double HeroPowerSize = 130;
+
+        // The turn sub-view's own strip. Small on purpose: three boards plus their headers already
+        // need two lift hacks to fit a 1080p client, so the per-turn hero power and trinkets are a
+        // reminder of what was in play, not a second detail row. Sized for THREE trinkets — a run
+        // that swaps a Greater trinket ends the match holding three (2026-09-20 record).
+        private const double TurnPowerSize = 52;
+        private const double TurnTrinketSize = 54;
         private const double AnomalyW = 90, AnomalyH = 130;
 
         // Two trinkets at 135 no longer fit Reign's 200 column, and neither did a hero power beside
@@ -578,10 +585,140 @@ namespace HsbgCardLookup.Ui.FinalBoard
         {
             var s = _currentStats;
             if (s == null || s.Turns == null || index < 0 || index >= s.Turns.Count) return;
-            _turnView.Show(s, index, m => new HdtControls.BattlegroundsMinion(EntityFor(m.CardId, m.Tags)));
+            _turnView.Detail = _options.TurnDetailRow ? (Func<TurnStat, UIElement>)TurnDetail : null;
+            _turnView.Hand = _options.TurnHand ? (Func<ShopSnap, MinionRecord, UIElement>)HandVisual : null;
+            _turnView.Show(s, index, MinionVisual);
             _showStats = true;
             _showTurn = true;
             ApplyView();
+        }
+
+        /// <summary>
+        /// One stored minion, drawn and made hoverable when it has enchantments to show.
+        ///
+        /// The view asks for this rather than building it, because resolving a card id to the words
+        /// Hearthstone would print is a Database/HearthDb job and the view is deliberately free of
+        /// both. A minion with nothing on it comes back plain and un-hoverable, so the panel never
+        /// grows a hover target that opens an empty box.
+        /// </summary>
+        private UIElement MinionVisual(ShopSnap snap, MinionRecord m)
+        {
+            var ctl = new HdtControls.BattlegroundsMinion(EntityFor(m.CardId, m.Tags));
+            ctl.IsHitTestVisible = false;   // HDT's control never takes input; the wrapper does
+            var tip = FinalBoardTips.Enchants(NameOf(m.CardId), snap, FinalBoardTips.HostId(m));
+            if (tip == null) return ctl;
+
+            // Transparent, not null: a Border with no brush is not hit-testable, so there would be
+            // nothing under the cursor to own the tooltip (same trap as the stats table's rows).
+            // The press is deliberately NOT handled — it bubbles to the panel root, which is what
+            // lets the player still grab the panel by its board.
+            var hit = new Border { Background = Brushes.Transparent, Child = ctl };
+            UiKit.Tip(hit, tip);
+            return hit;
+        }
+
+        /// <summary>
+        /// One card held in hand. A hand carries spells as well as minions, and they want different
+        /// renderers: HDT's <c>BattlegroundsMinion</c> is what shows a minion's BUFFED stats and its
+        /// golden frame — the whole reason a hand is worth drawing, since a Flighty Scout that sat
+        /// there for four turns growing and then tripling is a story the board alone never tells —
+        /// while a spell has no stats and wants its card face.
+        /// </summary>
+        private UIElement HandVisual(ShopSnap snap, MinionRecord m)
+        {
+            FrameworkElement ctl;
+            if (TagOf(m, GameTag.CARDTYPE) == (int)CardType.MINION)
+                ctl = new HdtControls.BattlegroundsMinion(EntityFor(m.CardId, m.Tags));
+            else
+            {
+                var card = CardOf(m.CardId);
+                if (card == null) return null;
+                var img = new HdtControls.CardImage();
+                img.SetCardIdFromCard(card, CardAssetType.FullImage);
+                ctl = img;
+            }
+            ctl.IsHitTestVisible = false;
+
+            var tip = FinalBoardTips.Enchants(NameOf(m.CardId), snap, FinalBoardTips.HostId(m));
+            if (tip == null) return ctl;
+            var hit = new Border { Background = Brushes.Transparent, Child = ctl };
+            UiKit.Tip(hit, tip);
+            return hit;
+        }
+
+        private static int TagOf(MinionRecord m, GameTag tag)
+        {
+            int v;
+            return m?.Tags != null && m.Tags.TryGetValue((int)tag, out v) ? v : 0;
+        }
+
+        /// <summary>
+        /// The turn's hero power and trinkets, in a strip under the title — captured per snapshot
+        /// since 2026-09-19 and, until now, rendered nowhere. Sourced from the start of the turn,
+        /// falling back to the later moments when the opening read failed; the countdown and the
+        /// spent/unspent state live in each one's tooltip.
+        /// </summary>
+        private UIElement TurnDetail(TurnStat t)
+        {
+            if (t == null) return null;
+            var power = First(t, s => s.HeroPower);
+            var trinkets = First(t, s => s.Trinkets != null && s.Trinkets.Count > 0 ? s.Trinkets : null);
+            if (power == null && trinkets == null) return null;
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 2),
+            };
+            if (power != null)
+                Hover(row, new HdtControls.HeroPower(EntityFor(power.CardId, power.Tags)),
+                      TurnPowerSize, FinalBoardTips.Power(power));
+            foreach (var tr in trinkets ?? new List<MinionRecord>())
+            {
+                if (tr == null || string.IsNullOrEmpty(tr.CardId)) continue;
+                Hover(row, new HdtControls.Trinket(EntityFor(tr.CardId, tr.Tags)),
+                      TurnTrinketSize, FinalBoardTips.Trinket(tr));
+            }
+            return row.Children.Count == 0 ? null : (UIElement)row;
+        }
+
+        /// <summary>The first of A/B/C that has the thing — absence at one moment is a failed read,
+        /// not an absent trinket, so the strip asks the next moment rather than showing nothing.</summary>
+        private static T First<T>(TurnStat t, Func<ShopSnap, T> pick) where T : class
+        {
+            foreach (var s in new[] { t.SnapStart, t.SnapEnd, t.SnapPreCombat })
+            {
+                if (s == null) continue;
+                var v = pick(s);
+                if (v != null) return v;
+            }
+            return null;
+        }
+
+        /// <summary>Place one of HDT's clipping controls at strip size and give it its tooltip. The
+        /// Viewbox is what makes Trinket/HeroPower scale instead of crop (see <see cref="Add"/>).</summary>
+        private static void Hover(Panel host, FrameworkElement control, double size, UIElement tip)
+        {
+            control.IsHitTestVisible = false;
+            var box = new Viewbox { Width = size, Height = size, Stretch = Stretch.Uniform, Child = control };
+            if (tip == null) { box.IsHitTestVisible = false; host.Children.Add(box); return; }
+            var hit = new Border { Background = Brushes.Transparent, Child = box };
+            UiKit.Tip(hit, tip);
+            host.Children.Add(hit);
+        }
+
+        /// <summary>A stored card's display name for a tooltip header, with the golden fallback the
+        /// rest of the plugin uses: a tripled minion's <c>_G</c> id has no record of its own, so the
+        /// base card supplies the name.</summary>
+        private static string NameOf(string cardId)
+        {
+            var n = HsbgCardLookup.Data.CardText.Name(cardId);
+            if (!string.Equals(n, cardId, StringComparison.Ordinal)) return n;
+            var baseId = HsbgCardLookup.Data.CardText.StripGold(cardId);
+            return string.Equals(baseId, cardId, StringComparison.Ordinal)
+                ? n
+                : HsbgCardLookup.Data.CardText.Name(baseId);
         }
 
         /// <summary>Step out of the turn sub-view. False when there was nothing to step out of —

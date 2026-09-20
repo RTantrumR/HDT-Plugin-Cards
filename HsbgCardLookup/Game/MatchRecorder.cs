@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using Hearthstone_Deck_Tracker;                       // Core
 using Hearthstone_Deck_Tracker.Hearthstone;           // GameV2, Player
 using Hearthstone_Deck_Tracker.Hearthstone.Entities;  // Entity
@@ -441,20 +440,17 @@ namespace HsbgCardLookup.Game
             catch { return ""; }
         }
 
+        // ── text rules, shared with the Final Board panel ───────────────────────────────────────
+        // The rules live in Data\CardText so the recorder's CSV and the panel's tooltips cannot
+        // drift apart. What stays here is the live-Entity half: this file has entities to read tags
+        // off, the panel only ever has the ints a snapshot stored. CSV output is unchanged — the two
+        // destructive steps of CleanEffect are flags on the shared version, and this caller passes
+        // exactly the values it always used.
+
         // Engine/internal enchantments to drop (mirrors HSBot's [DNT] + system-name filtering).
         private static bool IsNoiseEnchant(Entity e)
         {
-            try
-            {
-                string name = TryCardName(e) ?? "";
-                if (name.IndexOf("[DNT]", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                if (name.IndexOf("(DNT)", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                if (name.IndexOf("PlayerEnchant", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                string cid = e.CardId ?? "";
-                if (cid.StartsWith("TB_BaconShop_", StringComparison.OrdinalIgnoreCase)) return true;
-                if (cid.StartsWith("Bacon_", StringComparison.OrdinalIgnoreCase)) return true;
-                return false;
-            }
+            try { return CardText.IsNoiseName(TryCardName(e)) || CardText.IsNoiseId(e.CardId); }
             catch { return true; }
         }
 
@@ -465,37 +461,19 @@ namespace HsbgCardLookup.Game
             if (string.IsNullOrEmpty(text)) return text;
             try
             {
-                if (text.IndexOf("{0}", StringComparison.Ordinal) >= 0)
-                    text = text.Replace("{0}", e.GetTag(GameTag.TAG_SCRIPT_DATA_NUM_1).ToString());
-                if (text.IndexOf("{1}", StringComparison.Ordinal) >= 0)
-                    text = text.Replace("{1}", e.GetTag(GameTag.TAG_SCRIPT_DATA_NUM_2).ToString());
+                return CardText.Substitute(text,
+                    e.GetTag(GameTag.TAG_SCRIPT_DATA_NUM_1), e.GetTag(GameTag.TAG_SCRIPT_DATA_NUM_2));
             }
-            catch { }
-            return text;
+            catch { return text; }
         }
 
         // Port of HSBot's clean_effect_text: collapse to one line, strip trigger/lead-in prefixes, truncate.
-        private static string CleanEffect(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            string t = string.Join(" ", text.Split(new[] { '\n', '\r', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries)).Trim().TrimEnd('.');
-            foreach (var p in new[] { "Battlecry: ", "Deathrattle: ", "Start of Combat: ", "End of Turn: ", "Passive: ", "Choose One - " })
-                if (t.StartsWith(p, StringComparison.Ordinal)) { t = t.Substring(p.Length); break; }
-            foreach (var p in new[] { "Give a friendly minion ", "Give a minion ", "Give your minions ", "Give all ", "Give your " })
-                if (t.StartsWith(p, StringComparison.Ordinal)) { t = t.Substring(p.Length); break; }
-            t = t.Replace("______", "").Trim();
-            if (t.Length > 80) t = t.Substring(0, 77) + "...";
-            return t;
-        }
+        private static string CleanEffect(string text) => CardText.Clean(text, stripLeadIns: true, maxLen: 80);
 
         private static string TryCardName(Entity e) { try { return e?.Card?.Name; } catch { return null; } }
 
-        // Shop/UI marker enchantments (purchasable/triple/cost state) — not gameplay buffs. They render as
-        // "Costs (N)" or carry "Drag To Buy". Real buffs are stat/keyword effects, so this never drops them.
-        private static readonly Regex CostMarker = new Regex(@"^Costs\s*\(\d+\)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static bool IsShopMarker(string text) =>
-            !string.IsNullOrEmpty(text) &&
-            (CostMarker.IsMatch(text) || text.IndexOf("Drag To Buy", StringComparison.OrdinalIgnoreCase) >= 0);
+        // Shop/UI marker enchantments (purchasable/triple/cost state) — not gameplay buffs.
+        private static bool IsShopMarker(string text) => CardText.IsShopMarker(text);
 
         // Hero/minion display name: prefer our card record, fall back to HearthDb's name.
         private string NameOf(Entity e)
@@ -513,9 +491,7 @@ namespace HsbgCardLookup.Game
             !string.IsNullOrEmpty(cardId) && cardId.EndsWith("_G", StringComparison.Ordinal);
 
         // Tripled/golden ids carry a trailing _G with no record of their own → look up the base.
-        private static string StripGold(string cardId) =>
-            string.IsNullOrEmpty(cardId) ? cardId
-                : (cardId.EndsWith("_G", StringComparison.Ordinal) ? cardId.Substring(0, cardId.Length - 2) : cardId);
+        private static string StripGold(string cardId) => CardText.StripGold(cardId);
 
         private static IEnumerable<Entity> Snapshot(IEnumerable<Entity> src)
         {
