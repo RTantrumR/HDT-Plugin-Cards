@@ -91,14 +91,19 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         // ── the visual half ─────────────────────────────────────────────────────────────────────
 
-        private const double TipWidth = 340;
+        // Unscaled reference sizes: the host hands the tooltip its own scale transform, so at the
+        // panel's 1.18 these land level with the panel's own text instead of a size below it.
+        private const double TipWidth = 360;
+        private const double TitleSize = 14.5;
+        private const double BodySize = 13.5;
+        private const double NoteSize = 12;
 
         /// <summary>
         /// A board or hand card's tooltip: its name, then one line per enchantment. Null when there
         /// is nothing to say — a plain minion with no buffs gets no tooltip at all rather than an
         /// empty box, which is also what stops the panel sprouting hover targets that do nothing.
         /// </summary>
-        internal static UIElement Enchants(string cardName, ShopSnap snap, int hostId)
+        internal static FrameworkElement Enchants(string cardName, ShopSnap snap, int hostId)
         {
             var rows = Rows(snap, hostId);
             if (rows.Count == 0) return null;
@@ -111,7 +116,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// The hero power as it stood at this moment: its name, the countdown or charge text the
         /// game would be showing, and whether it had already been used this turn.
         /// </summary>
-        internal static UIElement Power(MinionRecord power)
+        internal static FrameworkElement Power(MinionRecord power)
         {
             if (power == null || string.IsNullOrEmpty(power.CardId)) return null;
             var box = Box(CardText.Name(power.CardId));
@@ -123,7 +128,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
         /// <summary>The hero power from a card id alone — the end-of-match header, which stores no
         /// tags, so this is the card's opening text rather than any particular moment's.</summary>
-        internal static UIElement Power(string cardId)
+        internal static FrameworkElement Power(string cardId)
         {
             if (string.IsNullOrEmpty(cardId)) return null;
             var box = Box(CardText.Name(cardId));
@@ -133,7 +138,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         /// <summary>A trinket's name and its current text — the same "(N left!)" the shop shows.</summary>
-        internal static UIElement Trinket(MinionRecord trinket)
+        internal static FrameworkElement Trinket(MinionRecord trinket)
         {
             if (trinket == null || string.IsNullOrEmpty(trinket.CardId)) return null;
             var box = Box(CardText.Name(trinket.CardId));
@@ -142,12 +147,36 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return box;
         }
 
+        /// <summary>The lobby's anomaly, named and spelled out — it is drawn small enough that its
+        /// own card text is unreadable, and it is a rule the whole match was played under.</summary>
+        internal static FrameworkElement Anomaly(string cardId)
+        {
+            if (string.IsNullOrEmpty(cardId)) return null;
+            var box = Box(CardText.Name(cardId));
+            var text = CardText.Render(cardId, 0, 0, 0);
+            if (!string.IsNullOrEmpty(text)) box.Children.Add(Body(text));
+            box.Children.Add(Note("the anomaly this lobby was played under"));
+            return box;
+        }
+
+        /// <summary>
+        /// The Dark Gift mark. The only medallion on the panel that is not a card — it stands for a
+        /// season's mechanic rather than for something the player held — so it is also the only one
+        /// whose picture cannot say what it is.
+        /// </summary>
+        internal static FrameworkElement DarkGift()
+        {
+            var box = Box("Dark Gifts");
+            box.Children.Add(Body("This match was played in a Dark Gift lobby: minions could be offered a Dark Gift instead of an anomaly being in play."));
+            return box;
+        }
+
         /// <summary>
         /// A medallion the player did not have yet on the turn being viewed. It still names the
         /// card, because a faded picture with no tooltip reads as a rendering fault rather than as
         /// a fact about the match — and the fact is the interesting part: which turn it arrived on.
         /// </summary>
-        internal static UIElement Unowned(string cardId, int acquiredOnTurn)
+        internal static FrameworkElement Unowned(string cardId, int acquiredOnTurn)
         {
             if (string.IsNullOrEmpty(cardId)) return null;
             var box = Box(CardText.Name(cardId));
@@ -162,7 +191,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// a power that gets consumed — Growing Collection is spent on turn 8 — so the medallion
         /// fades and says so rather than pretending the power was still there.
         /// </summary>
-        internal static UIElement Spent(string cardId)
+        internal static FrameworkElement Spent(string cardId)
         {
             if (string.IsNullOrEmpty(cardId)) return null;
             var box = Box(CardText.Name(cardId));
@@ -202,10 +231,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 {
                     Text = title,
                     Foreground = UiKit.TextPrimary,
-                    FontSize = 13,
+                    FontSize = TitleSize,
                     FontWeight = FontWeights.SemiBold,
                     TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(0, 0, 0, 4),
+                    Margin = new Thickness(0, 0, 0, 5),
                 });
             return box;
         }
@@ -218,9 +247,9 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var tb = new TextBlock
             {
                 Foreground = UiKit.TextSecondary,
-                FontSize = 12,
+                FontSize = BodySize,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 1, 0, 1),
+                Margin = new Thickness(0, 1.5, 0, 1.5),
             };
             tb.Inlines.Add(new System.Windows.Documents.Run(r.Name)
             {
@@ -238,7 +267,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 { Foreground = UiKit.TextMuted });
             if (!string.IsNullOrEmpty(r.Source))
                 tb.Inlines.Add(new System.Windows.Documents.Run("  ← " + r.Source)
-                { Foreground = UiKit.TextMuted, FontSize = 11 });
+                { Foreground = UiKit.TextMuted, FontSize = NoteSize });
             return tb;
         }
 
@@ -247,7 +276,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var tb = new TextBlock
             {
                 Foreground = UiKit.TextSecondary,
-                FontSize = 12,
+                FontSize = BodySize,
                 TextWrapping = TextWrapping.Wrap,
             };
             UiKit.ColorRuns(tb, text);
@@ -258,7 +287,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         {
             Text = text,
             Foreground = UiKit.TextMuted,
-            FontSize = 11,
+            FontSize = NoteSize,
             Margin = new Thickness(0, 3, 0, 0),
         };
     }

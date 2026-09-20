@@ -612,7 +612,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             // The press is deliberately NOT handled — it bubbles to the panel root, which is what
             // lets the player still grab the panel by its board.
             var hit = new Border { Background = Brushes.Transparent, Child = ctl };
-            UiKit.Tip(hit, tip);
+            UiKit.Tip(hit, tip, _scale);
             return hit;
         }
 
@@ -641,7 +641,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var tip = FinalBoardTips.Enchants(NameOf(m.CardId), snap, FinalBoardTips.HostId(m));
             if (tip == null) return ctl;
             var hit = new Border { Background = Brushes.Transparent, Child = ctl };
-            UiKit.Tip(hit, tip);
+            UiKit.Tip(hit, tip, _scale);
             return hit;
         }
 
@@ -702,15 +702,15 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// <summary>Place one of HDT's clipping controls and give it its tooltip. The Viewbox is
         /// what makes Trinket/HeroPower scale instead of crop (see <see cref="Add"/>); a faded one
         /// is something the player did not have yet, and still says so on hover.</summary>
-        private static void Hover(Panel host, FrameworkElement control, double w, double h,
-                                  Thickness margin, UIElement tip, bool owned)
+        private void Hover(Panel host, FrameworkElement control, double w, double h,
+                           Thickness margin, FrameworkElement tip, bool owned)
         {
             control.IsHitTestVisible = false;
             var box = new Viewbox { Width = w, Height = h, Stretch = Stretch.Uniform, Margin = margin, Child = control };
             if (!owned) box.Opacity = NotYetOwned;
             if (tip == null) { box.IsHitTestVisible = false; host.Children.Add(box); return; }
             var hit = new Border { Background = Brushes.Transparent, Child = box };
-            UiKit.Tip(hit, tip);
+            UiKit.Tip(hit, tip, _scale);
             host.Children.Add(hit);
         }
 
@@ -859,7 +859,8 @@ namespace HsbgCardLookup.Ui.FinalBoard
             {
                 var img = new HdtControls.CardImage();
                 img.SetCardIdFromCard(anomaly, CardAssetType.FullImage);
-                Add(_powers, img, AnomalyW, AnomalyH, new Thickness(6, 0, 0, 0));
+                Hover(_powers, img, AnomalyW, AnomalyH, new Thickness(6, 0, 0, 0),
+                      FinalBoardTips.Anomaly(rec.AnomalyCardId), true);
             }
             else
             {
@@ -871,8 +872,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 // match, and the Dark Gift is the season it was played in.
                 var mark = rec.DarkGiftLobby ? LoadDarkGiftMark() : null;
                 if (mark != null)
-                    Add(_powers, new Image { Source = mark }, DarkGiftMarkSize, DarkGiftMarkSize,
-                        new Thickness(6, 0, 0, 0));
+                    // The one medallion that is not a card, so it is the one that most needs saying
+                    // out loud: nothing else on the panel explains what the mark stands for.
+                    Hover(_powers, new Image { Source = mark }, DarkGiftMarkSize, DarkGiftMarkSize,
+                          new Thickness(6, 0, 0, 0), FinalBoardTips.DarkGift(), true);
             }
         }
 

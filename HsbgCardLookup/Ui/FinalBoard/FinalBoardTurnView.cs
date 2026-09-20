@@ -34,9 +34,11 @@ namespace HsbgCardLookup.Ui.FinalBoard
         // bottom, which is why the label above each board keeps its distance (HeadGap).
         private const double MinionSize = 110;
         private const double MinionGap = -5;
-        // The hand shares the board's row. Positive gap, unlike the board's overlap: hand cards
-        // carry no frame that draws past their box, so a negative one would just make them touch.
-        private const double HandGap = 2;
+        // The hand shares the board's row and is spaced like it, near enough. Not the board's full
+        // −5: a hand minion carries the same transparent frame margin and would take it, but a
+        // spell is a plain card face with almost none, and at −5 two spells would overlap their
+        // own art.
+        private const double HandGap = -3;
         private const double DividerW = 24;
         // What the row has to fit into: the content width less both arrow columns, less a little
         // so a full row never sits flush against an arrow.
@@ -47,6 +49,22 @@ namespace HsbgCardLookup.Ui.FinalBoard
         // from 12/12 once the hand moved onto the board's own row and gave the height back.
         private const double HeadGap = 16;
         private const double BoardGap = 18;
+
+        /// <summary>
+        /// The height every card row is given, whatever it ends up drawing in it.
+        ///
+        /// Reserved rather than fitted, and that is the whole point: a turn with four cards in hand
+        /// draws at 79px and a turn without draws at 110, so a row that sized itself would make the
+        /// sub-view a different height on every turn — which moves the arrows out from under the
+        /// cursor and makes the panel resize under the eye on every step. Stepping through turns is
+        /// the main thing this view is for, so the layout holds still and the empty space is the
+        /// price. Same reason the collapsed "nothing changed" block still reserves its band.
+        /// </summary>
+        private const double RowH = MinionSize + BoardGap;
+
+        /// <summary>The title line's fixed height — the back arrow is 26 and a tier medallion 18,
+        /// so 30 clears both and never depends on what the turn happens to hoist.</summary>
+        private const double TopBarH = 30;
 
         private readonly Grid _root = new Grid { Width = ContentW, HorizontalAlignment = HorizontalAlignment.Left };
 
@@ -139,6 +157,9 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private UIElement TopBar(TurnStat t)
         {
             var g = ThreeColumns();
+            // Fixed, like the card bands below it: the hoisted numbers bring a tier medallion with
+            // them on some turns and not others, and the back arrow must not move because of it.
+            g.Height = TopBarH;
             g.Margin = new Thickness(0, 0, 0, 6);
 
             var back = FinalBoardPanel.GlyphButton(BackGlyph(), "Back to the stats", UiKit.AccentBrush, () => Back);
@@ -233,8 +254,22 @@ namespace HsbgCardLookup.Ui.FinalBoard
             var box = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
             box.Children.Add(StateHead(label, s, changes, opening));
 
-            box.Children.Add(CardRow(s));
+            box.Children.Add(Band(CardRow(s)));
             return box;
+        }
+
+        /// <summary>A card row in its reserved band, centred in whatever it does not use. See
+        /// <see cref="RowH"/> for why the band is a fixed size.</summary>
+        private static UIElement Band(UIElement row)
+        {
+            var g = new Grid { Height = RowH };
+            if (row != null)
+            {
+                var fe = row as FrameworkElement;
+                if (fe != null) fe.VerticalAlignment = VerticalAlignment.Center;
+                g.Children.Add(row);
+            }
+            return g;
         }
 
         /// <summary>
@@ -274,7 +309,6 @@ namespace HsbgCardLookup.Ui.FinalBoard
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, BoardGap),
             };
             if (board.Count == 0)
             {
@@ -282,7 +316,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 // a board of one, and "you went into this with nothing on the field" is the more
                 // important half of that moment.
                 var empty = Line("Empty board", 12, UiKit.TextMuted);
-                empty.Margin = new Thickness(0, 6, 0, 10);
+                empty.Margin = new Thickness(0, 0, hand.Count > 0 ? 10 : 0, 0);
                 row.Children.Add(empty);
                 if (hand.Count == 0) return row;
             }
@@ -388,13 +422,18 @@ namespace HsbgCardLookup.Ui.FinalBoard
             return g;
         }
 
-        /// <summary>A header with only words after the label: "not captured", "nothing changed".</summary>
+        /// <summary>A header with only words after the label: "not captured", "nothing changed".
+        /// It still reserves its card band, so a turn whose end-of-turn effects did nothing is
+        /// exactly as tall as one whose did.</summary>
         private static UIElement Head(string label, string detail)
         {
             var row = HeadRow();
             row.Children.Add(HeadLabel(label));
             row.Children.Add(Word(detail));
-            return row;
+            var box = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
+            box.Children.Add(row);
+            box.Children.Add(Band(null));
+            return box;
         }
 
         /// <summary>

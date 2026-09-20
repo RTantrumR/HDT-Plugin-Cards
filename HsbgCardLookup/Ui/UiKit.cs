@@ -62,6 +62,22 @@ namespace HsbgCardLookup.Ui
         /// minions and is also how crossing the panel to reach the ✕ pops a tooltip at every step.
         /// Untested either way, so it stays where every other tooltip in the plugin has it.
         /// </summary>
+        /// <summary>
+        /// The same tooltip, drawn at the host's own scale.
+        ///
+        /// A ToolTip is a Popup in its own window, so it does NOT inherit the transform that a
+        /// scaled surface puts on its visual tree — on the Final Board panel at 1.18 that left the
+        /// tooltip text visibly smaller than the panel's own, which is the one place the difference
+        /// is obvious because they sit on top of each other. Passing the host's live
+        /// <see cref="ScaleTransform"/> keeps the two in step, including when the panel is refitted
+        /// to a smaller canvas afterwards.
+        /// </summary>
+        public static void Tip(FrameworkElement el, FrameworkElement content, Transform scale)
+        {
+            if (scale != null) content.LayoutTransform = scale;
+            Tip(el, (UIElement)content);
+        }
+
         public static void Tip(FrameworkElement el, UIElement content)
         {
             el.ToolTip = new ToolTip
