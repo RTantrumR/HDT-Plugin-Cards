@@ -169,7 +169,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         internal static FrameworkElement DarkGift()
         {
             var box = Box("Dark Gifts");
-            box.Children.Add(Body("This match was played in a Dark Gift lobby: minions could be offered a Dark Gift instead of an anomaly being in play."));
+            box.Children.Add(Body("This match was played in a Dark Gift lobby."));
             return box;
         }
 

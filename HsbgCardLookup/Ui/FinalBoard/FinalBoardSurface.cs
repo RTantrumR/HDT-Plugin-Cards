@@ -248,7 +248,11 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 _panel.Scale = Math.Min(PreferredScale, cw * 0.96 / w);
                 // A changed limit re-lays the panel out and raises SizeChanged, which brings us
                 // back here with the new height; placing now would use the old one.
-                if (_panel.LimitHeight(ch * 0.94 / _panel.Scale)) return;
+                //
+                // Two budgets, not one: the height the composition wants to keep inside, and every
+                // pixel the canvas has. A body that overruns the first by less than the margin
+                // takes the margin rather than growing a scroll bar for a handful of pixels.
+                if (_panel.LimitHeight(ch * 0.94 / _panel.Scale, ch * 0.995 / _panel.Scale)) return;
             }
             catch (Exception ex) { _log?.Invoke("[FinalBoardSurface] fit error: " + ex.Message); return; }
             finally { _fitting = false; }

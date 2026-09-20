@@ -194,24 +194,34 @@ namespace HsbgCardLookup.Ui.FinalBoard
         public Size RenderedSize => new Size(PanelW * _scale.ScaleX, _root.ActualHeight * _scale.ScaleY);
 
         /// <summary>
-        /// Keep the panel no taller than <paramref name="maxRef"/> reference pixels by giving the
-        /// scrolling body only the height that is left, after everything that does not scroll —
-        /// the chrome, the header, the band, the footer — has taken its own. Called by the host
-        /// after every layout that could change the height; the export never calls it.
+        /// Keep the panel inside the canvas by giving the scrolling body only the height that is
+        /// left, after everything that does not scroll — the chrome, the header, the band, the
+        /// footer — has taken its own. Called by the host after every layout that could change the
+        /// height; the export never calls it.
         /// </summary>
-        public bool LimitHeight(double maxRef)
+        /// <param name="preferredRef">The height the panel likes to stay within, leaving a margin
+        /// off the canvas edges. What it is limited to when it genuinely has to scroll.</param>
+        /// <param name="hardRef">Everything there is, edge to edge. A panel that overruns the
+        /// PREFERRED height by less than that margin eats into it instead of growing a scroll bar:
+        /// a body five pixels too tall for its margin is not a body worth scrolling, and a scroll
+        /// bar that exists to hide five pixels is worse than the five pixels. Past that the bar
+        /// comes back and the margin with it — if the content is scrolling anyway, it may as well
+        /// scroll inside the composition rather than flush against the screen.</param>
+        public bool LimitHeight(double preferredRef, double hardRef)
         {
-            if (_scroll == null || maxRef <= 0) return false;
+            if (_scroll == null || preferredRef <= 0) return false;
             // Read, never re-lay out: the first version reset MaxHeight to unlimited and forced a
             // layout to measure, which raised SizeChanged, which called this again — HDT's UI thread
             // spun on that forever (2026-09-06). The scroll viewer already knows its content's full
             // height (ExtentHeight) whatever its current limit, and the rest of the panel is the
-            // root's height less the viewer's own.
+            // root's height less the viewer's own. Neither reading depends on the limit in force,
+            // which is what keeps this from oscillating between two answers.
             double others = _root.ActualHeight - _scroll.ActualHeight;
             double content = _scroll.ExtentHeight;
             if (others < 0 || content <= 0) return false;
-            double allowed = Math.Max(120, maxRef - others);
-            double wanted = content > allowed ? allowed : double.PositiveInfinity;
+            double allowed = Math.Max(120, preferredRef - others);
+            double stretched = Math.Max(allowed, Math.Max(120, hardRef - others));
+            double wanted = content > stretched ? allowed : double.PositiveInfinity;
             bool same = double.IsPositiveInfinity(wanted)
                 ? double.IsPositiveInfinity(_scroll.MaxHeight)
                 : Math.Abs(wanted - _scroll.MaxHeight) < 0.5;
