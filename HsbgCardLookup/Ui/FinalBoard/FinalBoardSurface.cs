@@ -56,6 +56,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         private const double PreferredScale = 1.18;
         private bool _fitting;   // LimitHeight re-lays out the panel, which raises SizeChanged, which calls back here
         private string _lastFitNote;
+        private bool _fitQueued;   // one pending deferred fit is enough
 
         // Gesture state; canvas thread only (the low-level hook posts back onto it).
         private bool _dragging, _moved;
@@ -104,7 +105,11 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _panel.Root.SizeChanged += (s, e) => { if (IsVisible && !_dragging) FitAndPlace(); };
             // A tab or a turn changes what the body holds without necessarily changing the panel's
             // height, and a size change is the only other thing that would bring us back here.
-            _panel.ViewChanged = () => { if (IsVisible && !_dragging) FitAndPlace(); };
+            // QUEUED, never called straight through: ViewChanged fires from inside ApplyView, which
+            // has only just set the new visibilities, so every measurement FitAndPlace reads is
+            // still the OUTGOING view's. Fitting on those numbers sized the stats table to the turn
+            // view's content and pushed the panel off the canvas.
+            _panel.ViewChanged = QueueFit;
             try { OverlayExtensions.SetIsOverlayHitTestVisible(_panel.Root, true); } catch { }
 
             _toastHide = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
@@ -135,7 +140,28 @@ namespace HsbgCardLookup.Ui.FinalBoard
 
             // The panel's height depends on the record and on which view is open, so it is not known
             // until WPF has measured it — fit and place on the pass after this one.
-            canvas.Dispatcher.BeginInvoke(new Action(FitAndPlace), DispatcherPriority.Loaded);
+            QueueFit();
+        }
+
+        /// <summary>
+        /// Fit and place once WPF has laid the panel out, not now.
+        ///
+        /// Everything <see cref="FitAndPlace"/> reads — the root's height, the scroll viewer's
+        /// height and its content's extent — is a MEASURED value, so calling it in the same breath
+        /// as the change that invalidates them reads the previous view's numbers. Queued at
+        /// <see cref="DispatcherPriority.Loaded"/>, which runs after layout.
+        /// </summary>
+        private void QueueFit()
+        {
+            if (!IsVisible || _dragging || _fitQueued) return;
+            var canvas = Host;
+            if (canvas == null) return;
+            _fitQueued = true;
+            canvas.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _fitQueued = false;
+                if (IsVisible && !_dragging) FitAndPlace();
+            }), DispatcherPriority.Loaded);
         }
 
         public void Hide()
