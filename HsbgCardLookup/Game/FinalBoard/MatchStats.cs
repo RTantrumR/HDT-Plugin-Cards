@@ -286,7 +286,10 @@ namespace HsbgCardLookup.Game.FinalBoard
         // moment they could not be read. Same contract as the snapshots themselves: absence means
         // "not captured", never "empty". ──
 
-        /// <summary>Cards in hand, hand order — minions and spells alike (CARDTYPE tells them apart).</summary>
+        /// <summary>Cards in hand, hand order — minions and spells alike (CARDTYPE tells them apart).
+        /// Empty means the hand WAS empty, which at a shop opening is the normal reading; absent
+        /// means the read failed. Those two were indistinguishable until 2026-09-20, when a match
+        /// showed empty hands at two turns' B and C and nothing could say which it had been.</summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public List<MinionRecord> Hand { get; set; }
 

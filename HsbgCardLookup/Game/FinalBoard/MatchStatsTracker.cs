@@ -676,7 +676,7 @@ namespace HsbgCardLookup.Game.FinalBoard
         }
 
         private static string Counts(ShopSnap s) => s == null ? "-" : string.Format("board={0} hand={1} shop={2} ench={3} trinkets={4} hp={5}",
-            s.Board != null ? s.Board.Count : 0, s.Hand != null ? s.Hand.Count : 0,
+            s.Board != null ? s.Board.Count.ToString() : "-", s.Hand != null ? s.Hand.Count.ToString() : "-",
             s.Shop != null ? s.Shop.Count.ToString() : "-", s.Enchants != null ? s.Enchants.Count : 0,
             s.Trinkets != null ? s.Trinkets.Count.ToString() : "-",
             s.HeroPower != null ? s.HeroPower.CardId : "-");
@@ -694,16 +694,16 @@ namespace HsbgCardLookup.Game.FinalBoard
 
         private static List<MinionRecord> ReadHand(GameV2 g)
         {
-            var list = new List<MinionRecord>();
             try
             {
                 var hand = g != null && g.Player != null && g.Player.Hand != null ? g.Player.Hand.ToList() : null;
-                if (hand == null) return list;
+                if (hand == null) return null;
+                var list = new List<MinionRecord>();
                 foreach (var c in hand.OrderBy(c => Tag(c, GameTag.ZONE_POSITION)))
                     if (c != null) list.Add(ToSnapRecord(c));
+                return list;
             }
-            catch { }
-            return list;
+            catch { return null; }
         }
 
         /// <summary>
@@ -717,6 +717,7 @@ namespace HsbgCardLookup.Game.FinalBoard
             var list = new List<MinionRecord>();
             try
             {
+                if (all == null) return null;
                 int us = g != null && g.Player != null ? g.Player.Id : -1;
                 var row = new List<Entity>();
                 foreach (var e in all)
@@ -729,9 +730,9 @@ namespace HsbgCardLookup.Game.FinalBoard
                 }
                 foreach (var e in row.OrderBy(e => Tag(e, GameTag.ZONE_POSITION)))
                     list.Add(ToSnapRecord(e));
+                return list;
             }
-            catch { }
-            return list;
+            catch { return null; }
         }
 
         /// <summary>
@@ -739,14 +740,16 @@ namespace HsbgCardLookup.Game.FinalBoard
         /// identical ones (same host, card, source and script numbers) collapsed into one count.
         /// A late board carries up to ~32 per minion, most of them repeats of the same buff.
         /// </summary>
+        private static readonly List<MinionRecord> Empty = new List<MinionRecord>();
+
         private static List<EnchantRecord> ReadEnchants(GameV2 g, List<Entity> all, List<MinionRecord> board, List<MinionRecord> hand)
         {
             var outp = new List<EnchantRecord>();
             try
             {
                 var hosts = new HashSet<int>();
-                foreach (var m in board) { int id; if (m.Tags != null && m.Tags.TryGetValue((int)GameTag.ENTITY_ID, out id)) hosts.Add(id); }
-                foreach (var m in hand) { int id; if (m.Tags != null && m.Tags.TryGetValue((int)GameTag.ENTITY_ID, out id)) hosts.Add(id); }
+                foreach (var m in board ?? Empty) { int id; if (m.Tags != null && m.Tags.TryGetValue((int)GameTag.ENTITY_ID, out id)) hosts.Add(id); }
+                foreach (var m in hand ?? Empty) { int id; if (m.Tags != null && m.Tags.TryGetValue((int)GameTag.ENTITY_ID, out id)) hosts.Add(id); }
                 try { if (g.Player != null && g.Player.Hero != null) hosts.Add(g.Player.Hero.Id); } catch { }
                 try { if (g.PlayerEntity != null) hosts.Add(g.PlayerEntity.Id); } catch { }
                 if (hosts.Count == 0) return outp;
@@ -817,17 +820,17 @@ namespace HsbgCardLookup.Game.FinalBoard
 
         private static List<MinionRecord> ReadBoard(GameV2 g)
         {
-            var list = new List<MinionRecord>();
             try
             {
                 var minions = g != null && g.Player != null && g.Player.Minions != null
                     ? g.Player.Minions.ToList() : null;
-                if (minions == null) return list;
+                if (minions == null) return null;
+                var list = new List<MinionRecord>();
                 foreach (var m in minions)
                     if (m != null) list.Add(ToSnapRecord(m));
+                return list;
             }
-            catch { }
-            return list;
+            catch { return null; }
         }
 
         /// <summary>ENTITY_ID is forced from <c>e.Id</c> — authoritative even if the tag were absent.</summary>
