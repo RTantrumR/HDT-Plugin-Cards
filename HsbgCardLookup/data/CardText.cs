@@ -281,6 +281,22 @@ namespace HsbgCardLookup.Data
             catch { return ""; }
         }
 
+        /// <summary>
+        /// The card's text with its own DEFINITION's numbers in it — for the places that have a
+        /// card id and no stored tags, like the end-of-match anomaly and hero-power slots.
+        ///
+        /// Passing zero there is worse than it looks: the anomaly *Treasure Hoard* is
+        /// "({0} turns left!)" and would read "(0 turns left!)", a specific claim about a match
+        /// that is over and a wrong one. The def's own <c>TAG_SCRIPT_DATA_NUM_1</c> is the value
+        /// the card carries before anything has happened to it — the same number the collection
+        /// shows — so that is what an untagged render uses.
+        /// </summary>
+        internal static string RenderDefault(string cardId, int variant = 0) =>
+            Render(cardId, variant, TagValue(cardId, ScriptNum1Tag), TagValue(cardId, ScriptNum2Tag));
+
+        private const int ScriptNum1Tag = 2;
+        private const int ScriptNum2Tag = 3;
+
         private static readonly Regex Placeholder = new Regex(@"\{(\d+)\}", RegexOptions.Compiled);
         private static readonly Regex Plural = new Regex(@"\|4\(([^,)]*),\s*([^)]*)\)", RegexOptions.Compiled);
         private static readonly Regex Markup = new Regex(@"<[^>]*>", RegexOptions.Compiled);

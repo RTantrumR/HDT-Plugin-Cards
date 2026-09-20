@@ -127,12 +127,12 @@ namespace HsbgCardLookup.Ui.FinalBoard
         }
 
         /// <summary>The hero power from a card id alone — the end-of-match header, which stores no
-        /// tags, so this is the card's opening text rather than any particular moment's.</summary>
+        /// tags, so this is the card as it starts rather than any particular moment's state.</summary>
         internal static FrameworkElement Power(string cardId)
         {
             if (string.IsNullOrEmpty(cardId)) return null;
             var box = Box(CardText.Name(cardId));
-            var text = CardText.Render(cardId, 0, 0, 0);
+            var text = CardText.RenderDefault(cardId);
             if (!string.IsNullOrEmpty(text)) box.Children.Add(Body(text));
             return box;
         }
@@ -153,7 +153,9 @@ namespace HsbgCardLookup.Ui.FinalBoard
         {
             if (string.IsNullOrEmpty(cardId)) return null;
             var box = Box(CardText.Name(cardId));
-            var text = CardText.Render(cardId, 0, 0, 0);
+            // No stored tags for the anomaly, so this is the card's own starting numbers — never
+            // zero-filled, which would turn "({0} turns left!)" into a false "(0 turns left!)".
+            var text = CardText.RenderDefault(cardId);
             if (!string.IsNullOrEmpty(text)) box.Children.Add(Body(text));
             box.Children.Add(Note("the anomaly this lobby was played under"));
             return box;
