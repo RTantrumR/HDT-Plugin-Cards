@@ -57,9 +57,10 @@ namespace HsbgCardLookup.Ui
         /// Same chrome and the same timings, so a card's enchantment list and a settings "?" behave
         /// identically under the cursor.
         ///
-        /// <c>BetweenShowDelay</c> is zeroed here: these sit shoulder to shoulder in rows of eight,
-        /// and the stock 100ms grace makes sweeping along a board feel like the tooltip is lagging
-        /// a card behind the cursor.
+        /// <c>BetweenShowDelay</c> is deliberately left at WPF's default. Raising it would let a
+        /// sweep along a board re-show instantly card after card, which sounds right for comparing
+        /// minions and is also how crossing the panel to reach the ✕ pops a tooltip at every step.
+        /// Untested either way, so it stays where every other tooltip in the plugin has it.
         /// </summary>
         public static void Tip(FrameworkElement el, UIElement content)
         {
@@ -71,7 +72,6 @@ namespace HsbgCardLookup.Ui
             };
             ToolTipService.SetInitialShowDelay(el, 120);
             ToolTipService.SetShowDuration(el, 30000);
-            ToolTipService.SetBetweenShowDelay(el, 0);
         }
 
         // ---- keyword colouring ----
