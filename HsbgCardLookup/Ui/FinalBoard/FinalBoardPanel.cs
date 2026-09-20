@@ -124,6 +124,17 @@ namespace HsbgCardLookup.Ui.FinalBoard
         public Action ScreenshotRequested;
 
         /// <summary>
+        /// The panel swapped what it is showing — a tab, a turn opened, a turn stepped out of.
+        ///
+        /// The host cannot learn this from <c>Root.SizeChanged</c>, and that is the whole reason
+        /// this exists: once <see cref="LimitHeight"/> has pinned the scroll viewer, a shorter view
+        /// whose content is still taller than the pin leaves the root exactly as tall as it was, so
+        /// no size change is raised and the limit is never recomputed for the new content. The
+        /// panel then keeps a scroll bar sized for a view it is no longer showing.
+        /// </summary>
+        public Action ViewChanged;
+
+        /// <summary>
         /// Which view the panel opens on, remembered for the session. Stats is the default because it
         /// is the half the game does not already show: a player who has just watched their own final
         /// board fill the screen does not need us to redraw it, but nothing anywhere tells them they
@@ -222,6 +233,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
             double allowed = Math.Max(120, preferredRef - others);
             double stretched = Math.Max(allowed, Math.Max(120, hardRef - others));
             double wanted = content > stretched ? allowed : double.PositiveInfinity;
+            FitNote = string.Format(CultureInfo.InvariantCulture,
+                "content={0:N0} fits={1:N0} stretch={2:N0} others={3:N0} -> {4}",
+                content, allowed, stretched, others,
+                double.IsPositiveInfinity(wanted) ? "no scroll bar" : "scrolls at " + wanted.ToString("N0", CultureInfo.InvariantCulture));
             bool same = double.IsPositiveInfinity(wanted)
                 ? double.IsPositiveInfinity(_scroll.MaxHeight)
                 : Math.Abs(wanted - _scroll.MaxHeight) < 0.5;
@@ -229,6 +244,10 @@ namespace HsbgCardLookup.Ui.FinalBoard
             _scroll.MaxHeight = wanted;
             return true;   // a layout follows; the host fits again on its SizeChanged
         }
+
+        /// <summary>The last height decision in words, for the host's log. Diagnostics only —
+        /// nothing reads it back.</summary>
+        public string FitNote { get; private set; }
 
         public double Scale
         {
@@ -586,6 +605,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
             if (_scroll != null) _scroll.Margin = turn ? new Thickness(0, -TurnViewLift, 0, 0) : new Thickness(0);
             Paint(_tabStats, _showStats);
             Paint(_tabBoard, !_showStats);
+            try { ViewChanged?.Invoke(); } catch { }
         }
 
         // ── the turn sub-view ───────────────────────────────────────────────────────────────────

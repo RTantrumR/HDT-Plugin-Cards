@@ -55,6 +55,7 @@ namespace HsbgCardLookup.Ui.FinalBoard
         /// <summary>How much bigger than its 920px reference the panel is drawn when the client has the width (user, 2026-09-06: "scaled up by like 20-25%").</summary>
         private const double PreferredScale = 1.18;
         private bool _fitting;   // LimitHeight re-lays out the panel, which raises SizeChanged, which calls back here
+        private string _lastFitNote;
 
         // Gesture state; canvas thread only (the low-level hook posts back onto it).
         private bool _dragging, _moved;
@@ -101,6 +102,9 @@ namespace HsbgCardLookup.Ui.FinalBoard
             // is fitted again: on a canvas it now overflows it scales down, and the position is
             // re-clamped so the new bottom stays on screen.
             _panel.Root.SizeChanged += (s, e) => { if (IsVisible && !_dragging) FitAndPlace(); };
+            // A tab or a turn changes what the body holds without necessarily changing the panel's
+            // height, and a size change is the only other thing that would bring us back here.
+            _panel.ViewChanged = () => { if (IsVisible && !_dragging) FitAndPlace(); };
             try { OverlayExtensions.SetIsOverlayHitTestVisible(_panel.Root, true); } catch { }
 
             _toastHide = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
@@ -252,7 +256,16 @@ namespace HsbgCardLookup.Ui.FinalBoard
                 // Two budgets, not one: the height the composition wants to keep inside, and every
                 // pixel the canvas has. A body that overruns the first by less than the margin
                 // takes the margin rather than growing a scroll bar for a handful of pixels.
-                if (_panel.LimitHeight(ch * 0.94 / _panel.Scale, ch * 0.995 / _panel.Scale)) return;
+                bool relaid = _panel.LimitHeight(ch * 0.94 / _panel.Scale, ch * 0.995 / _panel.Scale);
+                // Only when the answer changes, the way the leaderboard cross-check logs: a line
+                // per layout pass would bury the log, and silence here means the decision stuck.
+                var note = _panel.FitNote;
+                if (note != null && note != _lastFitNote)
+                {
+                    _lastFitNote = note;
+                    _log?.Invoke("[FinalBoard] fit: canvas=" + ch.ToString("N0") + " scale=" + _panel.Scale.ToString("0.00") + " " + note);
+                }
+                if (relaid) return;
             }
             catch (Exception ex) { _log?.Invoke("[FinalBoardSurface] fit error: " + ex.Message); return; }
             finally { _fitting = false; }
