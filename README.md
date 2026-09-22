@@ -19,12 +19,15 @@ art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 - **Update Notifications**: Card data and art refresh from hsbg.cards; the plugin notifies you of new releases on GitHub for manual installation.
 - **Match Recorder**: Opt-in per-match board state export to CSV.
 
+### What's New in v0.6.1
+- **Card art for new cards**: the new season's cards showed a blank frame in the search; per-card art downloads work again and the startup art sync fetches everything the bulk pack was missing.
+
 ### What's New in v0.6.0
 - **Opponent Minion Types**: Each opponent's most common minion type, with its count, on both Opponent MMR surfaces from turn 1.
 - **Dark Gifts on demand**: The panel opens from a "?" above the Dark Discovery button and parks in the top-right corner, instead of appearing whenever you hover the button.
 - **Aberrations**: Hearthstone's new minion type, prepared ahead of the September 22 patch.
 
-[Full release notes](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/tag/v0.6.0) | [All releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases)
+[Full release notes](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/tag/v0.6.1) | [All releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases)
 
 <p align="center">
   <img src="assets/overlay.png" width="32%" alt="Search overlay over a Battlegrounds game" />

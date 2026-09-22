@@ -33,16 +33,16 @@ namespace HsbgCardLookup.Ui
                 if (manifest?.Cards == null || manifest.Cards.Count == 0)
                     return await EnsureFullPackByAggregate(store, config).ConfigureAwait(false);
 
-                // Early-out: aggregate unchanged. Seed the per-card baseline if an old full-pack
-                // install never had one, so the next change goes incremental (not a full re-pull).
-                if (!string.IsNullOrEmpty(manifest.Hash) && manifest.Hash == config.ArtPackHash)
-                {
-                    if (LoadLocalHashes().Count == 0 && HasAnyArt())
-                        SaveLocalHashes(manifest.Cards);
-                    return false;
-                }
-
+                // No aggregate early-out: the diff below is a few thousand dictionary lookups and
+                // File.Exists calls, and it is the only thing that notices a file missing on disk
+                // while the hashes say "applied". Seed the per-card baseline if an old full-pack
+                // install never had one, so it goes incremental rather than re-pulling the pack.
                 var local = LoadLocalHashes();
+                if (local.Count == 0 && HasAnyArt())
+                {
+                    local = new Dictionary<string, string>(manifest.Cards);
+                    SaveLocalHashes(local);
+                }
                 bool haveArt = local.Count > 0 && HasAnyArt();
 
                 if (!haveArt)   // first install (or wiped cache): full pack, then adopt the manifest
@@ -55,9 +55,19 @@ namespace HsbgCardLookup.Ui
                     return true;
                 }
 
-                // Incremental: cards whose art hash changed or is new.
+                // Incremental: cards whose art hash changed or is new — among the cards the store
+                // actually has. The manifest lists every card the site ever rendered (~2.9k), the
+                // API serves only the current pool (~1.4k), and nothing outside the store can be
+                // fetched or shown; counting it would make "fully caught up" unreachable.
+                // A hash marked applied is not proof the file is on disk: a full-pack install adopts
+                // the whole manifest, and the pack has lacked files the manifest lists (hero
+                // goldens, 2026-09-23: 81 such cards). So a card whose file is missing counts as
+                // changed too — the disk, not the hash file, is the truth.
+                var known = store.ById ?? new Dictionary<int, BgCard>();
                 var changed = manifest.Cards
-                    .Where(kv => !local.TryGetValue(kv.Key, out var h) || h != kv.Value)
+                    .Where(kv => int.TryParse(kv.Key, out int id) && known.ContainsKey(id))
+                    .Where(kv => !local.TryGetValue(kv.Key, out var h) || h != kv.Value
+                                 || !OnDisk(known[int.Parse(kv.Key)]))
                     .Select(kv => kv.Key).ToList();
                 if (changed.Count == 0)
                 {
@@ -66,39 +76,68 @@ namespace HsbgCardLookup.Ui
                     return false;
                 }
 
-                int ok = await FetchChanged(changed, store, local, manifest.Cards).ConfigureAwait(false);
+                var (ok, written) = await FetchChanged(changed, store, local, manifest.Cards).ConfigureAwait(false);
                 SaveLocalHashes(local);                 // persist successes; failed ones retry next launch
                 if (ok == changed.Count)                // adopt aggregate only when fully caught up
                 {
                     config.ArtPackHash = manifest.Hash ?? "";
                     config.Save();
                 }
-                if (ok > 0) { CardArt.ClearMemory(); return true; }
+                // "Updated" means a file landed on disk — a card resolved without a download (dead
+                // golden, base already present) must not drop the decoded cache or log an update.
+                if (written > 0) { CardArt.ClearMemory(); return true; }
                 return false;
             }
             catch { return false; }
         }
 
+        // Base art on disk, plus the golden when the card claims one. A golden the CDN 404s on is
+        // never written, so such a card re-enters `changed` each launch — costing one golden GET
+        // (a 404) per launch per dead golden, since an unchanged hash skips files already on disk.
+        private static bool OnDisk(BgCard c) =>
+            File.Exists(CardArt.FullDiskPath(c.Id, false))
+            && (string.IsNullOrEmpty(c.ImageGold) || File.Exists(CardArt.FullDiskPath(c.Id, true)));
+
         // Fetch each changed card's base (+ golden) art; mark `local` for fully-succeeded cards.
-        private static async Task<int> FetchChanged(List<string> changedIds, CardStore store,
+        // When the hash is unchanged the card is here only because a file is missing, so files
+        // already on disk are kept, not re-downloaded. A golden that 404s counts as done: the site
+        // lists goldens it never rendered (spells, a hero sharing its name with a minion) and a 404
+        // is a definitive answer, not a transient failure. A missing base is still a failure: that
+        // art may yet appear, and the card shows blank.
+        private static async Task<(int ok, int written)> FetchChanged(List<string> changedIds, CardStore store,
             Dictionary<string, string> local, Dictionary<string, string> manifest)
         {
             var tasks = changedIds.Select(async idStr =>
             {
                 if (!int.TryParse(idStr, out int id) || !store.ById.TryGetValue(id, out var card))
-                    return (idStr, false);
-                bool okBase = await CardArt.FetchToDiskAsync(card, false).ConfigureAwait(false);
+                    return (idStr, success: false, wrote: false);
+                bool hashSame = local.TryGetValue(idStr, out var lh) && lh == manifest[idStr];
+                bool wrote = false;
+                bool okBase = hashSame && File.Exists(CardArt.FullDiskPath(id, false));
+                if (!okBase)
+                {
+                    okBase = await CardArt.FetchToDiskAsync(card, false).ConfigureAwait(false) == CardArt.FetchResult.Ok;
+                    wrote |= okBase;
+                }
                 bool okGold = string.IsNullOrEmpty(card.ImageGold)
-                    ? true
-                    : await CardArt.FetchToDiskAsync(card, true).ConfigureAwait(false);
-                return (idStr, okBase && okGold);
+                    || (hashSame && File.Exists(CardArt.FullDiskPath(id, true)));
+                if (!okGold)
+                {
+                    var g = await CardArt.FetchToDiskAsync(card, true).ConfigureAwait(false);
+                    okGold = g != CardArt.FetchResult.Failed;
+                    wrote |= g == CardArt.FetchResult.Ok;
+                }
+                return (idStr, success: okBase && okGold, wrote);
             }).ToList();
 
             var results = await Task.WhenAll(tasks).ConfigureAwait(false);
-            int ok = 0;
-            foreach (var (idStr, success) in results)
+            int ok = 0, written = 0;
+            foreach (var (idStr, success, wrote) in results)
+            {
                 if (success) { local[idStr] = manifest[idStr]; ok++; }
-            return ok;
+                if (wrote) written++;
+            }
+            return (ok, written);
         }
 
         // Full-pack path (first install + no-manifest fallback): re-pull the whole zip when the

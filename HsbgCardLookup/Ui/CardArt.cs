@@ -41,38 +41,46 @@ namespace HsbgCardLookup.Ui
         // Drop decoded bitmaps so re-decodes pick up freshly-swapped disk files (after a pack update).
         internal static void ClearMemory() => Mem.Clear();
 
+        internal enum FetchResult { Ok, NotFound, Failed }
+
         /// <summary>Download one card's full WebP straight to the disk cache (no decode), capped.
-        /// Used by <see cref="ArtPack"/> incremental updates.</summary>
-        internal static async Task<bool> FetchToDiskAsync(BgCard c, bool golden)
+        /// Used by <see cref="ArtPack"/> incremental updates. <see cref="FetchResult.NotFound"/> is a
+        /// definitive 404 (no such file on the CDN); everything else that isn't Ok is transient.</summary>
+        internal static async Task<FetchResult> FetchToDiskAsync(BgCard c, bool golden)
         {
             try
             {
                 string url = CdnUrl(c, golden);
-                if (url == null) return false;
-                byte[] bytes;
+                if (url == null) return FetchResult.Failed;
+                byte[] bytes; int status;
                 await Gate.WaitAsync().ConfigureAwait(false);
-                try { bytes = await AssetClient.GetBytesAsync(url).ConfigureAwait(false); }
+                try { (bytes, status) = await AssetClient.GetBytesWithStatusAsync(url).ConfigureAwait(false); }
                 finally { Gate.Release(); }
-                if (bytes == null || bytes.Length == 0) return false;
+                if (status == 404) return FetchResult.NotFound;
+                if (bytes == null || bytes.Length == 0) return FetchResult.Failed;
                 Directory.CreateDirectory(CacheDir);
                 File.WriteAllBytes(FullDiskPath(c.Id, golden), bytes);
-                return true;
+                return FetchResult.Ok;
             }
-            catch { return false; }
+            catch { return FetchResult.Failed; }
         }
 
         // Mem key includes decode width (grid downscaled vs detail native share one disk file).
         private static string Key(BgCard c, bool golden, int decode) =>
             c.Id + "|" + (golden ? "g" : "n") + "|" + decode;
 
-        // Direct static-CDN thumb URL from the card's image path (pngs/full → thumbs/full, .png →
-        // .webp). Hits the CDN, not the rate-limited /api/v1 image route. golden falls back to base.
+        // Direct static-CDN thumb URL from the card's image path. Since the site retired PNGs
+        // (2026-09-03) the API serves the thumb path itself (…/thumbs/full/….webp) — use it as is.
+        // Older snapshots carry pngs/full → thumbs/full, .png → .webp. Hits the CDN, not the
+        // rate-limited /api/v1 image route. golden falls back to base.
         private const string PngPrefix = "/cards/production/pngs/full/";
 
         private static string CdnUrl(BgCard c, bool golden)
         {
             string src = golden && !string.IsNullOrEmpty(c.ImageGold) ? c.ImageGold : c.Image;
-            if (string.IsNullOrEmpty(src) || !src.EndsWith(".png")) return null;
+            if (string.IsNullOrEmpty(src)) return null;
+            if (src.EndsWith(".webp")) return AssetClient.SiteBase + src;
+            if (!src.EndsWith(".png")) return null;
             string body = src.Substring(0, src.Length - 4);   // strip .png
             string thumb = body.StartsWith(PngPrefix)
                 ? "/cards/production/thumbs/full/" + body.Substring(PngPrefix.Length) + ".webp"

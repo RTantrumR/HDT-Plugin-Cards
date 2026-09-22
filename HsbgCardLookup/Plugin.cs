@@ -55,7 +55,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 6, 0);
+        public Version Version => new Version(0, 6, 1);
 
         // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
         // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the
@@ -129,11 +129,13 @@ namespace HsbgCardLookup
             Log($"OnLoad  (overlay={_config.BrowserKey}, hook installed = {_hotkey.IsInstalled})");
 
             // Background, best-effort (offline / failures are no-ops): data refresh, the update
-            // check (notify-only), notifications, and the card-art sync.
-            Task.Run(() => RefreshDataAsync());
+            // check (notify-only), notifications, and the card-art sync. The art sync runs AFTER
+            // the data refresh, not beside it: it diffs the manifest against the cards the store
+            // knows, so on the launch that brings new cards it must see the new list, or their art
+            // waits for the next launch (or first view).
+            Task.Run(async () => { await RefreshDataAsync(); await RefreshArtPackAsync(); });
             Task.Run(() => CheckForUpdateAsync());
             Task.Run(() => CheckNoticesAsync());
-            Task.Run(() => RefreshArtPackAsync());
         }
 
         private async Task RefreshArtPackAsync()
