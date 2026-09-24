@@ -66,17 +66,24 @@ namespace HsbgCardLookup.Net
         }
 
         /// <summary>GET a URL as raw bytes, or null on any failure.</summary>
-        public static async Task<byte[]> GetBytesAsync(string url)
+        public static async Task<byte[]> GetBytesAsync(string url) =>
+            (await GetBytesWithStatusAsync(url).ConfigureAwait(false)).bytes;
+
+        /// <summary>GET a URL as raw bytes plus the HTTP status (0 when no response arrived).
+        /// bytes is null for any non-success status, so callers can tell a 404 from a network
+        /// failure — a 404 on the CDN is a definitive answer worth remembering, not retrying.</summary>
+        public static async Task<(byte[] bytes, int status)> GetBytesWithStatusAsync(string url)
         {
             try
             {
                 using (var resp = await Http.GetAsync(url).ConfigureAwait(false))
                 {
-                    if (!resp.IsSuccessStatusCode) return null;
-                    return await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    int status = (int)resp.StatusCode;
+                    if (!resp.IsSuccessStatusCode) return (null, status);
+                    return (await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false), status);
                 }
             }
-            catch { return null; }
+            catch { return (null, 0); }
         }
 
         /// <summary>Stream a (potentially large) URL to a file without buffering it all in memory.

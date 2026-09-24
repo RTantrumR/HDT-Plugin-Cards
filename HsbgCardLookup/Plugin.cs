@@ -38,7 +38,7 @@ namespace HsbgCardLookup
         private Ui.FinalBoard.SessionRowHook _sessionRows;      // S1: a click on HDT's session list opens the panel   // the panel, on HDT's overlay canvas
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
-        private Game.DarkGiftWatcher _darkGifts;                  // opt-in hover-summoned Dark Gift list
+        private Game.DarkGiftWatcher _darkGifts;                  // opt-in Dark Gift list (“?” marker by the button)
         private Ui.ArrangeBanner _arrangeBanner;                  // in-game strip shown while positioning
         private Ui.SearchButton _searchButton;                    // in-game 🔍 button by the card-list book
         private SettingsWindow _settings;
@@ -60,7 +60,7 @@ namespace HsbgCardLookup
 
         public string Author => "hsbg.cards";
 
-        public Version Version => new Version(0, 5, 0);
+        public Version Version => new Version(0, 6, 1);
 
         // Shown under HDT's top-bar PLUGINS menu (returning null hides us there entirely — which is why
         // the menu read "EMPTY..."). A header named after the plugin with two actions; built lazily on the
@@ -191,11 +191,13 @@ namespace HsbgCardLookup
             Log($"OnLoad  (overlay={_config.BrowserKey}, hook installed = {_hotkey.IsInstalled})");
 
             // Background, best-effort (offline / failures are no-ops): data refresh, the update
-            // check (notify-only), notifications, and the card-art sync.
-            Task.Run(() => RefreshDataAsync());
+            // check (notify-only), notifications, and the card-art sync. The art sync runs AFTER
+            // the data refresh, not beside it: it diffs the manifest against the cards the store
+            // knows, so on the launch that brings new cards it must see the new list, or their art
+            // waits for the next launch (or first view).
+            Task.Run(async () => { await RefreshDataAsync(); await RefreshArtPackAsync(); });
             Task.Run(() => CheckForUpdateAsync());
             Task.Run(() => CheckNoticesAsync());
-            Task.Run(() => RefreshArtPackAsync());
             Task.Run(() => LoadMatchHistory());
         }
 
@@ -556,7 +558,7 @@ namespace HsbgCardLookup
         {
             _bgHud?.OnSettingsChanged();    // show/hide the trinkets/anomaly HUD per its toggles
             _bgMmr?.OnSettingsChanged();    // opponent-MMR reader on/off
-            _darkGifts?.OnSettingsChanged(); // Dark Gift hover panel on/off
+            _darkGifts?.OnSettingsChanged(); // Dark Gift panel on/off
             _searchButton?.OnSettingsChanged(); // in-game search button on/off
             _finalBoardSurface?.Refresh();   // redraw an open Final Board panel against the new switches
         }
@@ -685,7 +687,7 @@ namespace HsbgCardLookup
             _finalBoardCapture?.Poll();  // merges our hero power/trinkets/anomaly onto HDT's record of the match
             _sessionRows?.Poll();        // keeps HDT's session rows clickable (they are rebuilt as games land)
             _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
-            _darkGifts?.Poll();  // opt-in Dark Gift list (shows while hovering the Dark Discovery button)
+            _darkGifts?.Poll();  // opt-in Dark Gift list (“?” marker above the Dark Discovery button)
             _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
             PollBackgroundUpdateCheck(); // re-attempt every 20 min so a long session isn't frozen at launch-time state
         }

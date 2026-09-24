@@ -36,6 +36,9 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <!-- `dynamic` in Game\LeaderboardRaceScry.cs (walks HearthMirror's ScryDotNet objects without a
+         compile-time reference to untapped-scry-dotnet.dll, which only exists inside HDT's app dir). -->
+    <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
@@ -103,6 +106,9 @@
     <Compile Include="Config\PluginConfig.cs" />
     <Compile Include="Data\CardStore.cs" />
     <Compile Include="Data\CardText.cs" />
+    <Compile Include="Data\TribeTally.cs" />
+    <Compile Include="Game\LeaderboardRaceScry.cs" />
+    <Compile Include="Ui\TribeIcons.cs" />
     <Compile Include="Game\GameStateProbe.cs" />
     <Compile Include="Game\DarkGiftProbe.cs" />
     <Compile Include="Game\FinalBoardProbe.cs" />
@@ -125,6 +131,7 @@
     <Compile Include="Game\DarkGifts.cs" />
     <Compile Include="Game\DarkGiftWatcher.cs" />
     <Compile Include="Ui\DarkGiftPanel.cs" />
+    <Compile Include="Ui\DarkGiftMarker.cs" />
     <Compile Include="Game\BgMmr.cs" />
     <Compile Include="Ui\LeaderboardOverlay.cs" />
     <Compile Include="Ui\MmrSidePanel.cs" />

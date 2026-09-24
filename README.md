@@ -8,118 +8,106 @@ art, dismiss. The desktop sibling of [hsbg.cards](https://hsbg.cards).
 
 ![Dark Gift panel — available gifts + the guaranteed-tribe minion pool over a Battlegrounds match](assets/Dark%20Gifts%20Showcase_both.png)
 
-- Fast fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools)
-- Full card art, golden variants, related cards (buddies / tokens / hero powers)
-- **Drag any card out** of the overlay as a free-floating, resizable card — handy for explaining
-  cards to viewers on stream or while making a video, or just parking a few in a corner for reference
-- **Live trinkets & anomaly HUD** — your current lesser/greater trinkets and the lobby anomaly shown
-  right on screen during a match, so neither you nor your viewers have to hover over each one. Great for
-  streaming or solo play, and especially for **phone viewers** who can't open HDT's Twitch extension to
-  see which anomaly is active or which trinkets the streamer has
-- In-app patch-notes notifications
-- Card data and art self-update from hsbg.cards; the plugin auto-updates via GitHub Releases
+### Key Features
+- **Fast Search**: Fuzzy + structured search (`t3`, `5/5`, tribes, keywords, spell schools).
+- **Rich Card Data**: Full card art, golden variants, related cards (buddies, tokens, hero powers).
+- **Floating Cards**: Drag any card out of the overlay as a free-floating, resizable card — perfect for streamers or quick reference.
+- **Live HUDs**:
+  - **Trinkets & Anomaly**: Real-time display of your current lesser/greater trinkets and lobby anomaly.
+  - **Dark Gifts**: A "?" above the Dark Discovery button opens the list of available gifts and the guaranteed-tribe minion pool (customizable).
+  - **Opponent MMR**: Standings panel and portrait labels showing opponent MMR, tavern tiers and each player's most common minion type.
+- **Update Notifications**: Card data and art refresh from hsbg.cards; the plugin notifies you of new releases on GitHub for manual installation.
+- **Match Recorder**: Opt-in per-match board state export to CSV.
 
-v0.5.0 Additions:
-- **UI Redesign**: Categorized settings pages with live previews, master toggles per feature, and visual keys for each display surface.
-- **Dark Gifts**: Hover-summoned list of available gifts and the guaranteed-tribe minion pool (customizable pool size).
-- **HUD Rework**: Trinket boxes now fill positionally (supports up to 4 trinkets for anomalies/transforms).
-- **MMR UX**: Separate draggable standings panel for opponent MMR, alongside the original portrait labels.
-- Performance: Enabled GZip compression for card data updates (87% reduction in bandwidth).
-- Smart search: "Dark Gift" as a category facet.
+### What's New in v0.6.1
+- **Card art for new cards**: the new season's cards showed a blank frame in the search; per-card art downloads work again and the startup art sync fetches everything the bulk pack was missing.
 
-v0.3 Additions: 
-- MMR and Opponents Tiers display in-lobby
-- Dark Gifts support in 3 modes - show relevant minions after turn 6 ; show available dark gifts ; show both available dark gifts and relevant minions with unique gifts applicable to them
-- Save your match boards to a .csv file each round for a data analysis later
-- Other small QoL changes 
+### What's New in v0.6.0
+- **Opponent Minion Types**: Each opponent's most common minion type, with its count, on both Opponent MMR surfaces from turn 1.
+- **Dark Gifts on demand**: The panel opens from a "?" above the Dark Discovery button and parks in the top-right corner, instead of appearing whenever you hover the button.
+- **Aberrations**: Hearthstone's new minion type, prepared ahead of the September 22 patch.
+
+[Full release notes](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/tag/v0.6.1) | [All releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases)
 
 <p align="center">
   <img src="assets/overlay.png" width="32%" alt="Search overlay over a Battlegrounds game" />
   <img src="assets/search.png" width="32%" alt="Tier-7 browse" />
-  <img src="assets/screen-trinkets_anomalies.png" width="32%" alt="Live trinkets & anomaly HUD shown over a Battlegrounds match" />
-  <img src="assets/screen-cards-drag.png" width="32%" alt="Cards dragged out of the overlay as free-floating, resizable cards" />
-  <img src="assets/filters.png" width="32%" alt="Type + tier filters, alongside HDT's tribe panel" />
-  <img src="assets/golden.png" width="32%" alt="Golden variant" />
-  <img src="assets/Dark%20Gifts%20Showcase_text_only.png" width="32%" alt="Dark Gift panel — gift list only mode" />
-  <img src="assets/Dark%20Gifts%20Showcase_minions.png" width="32%" alt="Dark Gift panel — minion pool only mode" />
-  <img src="assets/MMR%20Chart%20Showcase.png" width="32%" alt="Opponent MMR history chart (preview)" />
+  <img src="assets/screen-trinkets_anomalies.png" width="32%" alt="Live trinkets & anomaly HUD" />
+  <img src="assets/screen-cards-drag.png" width="32%" alt="Floating cards" />
+  <img src="assets/filters.png" width="32%" alt="Search filters" />
+  <img src="assets/MMR%20Chart%20Showcase.png" width="32%" alt="Opponent MMR history" />
 </p>
 
-> Windows only — it's a Hearthstone Deck Tracker plugin. (Mac players: use the website for now, the release might be presented later.)
+> **Note**: Windows only. Requires Hearthstone Deck Tracker. Hearthstone must be in **Borderless** or **Windowed** mode.
 
-## Install
+## Installation
 
 1. Download the latest release zip from [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases).
-2. Extract it, then double-click **`install.bat`** (it closes HDT, copies the plugin into place).
-   *Or* manually drop the `HsbgCardLookup` folder into
-   `%APPDATA%\HearthstoneDeckTracker\Plugins\`.
-3. Start HDT (enable the plugin under **Options → Plugins** if prompted).
-4. Press **F3** to open the search.
+2. Extract the zip and double-click **`install.bat`** (it closes HDT and copies the plugin into place).
+   *Manual install*: Drop the `HsbgCardLookup` folder into `%APPDATA%\HearthstoneDeckTracker\Plugins\`.
+3. Start HDT and enable the plugin under **Options → Plugins** if prompted.
+4. Press **F3** (default) to open the search overlay.
 
-On first launch the plugin downloads card art in the background (~200 MB, one time); after that it
-loads instantly and only fetches changed cards.
+On first launch, the plugin downloads card art (~200 MB); subsequent loads are instant.
 
-### Controls
+## Usage & Controls
 
 | Key | Action |
 |---|---|
-| `F3` | open / close the overlay |
-| type | search (Tab toggles smart search, Esc closes, Enter opens the first result) |
-| `F2`/`G` | toggle the golden version of the selected minion |
-| `S` | re-focus the search box |
-| click art | open that card on hsbg.cards |
+| `F3` | Open / close the overlay |
+| `Type` | Search (Tab toggles smart search, Esc closes, Enter opens first result) |
+| `G` | Toggle golden version of the selected card |
+| `S` | Re-focus the search box |
 
-Keys are rebindable via the plugin's **Settings** button in HDT. The same dialog toggles the
-**card drag-out** (from the detail art and/or the results grid) and the **trinkets / anomaly HUD**
-(opt-in). Drag a floating card by its body to move it, drag its top-right corner to resize, right-click
-to dismiss; HUD cards remember their place and size per slot and only show while Hearthstone/HDT is
-focused.
+*Keys and HUD placements are customizable via the plugin's **Settings** button in HDT.*
 
 ## Requirements
+- **Hearthstone Deck Tracker** (HDT)
+- **.NET Framework 4.7.2** (included with HDT)
+- **Hearthstone** in Borderless / Windowed mode.
 
-- **Hearthstone Deck Tracker** installed.
-- Hearthstone in **Borderless / Windowed (Fullscreen)** mode (exclusive fullscreen blocks any
-  overlay — this is HDT's own requirement too).
-- .NET Framework 4.7.2 (already present if HDT runs).
+## Development
 
-## Building from source
+### Stack
+- **Language**: C# 7.3
+- **Framework**: .NET Framework 4.7.2, WPF
+- **Toolchain**: Visual Studio 2022 (MSBuild)
+- **Host**: Hearthstone Deck Tracker
 
-**Toolchain:** .NET Framework 4.7.2, WPF, C#. Build with **MSBuild from Visual Studio 2022** — the
-`dotnet` CLI can't run the WPF markup compiler for net472. The project is a classic-style `.csproj`
-on purpose (SDK-style `<UseWPF>` is a .NET Core feature, unreliable on net472).
+### Project Structure
+- `HsbgCardLookup/`: Main project source code.
+  - `Config/`: Persisted XML settings.
+  - `Game/`: Game state reading and HUD logic.
+  - `Ui/`: WPF overlays, floating cards, and settings UI.
+  - `Net/`: API and update notification clients.
+- `libs/`: The bundled WebP decoder (ImageSharp + its `System.*` closure, committed) and HDT's own
+  assemblies, which are referenced at build time only and never shipped — `setup.ps1` copies those
+  from your local HDT install and they are not in this repo.
+- `packaging/`: Templates for distribution releases.
+- `dist/`: Build artifacts (after running scripts).
 
-```powershell
-git clone https://github.com/RTantrumR/HDT-Plugin-Cards.git
-cd HDT-Plugin-Cards
-.\setup.ps1                  # one-time: pulls HDT's assemblies out of your local HDT install
-.\deploy.ps1                 # build Release + copy into HDT's Plugins folder (auto-restarts HDT)
-```
+### Scripts
+- `.\setup.ps1`: One-time setup. Pulls required HDT assemblies (`HearthstoneDeckTracker.exe`, `HearthDb.dll`, etc.) from your local HDT install into `libs/`.
+- `.\deploy.ps1`: Builds the project in Release mode, copies it to the HDT Plugins folder, and restarts HDT.
+- `.\package.ps1`: Builds and creates a distribution ZIP in `dist/`.
+- `.\restartHDT.ps1`: Helper to safely restart Hearthstone Deck Tracker.
 
-`setup.ps1` is the only manual step. HDT's own assemblies — `HearthstoneDeckTracker.exe`,
-`HearthDb.dll`, `HearthMirror.dll`, `Newtonsoft.Json.dll` — are the host application's binaries,
-referenced at build time only (`Private=False`) and never shipped with this plugin, so they are not
-in this repo. The script copies them from `%LOCALAPPDATA%\HearthstoneDeckTracker\app-<newest>`; pass
-`-AppDir <path>` to pick a different install, `-Force` to refresh them after an HDT update. You need
-HDT installed to run the plugin anyway.
+### Environment Variables
+- `BLIZZARD_CLIENT_ID`: (Optional) Used for internal data tools.
+- `BLIZZARD_CLIENT_SECRET`: (Optional) Used for internal data tools.
 
-Everything else is committed and needs no setup: the WebP-decoder closure in `libs\`
-(`SixLabors.ImageSharp.dll` 2.1.11 + its `System.*` support assemblies — the plugin *does* bundle
-these, see [NOTICE](NOTICE)) and the card snapshot `HsbgCardLookup\data\cards.json` plus the
-tier/tribe icons. The card snapshot is only a floor: the plugin refreshes it from the API at runtime.
+### Building from Source
+1. Clone the repository.
+2. Run `.\setup.ps1` to link HDT assemblies.
+3. Open `HsbgCardLookup.sln` in Visual Studio 2022.
+4. Build using VS or run `.\deploy.ps1`.
 
-```powershell
-.\package.ps1                # build + dist\HsbgCardLookup-v<ver>.zip (version auto-read from Plugin.cs; -Version overrides)
-```
-
-AnyCPU loaded into HDT's process → the `MSB3270` arch-mismatch warning is expected and harmless.
+*Note: The `dotnet` CLI cannot build this project as it uses the legacy WPF markup compiler for .NET Framework 4.7.2.*
 
 ## License
 
-[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for bundled third-party components.
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for third-party component details.
 
-The opponent-MMR leaderboard feature was inspired by
-[HDT-BGMMRPlugin](https://github.com/Reign-in-blood/HDT-BGMMRPlugin) (MIT), then modified and
-extended with additional features and this plugin's own data source — see NOTICE for details.
+Inspired by [HDT-BGMMRPlugin](https://github.com/Reign-in-blood/HDT-BGMMRPlugin).
 
-Hearthstone is a trademark of Blizzard Entertainment, Inc. This is an unofficial fan project, not
-affiliated with or endorsed by Blizzard.
+*Hearthstone is a trademark of Blizzard Entertainment, Inc. This is an unofficial fan project.*

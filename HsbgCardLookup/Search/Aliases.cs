@@ -41,6 +41,7 @@ namespace HsbgCardLookup.Search
             // Text-based keywords (matched against card text, not keywords array)
             new AliasEntry("End of Turn", "text_keyword", new[] { "end of turn", "eot", "кінець ходу" }, "end of"),
             // Tribes
+            new AliasEntry("Aberration", "tribe", new[] { "aberration" }),
             new AliasEntry("Beast", "tribe", new[] { "beast", "звір", "біст" }),
             new AliasEntry("Demon", "tribe", new[] { "demon", "демон" }),
             new AliasEntry("Dragon", "tribe", new[] { "dragon", "дракон" }),
