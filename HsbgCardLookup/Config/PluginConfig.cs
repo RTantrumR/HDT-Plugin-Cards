@@ -118,6 +118,18 @@ namespace HsbgCardLookup.Config
         // CSV per match (no screenshots). Off by default. Output: DataDir\match-exports\.
         public bool ExportMatchBoards { get; set; } = false;
 
+        // Match recap: APM + damage dealt at match end, compared with this season's solo history.
+        // Off by default. Records: DataDir\recaps\.
+        public bool ShowMatchRecap { get; set; } = false;
+        // On: the panel disappears 10 s after the next match starts. Off: only its ✕ closes it.
+        public bool RecapAutoDismiss { get; set; } = true;
+        public HudPlacement RecapHud { get; set; } = new HudPlacement();
+        // The site's season label ("Season 14") at the last data refresh; records carry it, and only
+        // records with the current label take part in the averages.
+        public string RecapSeason { get; set; } = "";
+        // "Reset history": records started before this are left out of the averages (files stay).
+        public DateTime RecapResetAt { get; set; } = DateTime.MinValue;
+
         [XmlIgnore] public Key BrowserKeyParsed => Enum.TryParse(BrowserKey, out Key k) ? k : Key.F3;
         [XmlIgnore] public Key GoldenKeyParsed => Enum.TryParse(GoldenKey, out Key k) ? k : Key.G;
         [XmlIgnore] public Key FocusKeyParsed => Enum.TryParse(FocusKey, out Key k) ? k : Key.S;

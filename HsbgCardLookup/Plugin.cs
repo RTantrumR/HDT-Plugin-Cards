@@ -35,6 +35,7 @@ namespace HsbgCardLookup
         private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
         private Game.DarkGiftWatcher _darkGifts;                  // opt-in Dark Gift list (“?” marker by the button)
+        private Game.Recap.RecapFeature _recap;                   // opt-in match recap (APM + damage dealt vs history)
         private Ui.ArrangeBanner _arrangeBanner;                  // in-game strip shown while positioning
         private Ui.SearchButton _searchButton;                    // in-game 🔍 button by the card-list book
         private SettingsWindow _settings;
@@ -114,6 +115,7 @@ namespace HsbgCardLookup
             _recorder = new Game.MatchRecorder(_store, _config, Log);
             _bgMmr = new Game.BgMmr(_config, _ui, Log);
             _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
+            _recap = new Game.Recap.RecapFeature(_config, _ui, Log);
             _searchButton = new Ui.SearchButton(_config, ToggleOverlayFromButton, SkipVersion, Log);
             // Pre-realize the HWND so the first F3 summons in one press (no handle-creation race).
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
@@ -361,6 +363,7 @@ namespace HsbgCardLookup
         // site edits data between patches); persist to cache and reload the overlay.
         private async Task RefreshDataAsync()
         {
+            await RefreshSeasonAsync();
             try
             {
                 var json = await AssetClient.GetStringAsync(AssetClient.SiteBase + "/api/cards");
@@ -392,6 +395,26 @@ namespace HsbgCardLookup
                 Log($"Data refreshed: patch {file.Patch} ({_store.LoadInfo})");
             }
             catch (Exception ex) { Log("RefreshDataAsync error: " + ex.Message); }
+        }
+
+        // The match recap keys its history on the site's season label: the newest patch entry of
+        // /api/v1/patches carries it ("Season 14"). A failed or unparsable fetch keeps the old label.
+        private async Task RefreshSeasonAsync()
+        {
+            try
+            {
+                var json = await AssetClient.GetStringAsync(AssetClient.SiteBase + "/api/v1/patches");
+                if (string.IsNullOrEmpty(json)) return;
+                var data = Newtonsoft.Json.Linq.JObject.Parse(json)["data"] as Newtonsoft.Json.Linq.JArray;
+                var season = data != null && data.Count > 0 ? (string)data[0]["season"] : null;
+                if (string.IsNullOrWhiteSpace(season)) return;
+                season = season.Trim();
+                if (string.Equals(season, _config.RecapSeason, StringComparison.Ordinal)) return;
+                Log($"Season label: '{_config.RecapSeason}' -> '{season}'");
+                _config.RecapSeason = season;
+                _config.Save();
+            }
+            catch (Exception ex) { Log("RefreshSeasonAsync error: " + ex.Message); }
         }
 
         private static string ContentHash(string s)
@@ -439,6 +462,7 @@ namespace HsbgCardLookup
             _bgHud?.OnSettingsChanged();    // show/hide the trinkets/anomaly HUD per its toggles
             _bgMmr?.OnSettingsChanged();    // opponent-MMR reader on/off
             _darkGifts?.OnSettingsChanged(); // Dark Gift panel on/off
+            _recap?.Apply();                 // match recap: a switched-off feature takes its panel with it
             _searchButton?.OnSettingsChanged(); // in-game search button on/off
         }
 
@@ -477,6 +501,7 @@ namespace HsbgCardLookup
                 _bgHud?.CloseAll();
                 _bgMmr?.CloseAll();
                 _darkGifts?.CloseAll();
+                _recap?.Unload();
                 _searchButton?.CloseAll();
                 _overlayLarge?.Close();
                 _overlays = null;
@@ -521,6 +546,7 @@ namespace HsbgCardLookup
             _settings = new SettingsWindow(_config, _store, _hotkey, ApplySettings, SetArrangeMode,
             Version.ToString(), CheckForUpdatesInteractive,
             n => OpenDownloadPage(n?.Url), SkipVersion);
+            _settings.RecapComparableCount = () => _recap?.ComparableCount ?? 0;
             _settings.Closed += (s, e) => _settings = null;
             _settings.Show();
             _settings.RefreshUpdateStatus(_lastUpdateNotice);   // seed with what's already known
@@ -537,6 +563,7 @@ namespace HsbgCardLookup
             _recorder?.Poll();   // opt-in per-match board snapshots → CSV at match end
             _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
             _darkGifts?.Poll();  // opt-in Dark Gift list (“?” marker above the Dark Discovery button)
+            _recap?.Poll();      // opt-in match recap: tracks the match, shows the panel at its end
             _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
             PollBackgroundUpdateCheck(); // re-attempt every 20 min so a long session isn't frozen at launch-time state
         }

@@ -104,6 +104,13 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Config\PluginConfig.cs" />
+    <Compile Include="Game\Recap\RecapRecord.cs" />
+    <Compile Include="Game\Recap\RecapTracker.cs" />
+    <Compile Include="Game\Recap\RecapStore.cs" />
+    <Compile Include="Game\Recap\RecapText.cs" />
+    <Compile Include="Game\Recap\RecapFeature.cs" />
+    <Compile Include="Ui\RecapPanel.cs" />
+    <Compile Include="Ui\RecapSessionRowHook.cs" />
     <Compile Include="Data\CardStore.cs" />
     <Compile Include="Data\TribeTally.cs" />
     <Compile Include="Game\LeaderboardRaceScry.cs" />
