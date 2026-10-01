@@ -18,6 +18,8 @@ things you would otherwise hover, alt-tab or memorise on screen while you play.
   what it does and which minions can carry it, with the ones available this turn highlighted. From
   turn 6 it also shows the minion pool of your guaranteed type.
 - **Trinkets and anomaly**: your trinkets and the lobby anomaly stay visible for the whole match.
+- **Match recap**: when a solo match ends, a small panel shows your APM, best turn and damage dealt,
+  next to your own averages for the season.
 
 **One key away**
 

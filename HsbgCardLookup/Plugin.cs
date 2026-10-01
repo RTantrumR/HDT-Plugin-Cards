@@ -70,7 +70,7 @@ namespace HsbgCardLookup
 
         public string Description =>
             "Battlegrounds tools on the in-game overlay: opponent MMR, tiers and minion types, " +
-            "Dark Gifts, trinket and anomaly HUD, card search, match export.";
+            "Dark Gifts, trinket and anomaly HUD, match recap, card search, match export.";
 
         public string ButtonText => "Settings";
 
