@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("HsbgCardLookup")]
-[assembly: AssemblyDescription("Quick in-game HSBG card search for Hearthstone Deck Tracker")]
+[assembly: AssemblyDescription("Tantrum's Battlegrounds Toolkit for Hearthstone Deck Tracker")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("hsbg.cards")]
 [assembly: AssemblyProduct("HsbgCardLookup")]

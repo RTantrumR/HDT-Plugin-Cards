@@ -1,14 +1,14 @@
 @echo off
 setlocal enabledelayedexpansion
-title HSBG Card Lookup - Installer
+title Tantrum's Battlegrounds Toolkit - Installer
 
 set "SRC=%~dp0HsbgCardLookup"
 set "PLUGINS=%APPDATA%\HearthstoneDeckTracker\Plugins"
 set "DEST=%PLUGINS%\HsbgCardLookup"
 
 echo(
-echo   HSBG Card Lookup - HDT plugin installer
-echo   =======================================
+echo   Tantrum's Battlegrounds Toolkit - HDT plugin installer
+echo   ======================================================
 echo(
 
 REM --- Verify the plugin folder is sitting next to this installer ---
@@ -45,7 +45,7 @@ if %ERRORLEVEL% GEQ 8 (
   exit /b 1
 )
 
-echo   Done! HSBG Card Lookup is installed.
+echo   Done! Tantrum's Battlegrounds Toolkit is installed.
 echo(
 echo   If asked on first launch, enable the plugin under Options ^> Plugins.
 echo   Press F3 in-game to open the card search.

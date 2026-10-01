@@ -1,4 +1,4 @@
-HSBG Card Lookup - Hearthstone Deck Tracker plugin
+Tantrum's Battlegrounds Toolkit - Hearthstone Deck Tracker plugin
 
 1. Extract all the files.
 2. Start install.bat (from any folder - location does not matter).

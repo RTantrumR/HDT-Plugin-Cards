@@ -37,7 +37,6 @@
   <img src="assets/golden.png" width="32%" alt="Золота версія" />
   <img src="assets/Dark%20Gifts%20Showcase_text_only.png" width="32%" alt="Панель Dark Gifts — режим лише списку гіфтів" />
   <img src="assets/Dark%20Gifts%20Showcase_minions.png" width="32%" alt="Панель Dark Gifts — режим лише пулу міньйонів" />
-  <img src="assets/MMR%20Chart%20Showcase.png" width="32%" alt="Графік історії MMR опонента (прев'ю)" />
 </p>
 
 > Лише Windows — це плагін до Hearthstone Deck Tracker. (Гравцям на Mac: тимчасово користуйтеся вебсайтом.)

@@ -45,11 +45,31 @@ namespace HsbgCardLookup
         private Dictionary<Key, OverlayBase> _overlays;         // hotkey -> overlay (rebuilt on rewire)
         private readonly Dictionary<Key, DateTime> _lastToggle = new Dictionary<Key, DateTime>();
 
-        public string Name => "HSBG Card Lookup";
+        internal const string DisplayName = "Tantrum's Battlegrounds Toolkit";
+        private const string LegacyName = "HSBG Card Lookup";            // the name up to v0.6.1
+
+        // HDT keys a plugin's enabled state in plugins.xml by file path + Name, and a plugin it can't
+        // match starts DISABLED — so a plain rename would switch us off for everyone updating. Answer
+        // to the old name while plugins.xml still has us enabled under it; OnLoad then switches to the
+        // new one, and HDT's next settings save writes that.
+        private string _name = EnabledUnderLegacyName() ? LegacyName : DisplayName;
+        public string Name => _name;
+
+        private static bool EnabledUnderLegacyName()
+        {
+            try
+            {
+                var path = Path.Combine(Hearthstone_Deck_Tracker.Config.Instance.ConfigDir, "plugins.xml");
+                if (!File.Exists(path)) return false;
+                return System.Xml.Linq.XDocument.Load(path).Descendants("PluginSettings").Any(p =>
+                    (string)p.Element("Name") == LegacyName && (string)p.Element("IsEnabled") == "true");
+            }
+            catch { return false; }
+        }
 
         public string Description =>
-            "Quick in-game search for Hearthstone Battlegrounds cards. " +
-            "Press the hotkey to summon a search overlay over the game.";
+            "Battlegrounds tools on the in-game overlay: opponent MMR, tiers and minion types, " +
+            "Dark Gifts, trinket and anomaly HUD, card search, match export.";
 
         public string ButtonText => "Settings";
 
@@ -65,7 +85,7 @@ namespace HsbgCardLookup
 
         private MenuItem BuildMenuItem()
         {
-            var root = new MenuItem { Header = Name };
+            var root = new MenuItem { Header = DisplayName };
 
             var open = new MenuItem { Header = "Open overlay" };
             open.Click += (s, e) => _ui?.BeginInvoke(new Action(() =>
@@ -92,6 +112,8 @@ namespace HsbgCardLookup
             // Must be first: lets ImageSharp + its System.* closure resolve from our plugin folder
             // (the CLR probes HDT's app dir, not our subfolder).
             AppDomain.CurrentDomain.AssemblyResolve += ResolveBundledAssembly;
+
+            _name = DisplayName;   // HDT has matched plugins.xml by now (see Name)
 
             // OnLoad runs on HDT's WPF UI thread.
             _ui = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
@@ -339,20 +361,20 @@ namespace HsbgCardLookup
             {
                 var ans = MessageBox.Show(
                     $"Version {notice.AvailableVersion} is available.\n\nOpen the releases page in your browser?",
-                    "HSBG Card Lookup — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    DisplayName + " — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
                 if (ans == MessageBoxResult.Yes)
                     try { System.Diagnostics.Process.Start(notice.Url); } catch { }
             }
             else if (!string.IsNullOrEmpty(notice.Url))
             {
                 var ans = MessageBox.Show(notice.Message + "\n\nOpen the releases page in your browser?",
-                    "HSBG Card Lookup — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    DisplayName + " — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
                 if (ans == MessageBoxResult.Yes)
                     try { System.Diagnostics.Process.Start(notice.Url); } catch { }
             }
             else
             {
-                MessageBox.Show(notice.Message, "HSBG Card Lookup — Updates",
+                MessageBox.Show(notice.Message, DisplayName + " — Updates",
                     MessageBoxButton.OK, notice.IsError ? MessageBoxImage.Warning : MessageBoxImage.Information);
             }
         }

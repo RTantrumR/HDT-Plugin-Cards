@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Build Release and package a drop-in distribution zip for HSBG Card Lookup.
+  Build Release and package a drop-in distribution zip for Tantrum's Battlegrounds Toolkit.
 
 .DESCRIPTION
   Produces dist\HsbgCardLookup-v<Version>.zip. The zip root contains:
