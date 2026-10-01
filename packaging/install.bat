@@ -53,14 +53,27 @@ set "BAD="
 for %%F in ("%SRC%\*.dll") do call :check "%%~nxF" %%~zF
 if defined BAD goto :verify_failed
 
+REM --- 7. HDT starts a newly found plugin switched OFF and never asks about it. If this plugin has
+REM        never run on this PC (no settings file, no OnLoad line in its log), switch it on in
+REM        HDT's plugins.xml - HDT is closed at this point. A plugin that has run before keeps
+REM        whatever the user chose.
+set "ENABLED=0"
+if exist "%DATADIR%\HsbgCardLookup\config.xml" goto :installed
+findstr /c:"  OnLoad" "%DATADIR%\HsbgCardLookup\spike.log" >nul 2>&1
+if not errorlevel 1 goto :installed
+%PS% "$ErrorActionPreference = 'Stop'; $f = $env:DATADIR + '\plugins.xml'; $x = New-Object xml; if (Test-Path -LiteralPath $f) { $x.Load($f) } else { $x.LoadXml('<ArrayOfPluginSettings />') }; $n = $x.DocumentElement.SelectSingleNode('PluginSettings[FileName=''Plugins/HsbgCardLookup/HsbgCardLookup.dll'']'); if ($n) { $n.SelectSingleNode('IsEnabled').InnerText = 'true' } else { $n = $x.CreateElement('PluginSettings'); foreach ($p in @('FileName', 'Plugins/HsbgCardLookup/HsbgCardLookup.dll'), @('IsEnabled', 'true'), @('Name', 'Tantrum''s Battlegrounds Toolkit')) { $c = $x.CreateElement($p[0]); $c.InnerText = $p[1]; [void]$n.AppendChild($c) }; [void]$x.DocumentElement.AppendChild($n) }; $x.Save($f)"
+if not errorlevel 1 set "ENABLED=1"
+
+:installed
 echo   INSTALLED OK
 echo(
-echo   If asked on first launch, enable the plugin under Options ^> Plugins.
+if "%ENABLED%"=="1" echo   The plugin is switched on in HDT.
+if not "%ENABLED%"=="1" echo   If it does not show up in HDT, switch it on: Options ^> Tracker ^> Plugins.
 echo   Press F3 in-game to open the card search.
 echo   ^(First launch downloads card art in the background - about 200 MB, one time.^)
 echo(
 
-REM --- 7. Put HDT back if we closed it, otherwise offer to start it. Never start it next to a
+REM --- 8. Put HDT back if we closed it, otherwise offer to start it. Never start it next to a
 REM        live instance.
 if not exist "%HDTEXE%" goto :no_launcher
 if "%WASRUNNING%"=="1" goto :launch

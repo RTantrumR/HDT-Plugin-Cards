@@ -15,3 +15,10 @@ When a solo Battlegrounds match ends, a small panel in the top-left corner sums 
 - **The panel**: drag it to move it, ✕ closes it, and it disappears on its own 10 seconds into your next match (this can be switched off).
 - **Looking back**: click a match in HDT's "Latest Games" list to open its recap again. Only matches played with the recap switched on have one.
 - **Settings**: a new "Match recap" page. Off by default, solo only for now.
+
+### Installer
+Two reports of "I installed it and nothing happened" traced back to the install script.
+- **A first install now switches the plugin on.** Hearthstone Deck Tracker keeps a newly installed plugin switched off and never asks about it, so the plugin could sit there installed and invisible. If the plugin has never run on your PC, the installer enables it in HDT for you. If you have used it before, your own choice is left alone.
+- **HDT is closed and reopened properly.** The installer asks HDT to close, waits for it, and stops with a clear message if it cannot close it (for example when HDT runs as administrator), instead of starting a second copy next to the first.
+- **The result is checked.** The installer verifies the files really arrived and ends with either INSTALLED OK or INSTALL FAILED and the reason.
+- **If the plugin is still missing in HDT**: open Options → Tracker → Plugins and enable "Tantrum's Battlegrounds Toolkit".
