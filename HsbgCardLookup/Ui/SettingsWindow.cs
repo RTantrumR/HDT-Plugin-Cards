@@ -65,6 +65,8 @@ namespace HsbgCardLookup.Ui
         private UpdateNotice _updateNotice;     // most recently pushed state (see RefreshUpdateStatus)
         private bool _onUpdatesPage;
         private StackPanel _updateActionsHost;  // repainted in place, no full page rebuild needed
+        /// <summary>How many recap records take part in the averages right now (set by Plugin).</summary>
+        internal Func<int> RecapComparableCount;
 
         internal SettingsWindow(PluginConfig config, Data.CardStore store, HotkeyManager hotkey,
             Action onChanged, Action<ArrangeTarget> onArrange,
@@ -269,6 +271,17 @@ namespace HsbgCardLookup.Ui
                         : "Dark Gift list off.";
                     Changed();
                 }, BuildDarkGifts));
+
+            stack.Children.Add(CategoryRow("Match recap",
+                "APM and damage dealt at match end, against your own recent games.",
+                () => _config.ShowMatchRecap, v =>
+                {
+                    _config.ShowMatchRecap = v;
+                    _status.Text = v
+                        ? "Match recap on — a small panel appears when a solo match ends."
+                        : "Match recap off.";
+                    Changed();
+                }, BuildRecap));
 
             stack.Children.Add(CategoryRow("Updates", UpdatesHint(), null, null, BuildUpdates));
 
@@ -628,6 +641,68 @@ namespace HsbgCardLookup.Ui
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
+
+            ShowPage();
+        }
+
+        // ── Match recap ───────────────────────────────────────────────────────────────────────
+        private void BuildRecap()
+        {
+            var stack = NewPage("Match recap", sub: true, () => _config.ShowMatchRecap, v =>
+            {
+                _config.ShowMatchRecap = v;
+                _status.Text = v ? "Match recap on." : "Match recap off.";
+                Changed();
+            });
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "When a solo Battlegrounds match ends, a small panel in the top-left shows this game's "
+                     + "APM and damage dealt next to your averages, once at least "
+                     + Game.Recap.RecapText.MinHistory + " matches are recorded. Drag it to move it.",
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            stack.Children.Add(ToggleRow("Hide it 10 s into the next match", _config.RecapAutoDismiss, v =>
+            {
+                _config.RecapAutoDismiss = v;
+                _status.Text = v ? "The recap closes on its own 10 s after the next match starts." : "The recap stays until you close it.";
+                Changed();
+            }, () => _config.RecapAutoDismiss));
+
+            stack.Children.Add(Separator());
+
+            var historyLine = new TextBlock { Foreground = UiKit.TextSecondary, FontSize = 13, Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap };
+            Action paintHistory = () =>
+            {
+                int n = 0;
+                try { n = RecapComparableCount?.Invoke() ?? 0; } catch { }
+                string season = string.IsNullOrEmpty(_config.RecapSeason) ? "unknown season" : _config.RecapSeason;
+                historyLine.Text = $"{n} match{(n == 1 ? "" : "es")} in the averages ({season}).";
+            };
+            paintHistory();
+            stack.Children.Add(historyLine);
+
+            var actions = new StackPanel { Orientation = Orientation.Horizontal };
+            actions.Children.Add(SmallButton("Reset history", () =>
+            {
+                _config.RecapResetAt = DateTime.Now;
+                Changed();
+                paintHistory();
+                _status.Text = "History reset — the averages start over from your next match. The records stay on disk.";
+            }));
+            actions.Children.Add(SmallButton("Open folder", () =>
+            {
+                try
+                {
+                    string dir = System.IO.Path.Combine(PluginConfig.DataDir, "recaps");
+                    System.IO.Directory.CreateDirectory(dir);
+                    System.Diagnostics.Process.Start("explorer.exe", dir);
+                }
+                catch { }
+            }));
+            stack.Children.Add(actions);
 
             ShowPage();
         }
