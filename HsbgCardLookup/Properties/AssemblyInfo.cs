@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("HsbgCardLookup")]
-[assembly: AssemblyDescription("Quick in-game HSBG card search for Hearthstone Deck Tracker")]
+[assembly: AssemblyDescription("Tantrum's Battlegrounds Toolkit for Hearthstone Deck Tracker")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("hsbg.cards")]
 [assembly: AssemblyProduct("HsbgCardLookup")]
@@ -13,5 +13,5 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 [assembly: Guid("e53beee6-d1e5-41ea-8f48-8d807f9e706d")]
 
-[assembly: AssemblyVersion("0.6.1")]
-[assembly: AssemblyFileVersion("0.6.1")]
+[assembly: AssemblyVersion("0.7.0")]
+[assembly: AssemblyFileVersion("0.7.0")]

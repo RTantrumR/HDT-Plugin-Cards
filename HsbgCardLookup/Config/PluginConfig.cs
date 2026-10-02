@@ -54,7 +54,7 @@ namespace HsbgCardLookup.Config
 
         // Opt-in master toggle: opponents' Battlegrounds MMR / tiers during a match — read from the
         // lobby roster (HearthMirror) and matched against the hsbg.cards leaderboard (only ~8000+
-        // players are listed; others show 8000↓). Off by default. The feature is ULTRA-CONFIGURABLE:
+        // players are listed; others show 8000↓). On for a first run (see FirstRun). ULTRA-CONFIGURABLE:
         // two independent display surfaces (labels over the leaderboard portraits, and/or a separate
         // draggable list panel) crossed with per-part content toggles below — any combination goes
         // (e.g. tavern tiers only, names-only panel, rating without names, …).
@@ -119,8 +119,9 @@ namespace HsbgCardLookup.Config
         public bool ExportMatchBoards { get; set; } = false;
 
         // Match recap: APM + damage dealt at match end, compared with this season's solo history.
-        // Off by default. Records: DataDir\recaps\.
-        public bool ShowMatchRecap { get; set; } = false;
+        // On by default, for updating users too (new in 0.7.0, so no saved config has an opinion on it).
+        // Records: DataDir\recaps\.
+        public bool ShowMatchRecap { get; set; } = true;
         // On: the panel disappears 10 s after the next match starts. Off: only its ✕ closes it.
         public bool RecapAutoDismiss { get; set; } = true;
         public HudPlacement RecapHud { get; set; } = new HudPlacement();
@@ -173,9 +174,28 @@ namespace HsbgCardLookup.Config
                 }
             }
             catch { /* fall through to defaults */ }
-            var fresh = new PluginConfig();
+            var fresh = FirstRun();
             fresh.Migrate();
             return fresh;
+        }
+
+        /// <summary>What a PC with no config.xml starts with: opponents' tavern tiers and minion types
+        /// by the portraits, their names and MMR in the standings panel, Dark Gifts on. The property
+        /// initializers of settings that older versions already saved are deliberately NOT changed to
+        /// this — they are also what an element missing from an older config.xml resolves to, so
+        /// changing them would re-arrange an existing user's display.</summary>
+        private static PluginConfig FirstRun()
+        {
+            return new PluginConfig
+            {
+                ShowOpponentMmr = true,
+                ShowMmrLabels = false,
+                ShowMmrPanel = true,
+                OpponentNameMode = "Players",
+                TavernTierMode = "Portraits",
+                OpponentTribeMode = "Portraits",
+                ShowDarkGifts = true,
+            };
         }
 
         /// <summary>Fold retired settings into their replacements after loading. A config written by an

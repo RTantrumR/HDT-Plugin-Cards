@@ -83,7 +83,7 @@ namespace HsbgCardLookup.Ui
             _openDownloadPage = openDownloadPage;
             _skipUpdate = skipUpdate;
 
-            Title = "HSBG Card Lookup - Settings";
+            Title = Plugin.DisplayName + " - Settings";
             WindowStyle = WindowStyle.SingleBorderWindow;
             ResizeMode = ResizeMode.NoResize;
             Width = 470;
@@ -1429,7 +1429,7 @@ namespace HsbgCardLookup.Ui
                     "Hearthstone isn't running.\n\n"
                     + "This draws on top of the game, so there is nothing to position yet. "
                     + "Start Hearthstone, then click Arrange again.",
-                    "HSBG Card Lookup — Arrange",
+                    Plugin.DisplayName + " — Arrange",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
