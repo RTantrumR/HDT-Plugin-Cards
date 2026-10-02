@@ -52,6 +52,11 @@ namespace HsbgCardLookup.Game.Recap
         private const string TurnMarker = "tag=TURN value=";
         private const string MainEndMarker = "tag=STEP value=MAIN_END";
         private const string GameEntityMarker = "Entity=GameEntity";
+        // The CREATE_GAME dump: "GameEntity EntityID=10" followed by its tags, one per indented line.
+        private const string DumpEntityMarker = "GameEntity EntityID=";
+        private const string DumpTagMarker = "        tag=";
+        private const string StepMarker = "tag=STEP value=";
+        private const double CarryMaxMinutes = 15;
 
         private readonly Action<string> _log;
         private DateTime _lastPoll = DateTime.MinValue;
@@ -71,6 +76,28 @@ namespace HsbgCardLookup.Game.Recap
         private TimeSpan _lastTod;      // monotonic guard: a reconnect replays old lines from index 0
         private bool _playerIdWarned;
 
+        // A reconnect. When the Hearthstone client drops out of a match and rejoins it, HDT resets
+        // and fires OnGameStart again, and the new log opens with a CREATE_GAME dump whose game
+        // entity already carries the TURN the match is on (a fresh game has no TURN there). The
+        // record in progress is parked in _carry at that game start and taken back as soon as the
+        // dump shows the same match continuing; a game that starts from turn 1 drops it.
+        private bool _finished;         // Finish() ran: this record is not a reconnect candidate
+        private Carry _carry;
+        private int _liveFrom;          // first shop of the current log; earlier ones lost their combats
+        private bool _inDump;           // reading the game entity's tags in a CREATE_GAME dump
+        private int _dumpTurn;
+        private string _dumpStep;
+        private TimeSpan _dumpTod;
+
+        private sealed class Carry
+        {
+            public RecapRecord Record;
+            public RecapTurn Open;
+            public TimeSpan OpenTod, LastTod;
+            public DateTime OpenWall, At;
+            public Dictionary<string, int> Kinds;
+        }
+
         public RecapTracker(Action<string> log) { _log = log; }
 
         /// <summary>The match being scored, or null outside a match / in a match the recap skips.</summary>
@@ -89,6 +116,25 @@ namespace HsbgCardLookup.Game.Recap
             _logIndex = 0;
             _lastTod = TimeSpan.Zero;
             _playerIdWarned = false;
+            _finished = false;
+            _carry = null;
+            _liveFrom = 0;
+            _inDump = false;
+        }
+
+        /// <summary>HDT announced a game start. Park an unfinished record in case this is the same
+        /// match coming back from a reconnect (see <see cref="_carry"/>).</summary>
+        public void Restart()
+        {
+            Carry carry = null;
+            if (_rec != null && !_finished && _rec.Turns.Count > 0)
+                carry = new Carry
+                {
+                    Record = _rec, Open = _open, OpenTod = _openTod, OpenWall = _openWall,
+                    LastTod = _lastTod, At = DateTime.Now, Kinds = new Dictionary<string, int>(_kinds),
+                };
+            Reset();
+            _carry = carry;
         }
 
         // ── poll ────────────────────────────────────────────────────────────────────────────────
@@ -158,6 +204,7 @@ namespace HsbgCardLookup.Game.Recap
                 ReadPlacement(g);
             }
             catch (Exception ex) { Log("Finish error: " + ex.Message); }
+            _finished = true;
             return _rec;
         }
 
@@ -225,11 +272,32 @@ namespace HsbgCardLookup.Game.Recap
                     _lastTod = tod;
                 }
 
+                if (_inDump)
+                {
+                    if (line.IndexOf(DumpTagMarker, StringComparison.Ordinal) >= 0)
+                    {
+                        if (line.IndexOf(TurnMarker, StringComparison.Ordinal) >= 0) _dumpTurn = ParseInt(Field(line, TurnMarker));
+                        else if (line.IndexOf(StepMarker, StringComparison.Ordinal) >= 0) _dumpStep = Field(line, StepMarker);
+                        continue;
+                    }
+                    _inDump = false;                 // the game entity's tags are over; this line is the next block
+                    JoinInProgress(_dumpTurn, _dumpStep, _dumpTod);
+                }
+                if (line.IndexOf(DumpEntityMarker, StringComparison.Ordinal) >= 0)
+                {
+                    _inDump = true;
+                    _dumpTurn = 0;
+                    _dumpStep = null;
+                    _dumpTod = stamped ? tod : TimeSpan.Zero;
+                    continue;
+                }
+
                 if (line.IndexOf(GameEntityMarker, StringComparison.Ordinal) >= 0)
                 {
                     int turnAt = line.IndexOf(TurnMarker, StringComparison.Ordinal);
                     if (turnAt >= 0)
                     {
+                        _carry = null;               // a TURN change with the record still parked: not a rejoin
                         int gameTurn = ParseInt(Field(line, TurnMarker));
                         // A shop's MAIN_END precedes the next TURN line in the same millisecond, so
                         // reaching a TURN change with a shop still open means the end was missed.
@@ -249,6 +317,55 @@ namespace HsbgCardLookup.Game.Recap
                 try { Classify(g, line, stamped ? tod : TimeSpan.Zero); } catch { }
             }
             _logIndex = count;
+        }
+
+        /// <summary>The log opened mid-game: CREATE_GAME gave the game entity a TURN above 1. Take the
+        /// parked record back if it is this match, and pick up the shop the game is standing in —
+        /// its TURN change was logged before the reconnect and will not come again.</summary>
+        private void JoinInProgress(int gameTurn, string step, TimeSpan tod)
+        {
+            if (gameTurn <= 1 || _rec == null) return;
+            int round = (gameTurn + 1) / 2;
+            TakeCarry(round);
+            if (_liveFrom == 0) _liveFrom = round;
+
+            bool shop = gameTurn % 2 == 1 && step != "MAIN_END" && step != "MAIN_CLEANUP" && step != "MAIN_NEXT";
+            if (!shop || (_open != null && _open.Turn == round)) return;
+            OpenTurn(round, tod);
+        }
+
+        private void TakeCarry(int joinRound)
+        {
+            var c = _carry;
+            _carry = null;
+            if (c == null) return;
+            if (c.Record.Turns.Max(t => t.Turn) > joinRound) return;
+            if ((DateTime.Now - c.At).TotalMinutes > CarryMaxMinutes) return;
+            bool bothHeroes = !string.IsNullOrEmpty(c.Record.HeroCardId) && !string.IsNullOrEmpty(_rec.HeroCardId);
+            if (bothHeroes && c.Record.HeroCardId != _rec.HeroCardId) return;
+
+            _rec.Turns.InsertRange(0, c.Record.Turns);
+            if (string.IsNullOrEmpty(_rec.HeroCardId)) _rec.HeroCardId = c.Record.HeroCardId;
+            _liveFrom = joinRound;
+            Log(string.Format("reconnect: kept {0} recorded turn(s), rejoined on turn {1}", c.Record.Turns.Count, joinRound));
+
+            if (c.Open == null) return;
+            if (c.Open.Turn == joinRound)
+            {
+                // Still the same shop: carry on with its own opening time, so the window and the
+                // action offsets stay one continuous turn.
+                _open = c.Open;
+                _openTod = c.OpenTod;
+                _openWall = c.OpenWall;
+                foreach (var k in c.Kinds) _kinds[k.Key] = k.Value;
+            }
+            else
+            {
+                // A shop the client never saw the end of: it ran at least to the last line we read.
+                double seconds = (c.LastTod - c.OpenTod).TotalSeconds;
+                c.Open.WindowSeconds = seconds > 0 && seconds < 30 * 60 ? Math.Round(seconds, 1) : 0;
+                c.Open.WindowSource = "cut";
+            }
         }
 
         private void OpenTurn(int round, TimeSpan tod)
@@ -322,8 +439,9 @@ namespace HsbgCardLookup.Game.Recap
         private void ResolveCombat()
         {
             // The combat that just finished belongs to the earliest shop still waiting for one —
-            // never to the shop that may already be open in the log.
-            var t = _rec != null ? _rec.Turns.FirstOrDefault(x => !x.Fought && !ReferenceEquals(x, _open)) : null;
+            // never to the shop that may already be open in the log, and never to a shop from before
+            // a reconnect (its combat played out while the client was away).
+            var t = _rec != null ? _rec.Turns.FirstOrDefault(x => !x.Fought && x.Turn >= _liveFrom && !ReferenceEquals(x, _open)) : null;
             if (t == null) { _combatDealt = 0; return; }
             t.Fought = true;
             t.DamageDealt = _combatDealt;
