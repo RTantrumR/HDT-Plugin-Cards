@@ -54,7 +54,7 @@ namespace HsbgCardLookup.Config
 
         // Opt-in master toggle: opponents' Battlegrounds MMR / tiers during a match — read from the
         // lobby roster (HearthMirror) and matched against the hsbg.cards leaderboard (only ~8000+
-        // players are listed; others show 8000↓). Off by default. The feature is ULTRA-CONFIGURABLE:
+        // players are listed; others show 8000↓). On for a first run (see FirstRun). ULTRA-CONFIGURABLE:
         // two independent display surfaces (labels over the leaderboard portraits, and/or a separate
         // draggable list panel) crossed with per-part content toggles below — any combination goes
         // (e.g. tavern tiers only, names-only panel, rating without names, …).
@@ -173,9 +173,26 @@ namespace HsbgCardLookup.Config
                 }
             }
             catch { /* fall through to defaults */ }
-            var fresh = new PluginConfig();
+            var fresh = FirstRun();
             fresh.Migrate();
             return fresh;
+        }
+
+        /// <summary>What a PC with no config.xml starts with: opponents' tavern tiers and minion types
+        /// by the portraits, their names and MMR in the standings panel. The property initializers are
+        /// deliberately NOT changed to this — they are also what an element missing from an older
+        /// config.xml resolves to, so changing them would re-arrange an existing user's display.</summary>
+        private static PluginConfig FirstRun()
+        {
+            return new PluginConfig
+            {
+                ShowOpponentMmr = true,
+                ShowMmrLabels = false,
+                ShowMmrPanel = true,
+                OpponentNameMode = "Players",
+                TavernTierMode = "Portraits",
+                OpponentTribeMode = "Portraits",
+            };
         }
 
         /// <summary>Fold retired settings into their replacements after loading. A config written by an

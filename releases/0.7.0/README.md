@@ -1,7 +1,5 @@
 v0.7.0: Match Recap and a new name
 
-Work in progress — this file is filled in as features are merged into master, not written after the fact.
-
 ### The plugin is now called Tantrum's Battlegrounds Toolkit
 "HSBG Card Lookup" described the first feature, not what the plugin has grown into.
 - **Nothing to do on your side**: update the usual way and the plugin stays enabled. Hearthstone Deck Tracker lists it under the new name from the first launch.
@@ -15,6 +13,12 @@ When a solo Battlegrounds match ends, a small panel in the top-left corner sums 
 - **The panel**: drag it to move it, ✕ closes it, and it disappears on its own 10 seconds into your next match (this can be switched off).
 - **Looking back**: click a match in HDT's "Latest Games" list to open its recap again. Only matches played with the recap switched on have one.
 - **Settings**: a new "Match recap" page. Off by default, solo only for now.
+
+### Opponent info is on from the start
+A new install used to show nothing in a match until you found the right switches in the settings.
+- **A first run now starts with the setup most players and streamers use**: every opponent's tavern tier and most common minion type next to their leaderboard portrait, and a movable panel with their names and MMR.
+- **Existing setups are left as they are.** If you have used the plugin before, nothing changes on update.
+- **Everything else** (trinkets, anomaly, Dark Gifts, match recap, match export) is still switched on in the settings.
 
 ### Installer
 Two reports of "I installed it and nothing happened" traced back to the install script.
