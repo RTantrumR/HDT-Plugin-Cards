@@ -83,7 +83,7 @@ namespace HsbgCardLookup.Game.Recap
         {
             _finishing = false;
             _scored = false;
-            _tracker.Reset();
+            _tracker.Restart();   // not Reset: HDT fires a game start for a reconnect too
             var canvas = Canvas();
             if (canvas != null && _config.ShowMatchRecap && _config.RecapAutoDismiss && _panel != null && _panel.IsVisible)
             {
@@ -123,7 +123,7 @@ namespace HsbgCardLookup.Game.Recap
             _store.Save(rec);
             _finished = rec;
             Log(string.Format("match saved | place={0} turns={1} actions={2} window={3:0}s apm={4:0.0} dealt={5} combats={6} | history={7}",
-                rec.Placement, rec.Turns.Count, rec.ActionCount, rec.WindowSeconds, rec.MatchApm, rec.TotalDamage, rec.CombatsFought, history.Count));
+                rec.Placement, rec.LastTurn, rec.ActionCount, rec.WindowSeconds, rec.MatchApm, rec.TotalDamage, rec.CombatsFought, history.Count));
 
             var text = RecapText.Build(rec, history);
             ShowPanel(text);

@@ -87,16 +87,16 @@ The plugin tells you when a new release is out and links to it. It never downloa
 anything by itself: updating is the same `install.bat` as the first install. Card data and art refresh
 automatically.
 
+### What's New in v0.7.1
+- **Match recap survives a reconnect**: after a disconnect and rejoin mid-match, the recap used to count only the turns after the rejoin. It now keeps the whole match.
+
 ### What's New in v0.7.0
 - **A new name**: HSBG Card Lookup is now Tantrum's Battlegrounds Toolkit. Updating keeps it enabled and keeps your settings.
 - **Match recap**: APM, best turn, peak burst and damage dealt when a solo match ends, next to your season averages.
 - **Installer**: closes and reopens HDT properly, checks that the files fully arrived, and switches the plugin on in HDT on a first install, addressing an issue brought up by a few people.
 - **Ready from the start**: a new install shows opponents' tavern tiers and tribes by their portraits, the Names/MMR panel and Dark Gifts without touching the settings. Existing setups are left as they are, apart from the new match recap, which is on for everyone.
 
-### What's New in v0.6.1
-- **Card art for new cards**: the new season's cards showed a blank frame in the search; per-card art downloads work again and the startup art sync fetches everything the bulk pack was missing.
-
-[Full release notes](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/tag/v0.7.0) | [All releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases)
+[Full release notes](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/tag/v0.7.1) | [All releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases)
 
 ## Uninstall
 

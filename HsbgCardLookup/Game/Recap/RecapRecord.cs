@@ -24,6 +24,10 @@ namespace HsbgCardLookup.Game.Recap
         public int Placement { get; set; }
         public List<RecapTurn> Turns { get; set; } = new List<RecapTurn>();
 
+        /// <summary>How long the match ran: the number of its last shop, which is not the number of
+        /// recorded shops when some were missed (a turn spent disconnected).</summary>
+        [JsonIgnore] public int LastTurn => Turns.Count > 0 ? Turns.Max(t => t.Turn) : 0;
+
         [JsonIgnore] public int ActionCount => Turns.Sum(t => t.Actions);
         [JsonIgnore] public double WindowSeconds => Turns.Sum(t => t.WindowSeconds);
         [JsonIgnore] public double ActiveSeconds => Turns.Sum(t => t.ActiveSeconds);

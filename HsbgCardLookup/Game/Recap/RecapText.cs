@@ -40,7 +40,7 @@ namespace HsbgCardLookup.Game.Recap
 
             t.Hero = rec.HeroName;
             t.Place = rec.Placement > 0 ? Ordinal(rec.Placement) : null;
-            t.Turns = rec.Turns.Count;
+            t.Turns = rec.LastTurn;
             t.Apm = rec.MatchApm;
             var best = rec.BestTurn;
             if (best != null) { t.BestTurn = best.Turn; t.BestTurnApm = best.Apm; }
