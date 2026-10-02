@@ -119,8 +119,9 @@ namespace HsbgCardLookup.Config
         public bool ExportMatchBoards { get; set; } = false;
 
         // Match recap: APM + damage dealt at match end, compared with this season's solo history.
-        // Off by default. Records: DataDir\recaps\.
-        public bool ShowMatchRecap { get; set; } = false;
+        // On by default, for updating users too (new in 0.7.0, so no saved config has an opinion on it).
+        // Records: DataDir\recaps\.
+        public bool ShowMatchRecap { get; set; } = true;
         // On: the panel disappears 10 s after the next match starts. Off: only its ✕ closes it.
         public bool RecapAutoDismiss { get; set; } = true;
         public HudPlacement RecapHud { get; set; } = new HudPlacement();
@@ -179,9 +180,10 @@ namespace HsbgCardLookup.Config
         }
 
         /// <summary>What a PC with no config.xml starts with: opponents' tavern tiers and minion types
-        /// by the portraits, their names and MMR in the standings panel. The property initializers are
-        /// deliberately NOT changed to this — they are also what an element missing from an older
-        /// config.xml resolves to, so changing them would re-arrange an existing user's display.</summary>
+        /// by the portraits, their names and MMR in the standings panel, Dark Gifts on. The property
+        /// initializers of settings that older versions already saved are deliberately NOT changed to
+        /// this — they are also what an element missing from an older config.xml resolves to, so
+        /// changing them would re-arrange an existing user's display.</summary>
         private static PluginConfig FirstRun()
         {
             return new PluginConfig
@@ -192,6 +194,7 @@ namespace HsbgCardLookup.Config
                 OpponentNameMode = "Players",
                 TavernTierMode = "Portraits",
                 OpponentTribeMode = "Portraits",
+                ShowDarkGifts = true,
             };
         }
 

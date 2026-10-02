@@ -29,7 +29,7 @@ things you would otherwise hover, alt-tab or memorise on screen while you play.
   or for your viewers.
 - **Match export**: your board after every round, saved to a CSV file. (Work in progress for full visualized board snapshots and match analysis)
 
-Standard setup includes opponents' Tavern Tier and Tribes by their portraits and a movable floating panel with their Names/MMR; everything else is switched on in the plugin's settings.
+Standard setup includes opponents' Tavern Tier and Tribes by their portraits, a movable floating panel with their Names/MMR, Dark Gifts and the match recap; trinkets, anomaly and match export are off until you switch them on in the plugin's settings.
 Card data and art come from [hsbg.cards](https://hsbg.cards).
 
 <br clear="right" />
@@ -91,7 +91,7 @@ automatically.
 - **A new name**: HSBG Card Lookup is now Tantrum's Battlegrounds Toolkit. Updating keeps it enabled and keeps your settings.
 - **Match recap**: APM, best turn, peak burst and damage dealt when a solo match ends, next to your season averages.
 - **Installer**: closes and reopens HDT properly, checks that the files fully arrived, and switches the plugin on in HDT on a first install, addressing an issue brought up by a few people.
-- **Opponent info on from the start**: a new install shows opponents' tavern tiers and tribes by their portraits and the Names/MMR panel without touching the settings. Existing setups are left as they are.
+- **Ready from the start**: a new install shows opponents' tavern tiers and tribes by their portraits, the Names/MMR panel and Dark Gifts without touching the settings. Existing setups are left as they are, apart from the new match recap, which is on for everyone.
 
 ### What's New in v0.6.1
 - **Card art for new cards**: the new season's cards showed a blank frame in the search; per-card art downloads work again and the startup art sync fetches everything the bulk pack was missing.
