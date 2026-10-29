@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace HsbgCardLookup.Search
 {
@@ -8,7 +9,7 @@ namespace HsbgCardLookup.Search
     public sealed class AliasEntry
     {
         public string Canonical;
-        public string Type;          // keyword | tribe | text_keyword | card_type | category
+        public string Type;          // keyword | tribe | text_keyword | card_type | category | trinket_tier
         public string[] Aliases;
         public string TextPattern;   // optional
 
@@ -23,7 +24,8 @@ namespace HsbgCardLookup.Search
 
     internal static class Aliases
     {
-        public static readonly AliasEntry[] Table =
+        /// <summary>The English (+ Ukrainian) table, as the website ships it. Never mutated.</summary>
+        public static readonly AliasEntry[] Base =
         {
             // Keywords
             new AliasEntry("Taunt", "keyword", new[] { "taunt", "провокація", "таунт" }),
@@ -41,7 +43,7 @@ namespace HsbgCardLookup.Search
             // Text-based keywords (matched against card text, not keywords array)
             new AliasEntry("End of Turn", "text_keyword", new[] { "end of turn", "eot", "кінець ходу" }, "end of"),
             // Tribes
-            new AliasEntry("Aberration", "tribe", new[] { "aberration" }),
+            new AliasEntry("Aberration", "tribe", new[] { "aberration", "аберація" }),
             new AliasEntry("Beast", "tribe", new[] { "beast", "звір", "біст" }),
             new AliasEntry("Demon", "tribe", new[] { "demon", "демон" }),
             new AliasEntry("Dragon", "tribe", new[] { "dragon", "дракон" }),
@@ -82,12 +84,68 @@ namespace HsbgCardLookup.Search
             new AliasEntry("reward", "card_type", new[] { "reward", "rewards", "нагорода" }),
         };
 
+        /// <summary>The table the parser matches against: <see cref="Base"/>, plus the words of the
+        /// card language in use once <see cref="SetLocale"/> has merged them (the website's
+        /// registerLocaleSearchAliases, lib/search/locale-aliases.ts). Entries are copies, so Base
+        /// stays pristine and switching back to English is a reference swap.</summary>
+        public static AliasEntry[] Table { get; private set; } = Base;
+
+        /// <summary>Folded locale words that name a derived category (buddy, token, spellcraft…) —
+        /// what SearchEngine.QueryWantsSecondary checks beside its English list.</summary>
+        public static IReadOnlyCollection<string> LocaleSecondaryWords { get; private set; } = new string[0];
+
+        /// <summary>Merge a language's facet words into the table (or restore English). A word lands
+        /// on the entry with the same canonical value and facet type, as on the site; a keyword the
+        /// table only knows as a text keyword ("End of Turn") lands there. Words are folded like the
+        /// query is, so "Dämon" and "damon" both resolve.</summary>
+        public static void SetLocale(Data.LocaleVocab vocab)
+        {
+            if (vocab == null || vocab.IsEnglish)
+            {
+                Table = Base;
+                LocaleSecondaryWords = new string[0];
+                return;
+            }
+
+            var table = Base.Select(e => new AliasEntry(e.Canonical, e.Type, (string[])e.Aliases.Clone(), e.TextPattern)).ToArray();
+            var secondary = new List<string>();
+
+            bool Add(string canonical, string type, string word)
+            {
+                string w = SearchEngine.Fold(word);
+                if (string.IsNullOrWhiteSpace(w)) return false;
+                var entry = table.FirstOrDefault(e =>
+                    string.Equals(e.Canonical, canonical, StringComparison.OrdinalIgnoreCase) && e.Type == type);
+                if (entry == null) return false;
+                if (!entry.Aliases.Contains(w))
+                {
+                    var list = new List<string>(entry.Aliases) { w };
+                    entry.Aliases = list.ToArray();
+                }
+                return true;
+            }
+
+            foreach (var kv in vocab.Tribe) Add(kv.Key, "tribe", kv.Value);
+            foreach (var kv in vocab.CardType) Add(kv.Key, "card_type", kv.Value);
+            foreach (var kv in vocab.SpellSchool)
+                if (Add(kv.Key.ToLowerInvariant(), "category", kv.Value)) secondary.Add(SearchEngine.Fold(kv.Value));
+            foreach (var kv in vocab.Category)
+                if (Add(kv.Key, "category", kv.Value) && kv.Key != "darkgift") secondary.Add(SearchEngine.Fold(kv.Value));
+            foreach (var kv in vocab.TrinketTier) Add(kv.Key, "trinket_tier", kv.Value);
+            foreach (var kv in vocab.Keyword)
+                if (!Add(kv.Key, "keyword", kv.Value)) Add(kv.Key, "text_keyword", kv.Value);
+
+            Table = table;
+            LocaleSecondaryWords = secondary;
+        }
+
         public static AliasEntry FuzzyMatch(string input)
         {
-            string q = input.ToLowerInvariant();
+            string q = SearchEngine.Fold(input);
+            var table = Table;
 
             // 1. Exact match
-            foreach (var entry in Table)
+            foreach (var entry in table)
                 foreach (var alias in entry.Aliases)
                     if (alias == q) return entry;
 
@@ -97,7 +155,7 @@ namespace HsbgCardLookup.Search
             {
                 AliasEntry bestEntry = null;
                 int bestRemaining = int.MaxValue;
-                foreach (var entry in Table)
+                foreach (var entry in table)
                     foreach (var alias in entry.Aliases)
                         if (alias.StartsWith(q, StringComparison.Ordinal))
                         {
@@ -113,7 +171,7 @@ namespace HsbgCardLookup.Search
                 int threshold = Math.Max(1, q.Length / 4);
                 AliasEntry bestEntry = null;
                 int bestDist = int.MaxValue;
-                foreach (var entry in Table)
+                foreach (var entry in table)
                     foreach (var alias in entry.Aliases)
                     {
                         if (alias.Length < q.Length) continue;
@@ -134,7 +192,7 @@ namespace HsbgCardLookup.Search
             {
                 AliasEntry bestEntry = null;
                 int bestDist = int.MaxValue;
-                foreach (var entry in Table)
+                foreach (var entry in table)
                     foreach (var alias in entry.Aliases)
                     {
                         int shorter = Math.Min(q.Length, alias.Length);

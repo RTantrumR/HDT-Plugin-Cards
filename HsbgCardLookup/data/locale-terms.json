@@ -1,0 +1,804 @@
+{
+ "patch": "37.0",
+ "generated": "2026-10-29",
+ "source": "hsbg.cards data/production/terms.json + lib/i18n/catalogs (tools/gen-locale-terms.js)",
+ "locales": {
+  "de": {
+   "keyword": {
+    "Activate": "Aktivieren",
+    "Avenge": "Rache",
+    "Battlecry": "Kampfschrei",
+    "Charge": "Ansturm",
+    "Choose One": "Wählt aus",
+    "Deathrattle": "Todesröcheln",
+    "Discover": "Entdecken",
+    "Divine Shield": "Gottesschild",
+    "End of Turn": "Zugende",
+    "Frenzy": "Raserei",
+    "Immune": "Immun",
+    "Magnetic": "Magnetisch",
+    "Overkill": "Überwältigen",
+    "Pass": "Weitergeben",
+    "Poisonous": "Giftig",
+    "Rally": "Mobilisieren",
+    "Reborn": "Wiederkehr",
+    "Refresh": "Aktualisieren",
+    "Secret": "Geheimnis",
+    "Spellcraft": "Zauberkunde",
+    "Start of Combat": "Kampfbeginn",
+    "Start of Turn": "Zugbeginn",
+    "Stealth": "Verstohlenheit",
+    "Taunt": "Spott",
+    "Venomous": "Toxisch",
+    "Windfury": "Windzorn"
+   },
+   "tribe": {
+    "Aberration": "Abscheulichkeit",
+    "All": "Alle",
+    "Beast": "Wildtier",
+    "Demon": "Dämon",
+    "Dragon": "Drache",
+    "Dual-Type": "Doppeltyp",
+    "Elemental": "Elementar",
+    "Pirate": "Pirat",
+    "Quilboar": "Stacheleber",
+    "Undead": "Untot"
+   },
+   "cardType": {
+    "anomaly": "Anomalie",
+    "hero": "Held",
+    "hero_power": "Heldenfähigkeit",
+    "minion": "Diener",
+    "reward": "Belohnung",
+    "spell": "Zauber",
+    "trinket": "Schmuckstück"
+   },
+   "spellSchool": {
+    "Battlecruiser": "Schwerer Kreuzer",
+    "Darkmoon": "Dunkelmond",
+    "Spellcraft": "Zauberkunde",
+    "Tavern": "Gasthaus",
+    "Timewarped": "Zeitkrümmung"
+   },
+   "trinketTier": {
+    "greater": "Groß",
+    "lesser": "Gering"
+   },
+   "category": {
+    "buddy": "Partner",
+    "darkgift": "Dunkle Gabe"
+   }
+  },
+  "es": {
+   "keyword": {
+    "Activate": "Activar",
+    "Avenge": "Vengar a",
+    "Battlecry": "Grito de batalla",
+    "Charge": "Cargar",
+    "Choose One": "Elige una",
+    "Deathrattle": "Último aliento",
+    "Discover": "Descubre",
+    "Divine Shield": "Escudo divino",
+    "End of Turn": "Final del turno",
+    "Frenzy": "Frenesí",
+    "Immune": "Inmune",
+    "Magnetic": "Magnetismo",
+    "Overkill": "Arrasar",
+    "Pass": "Pasar",
+    "Poisonous": "Veneno",
+    "Rally": "Alentar",
+    "Reborn": "Renacer",
+    "Refresh": "Refrescar",
+    "Secret": "Secreto",
+    "Spellcraft": "Hechicería",
+    "Start of Combat": "Comienzo del combate",
+    "Start of Turn": "Comienzo del turno",
+    "Stealth": "Sigilo",
+    "Taunt": "Provocar",
+    "Venomous": "Ponzoña",
+    "Windfury": "Viento furioso"
+   },
+   "tribe": {
+    "Aberration": "Aberración",
+    "All": "Todos",
+    "Beast": "Bestia",
+    "Demon": "Demonio",
+    "Dragon": "Dragón",
+    "Dual-Type": "Tipo doble",
+    "Mech": "Robot",
+    "Murloc": "Múrloc",
+    "Pirate": "Pirata",
+    "Quilboar": "Jabaespín",
+    "Undead": "No-muerto"
+   },
+   "cardType": {
+    "anomaly": "Anomalía",
+    "hero": "Héroe",
+    "hero_power": "Poder de héroe",
+    "minion": "Esbirro",
+    "quest": "Misión",
+    "reward": "Recompensa",
+    "spell": "Hechizo",
+    "trinket": "Abalorio"
+   },
+   "spellSchool": {
+    "Battlecruiser": "Crucero de batalla",
+    "Darkmoon": "Luna Negra",
+    "Spellcraft": "Hechicería",
+    "Tavern": "Taberna",
+    "Timewarped": "Asincronía"
+   },
+   "trinketTier": {
+    "greater": "Mayor",
+    "lesser": "Menor"
+   },
+   "category": {
+    "buddy": "Colegas",
+    "darkgift": "Don siniestro"
+   }
+  },
+  "es-mx": {
+   "keyword": {
+    "Activate": "Activar",
+    "Avenge": "Vengar",
+    "Battlecry": "Grito de batalla",
+    "Charge": "Carga",
+    "Deathrattle": "Estertor",
+    "Discover": "Develar",
+    "Divine Shield": "Escudo divino",
+    "Frenzy": "Frenesí",
+    "Immune": "Inmune",
+    "Magnetic": "Magnetismo",
+    "Overkill": "Arrasar",
+    "Pass": "Pasar",
+    "Poisonous": "Venenoso",
+    "Rally": "Alentar",
+    "Reborn": "Renacer",
+    "Refresh": "Renovar",
+    "Secret": "Secreto",
+    "Spellcraft": "Hechicería",
+    "Start of Combat": "Inicio del combate",
+    "Stealth": "Sigilo",
+    "Taunt": "Provocación",
+    "Venomous": "Tóxico",
+    "Windfury": "Viento furioso"
+   },
+   "tribe": {
+    "Aberration": "Aberración",
+    "All": "Todas",
+    "Beast": "Bestia",
+    "Demon": "Demonio",
+    "Dragon": "Dragón",
+    "Mech": "Meca",
+    "Murloc": "Múrloc",
+    "Pirate": "Pirata",
+    "Quilboar": "Jabaespín",
+    "Undead": "No-muerto"
+   },
+   "cardType": {
+    "anomaly": "Anomalía",
+    "hero": "Héroe",
+    "hero_power": "Poder de héroe",
+    "minion": "Esbirro",
+    "quest": "Misión",
+    "reward": "Recompensa",
+    "spell": "Hechizo",
+    "trinket": "Abalorio"
+   },
+   "spellSchool": {
+    "Battlecruiser": "Crucero de batalla",
+    "Spellcraft": "Hechicería",
+    "Tavern": "Taberna",
+    "Timewarped": "Cronoanomalía"
+   },
+   "trinketTier": {
+    "greater": "Mayor",
+    "lesser": "Menor"
+   },
+   "category": {
+    "buddy": "Compas",
+    "darkgift": "Regalo oscuro"
+   }
+  },
+  "fr": {
+   "keyword": {
+    "Activate": "Activation",
+    "Avenge": "Vengeance",
+    "Battlecry": "Cri de guerre",
+    "Deathrattle": "Râle d’agonie",
+    "Discover": "Découverte",
+    "Divine Shield": "Bouclier divin",
+    "Frenzy": "Frénésie",
+    "Immune": "Insensible",
+    "Magnetic": "Magnétisme",
+    "Overkill": "Brutalité",
+    "Pass": "Passer",
+    "Poisonous": "Toxicité",
+    "Rally": "Ralliement",
+    "Reborn": "Réincarnation",
+    "Refresh": "Actualiser",
+    "Spellcraft": "Sorcellerie",
+    "Start of Combat": "Début du combat",
+    "Stealth": "Camouflage",
+    "Taunt": "Provocation",
+    "Venomous": "Venimosité",
+    "Windfury": "Furie des vents"
+   },
+   "tribe": {
+    "All": "Tout",
+    "Beast": "Bête",
+    "Demon": "Démon",
+    "Dual-Type": "Double type",
+    "Elemental": "Élémentaire",
+    "Mech": "Méca",
+    "Neutral": "Neutre",
+    "Quilboar": "Huran",
+    "Undead": "Mort-vivant"
+   },
+   "cardType": {
+    "anomaly": "Anomalie",
+    "hero": "Héros",
+    "hero_power": "Pouvoir héroïque",
+    "minion": "Serviteur",
+    "quest": "Quête",
+    "reward": "Récompense",
+    "spell": "Sort",
+    "trinket": "Bibelot"
+   },
+   "spellSchool": {
+    "Battlecruiser": "Cuirassé",
+    "Darkmoon": "Sombrelune",
+    "Spellcraft": "Sorcellerie",
+    "Tavern": "Taverne",
+    "Timewarped": "Chronodistorsion"
+   },
+   "trinketTier": {
+    "greater": "Supérieur",
+    "lesser": "Inférieur"
+   },
+   "category": {
+    "buddy": "Compagnons",
+    "token": "Jetons",
+    "darkgift": "Sombre don"
+   }
+  },
+  "it": {
+   "keyword": {
+    "Activate": "Attivazione",
+    "Avenge": "Vendetta",
+    "Battlecry": "Grido di Battaglia",
+    "Charge": "Carica",
+    "Choose One": "Scegli",
+    "Deathrattle": "Rantolo di Morte",
+    "Discover": "Rinvenimento",
+    "Divine Shield": "Scudo Divino",
+    "End of Turn": "Fine Turno",
+    "Frenzy": "Frenesia",
+    "Magnetic": "Magnetismo",
+    "Overkill": "Annientamento",
+    "Pass": "Passa",
+    "Poisonous": "Veleno",
+    "Rally": "Adunata",
+    "Reborn": "Rinascita",
+    "Refresh": "Ricarica",
+    "Secret": "Segreto",
+    "Spellcraft": "Genesi Magica",
+    "Start of Combat": "Inizio Combattimento",
+    "Start of Turn": "Inizio Turno",
+    "Stealth": "Furtività",
+    "Taunt": "Provocazione",
+    "Venomous": "Fiele",
+    "Windfury": "Furia del Vento"
+   },
+   "tribe": {
+    "Aberration": "Aberrazione",
+    "All": "Tutti",
+    "Beast": "Bestia",
+    "Demon": "Demone",
+    "Dragon": "Drago",
+    "Dual-Type": "Doppio tipo",
+    "Elemental": "Elementale",
+    "Mech": "Robot",
+    "Neutral": "Senza tipo",
+    "Pirate": "Pirata",
+    "Quilboar": "Verrospino",
+    "Undead": "Non Morto"
+   },
+   "cardType": {
+    "anomaly": "Anomalia",
+    "hero": "Eroe",
+    "hero_power": "Potere Eroe",
+    "minion": "Servitore",
+    "quest": "Missione",
+    "reward": "Ricompensa",
+    "spell": "Magia",
+    "trinket": "Monile"
+   },
+   "spellSchool": {
+    "Battlecruiser": "Incrociatore",
+    "Darkmoon": "Lunacupa",
+    "Spellcraft": "Genesi Magica",
+    "Tavern": "Locanda",
+    "Timewarped": "Crono-distorsione"
+   },
+   "trinketTier": {
+    "greater": "Superiore",
+    "lesser": "Inferiore"
+   },
+   "category": {
+    "buddy": "Amici",
+    "token": "Pedine",
+    "darkgift": "Dono Oscuro"
+   }
+  },
+  "ja": {
+   "keyword": {
+    "Activate": "発動",
+    "Aura": "オーラ",
+    "Avenge": "仇討",
+    "Battlecry": "雄叫び",
+    "Charge": "突撃",
+    "Choose One": "選択",
+    "Deathrattle": "断末魔",
+    "Discover": "発見",
+    "Divine Shield": "聖なる盾",
+    "End of Turn": "ターン終了時",
+    "Frenzy": "逆上",
+    "Immune": "無敵",
+    "Magnetic": "超電磁",
+    "Overkill": "血祭",
+    "Pass": "パス",
+    "Poisonous": "猛毒",
+    "Rally": "勝鬨",
+    "Reborn": "蘇り",
+    "Refresh": "入替",
+    "Secret": "秘策",
+    "Spellcraft": "呪文錬成",
+    "Start of Combat": "戦闘開始時",
+    "Start of Turn": "ターン開始時",
+    "Stealth": "隠れ身",
+    "Taunt": "挑発",
+    "Venomous": "毒袋",
+    "Windfury": "疾風"
+   },
+   "tribe": {
+    "Aberration": "異形",
+    "All": "全て",
+    "Beast": "獣",
+    "Demon": "悪魔",
+    "Dragon": "ドラゴン",
+    "Dual-Type": "2種族",
+    "Elemental": "エレメンタル",
+    "Mech": "メカ",
+    "Murloc": "マーロック",
+    "Naga": "ナーガ",
+    "Neutral": "種族なし",
+    "Pirate": "海賊",
+    "Quilboar": "キルボア",
+    "Undead": "アンデッド"
+   },
+   "cardType": {
+    "anomaly": "異常",
+    "hero": "ヒーロー",
+    "hero_power": "ヒーローパワー",
+    "minion": "ミニオン",
+    "quest": "クエスト",
+    "reward": "報酬",
+    "spell": "呪文",
+    "trinket": "装飾品"
+   },
+   "spellSchool": {
+    "Battlecruiser": "バトルクルーザー",
+    "Darkmoon": "ダークムーン",
+    "Spellcraft": "呪文錬成",
+    "Tavern": "酒場",
+    "Timewarped": "タイムワープ"
+   },
+   "trinketTier": {
+    "greater": "上級",
+    "lesser": "下級"
+   },
+   "category": {
+    "buddy": "バディ",
+    "token": "トークン",
+    "darkgift": "悪夢の恵み"
+   }
+  },
+  "ko": {
+   "keyword": {
+    "Activate": "사용",
+    "Avenge": "복수",
+    "Battlecry": "전투의 함성",
+    "Charge": "돌진",
+    "Deathrattle": "죽음의 메아리",
+    "Discover": "발견",
+    "Divine Shield": "천상의 보호막",
+    "Frenzy": "광폭",
+    "Immune": "면역",
+    "Magnetic": "합체",
+    "Overkill": "압살",
+    "Pass": "전달",
+    "Poisonous": "독성",
+    "Rally": "집결",
+    "Reborn": "환생",
+    "Refresh": "새로고침",
+    "Secret": "비밀",
+    "Spellcraft": "주문제작",
+    "Start of Combat": "기선 제압",
+    "Stealth": "은신",
+    "Taunt": "도발",
+    "Venomous": "독소",
+    "Windfury": "질풍"
+   },
+   "tribe": {
+    "Aberration": "돌연변이",
+    "All": "모두",
+    "Beast": "야수",
+    "Demon": "악마",
+    "Dragon": "용족",
+    "Elemental": "정령",
+    "Mech": "기계",
+    "Murloc": "멀록",
+    "Naga": "나가",
+    "Pirate": "해적",
+    "Quilboar": "가시멧돼지",
+    "Undead": "언데드"
+   },
+   "cardType": {
+    "anomaly": "변형물",
+    "hero": "영웅",
+    "hero_power": "영웅 능력",
+    "minion": "하수인",
+    "quest": "퀘스트",
+    "reward": "보상",
+    "spell": "주문",
+    "trinket": "장신구"
+   },
+   "spellSchool": {
+    "Battlecruiser": "전투순양함",
+    "Spellcraft": "주문제작",
+    "Tavern": "선술집",
+    "Timewarped": "시간왜곡"
+   },
+   "trinketTier": {
+    "greater": "상급",
+    "lesser": "하급"
+   },
+   "category": {
+    "buddy": "전우",
+    "token": "토큰",
+    "darkgift": "어둠의 선물"
+   }
+  },
+  "pl": {
+   "keyword": {
+    "Activate": "Aktywacja",
+    "Avenge": "Pomsta",
+    "Battlecry": "Okrzyk bojowy",
+    "Charge": "Szarża",
+    "Deathrattle": "Agonia",
+    "Discover": "Odkryj",
+    "Divine Shield": "Boska tarcza",
+    "Frenzy": "Obłęd",
+    "Immune": "Niewrażliwość",
+    "Magnetic": "Magnetyzm",
+    "Overkill": "Rzeź",
+    "Pass": "Przekaż",
+    "Poisonous": "Trucizna",
+    "Rally": "Natchnienie",
+    "Reborn": "Odrodzenie",
+    "Refresh": "Odśwież",
+    "Secret": "Sekret",
+    "Spellcraft": "Czarodzieło",
+    "Start of Combat": "Początek walki",
+    "Stealth": "Ukrycie",
+    "Taunt": "Prowokacja",
+    "Venomous": "Jad",
+    "Windfury": "Furia wichru"
+   },
+   "tribe": {
+    "Aberration": "Aberracja",
+    "All": "Wszystkie",
+    "Beast": "Bestia",
+    "Dragon": "Smok",
+    "Elemental": "Żywiołak",
+    "Murloc": "Murlok",
+    "Pirate": "Pirat",
+    "Quilboar": "Kolcozwierz",
+    "Undead": "Nieumarły"
+   },
+   "cardType": {
+    "anomaly": "Anomalia",
+    "hero": "Bohater",
+    "hero_power": "Moc specjalna",
+    "minion": "Stronnik",
+    "quest": "Zadanie",
+    "reward": "Nagroda",
+    "spell": "Zaklęcie",
+    "trinket": "Ozdoba"
+   },
+   "spellSchool": {
+    "Battlecruiser": "Krążownik",
+    "Spellcraft": "Czarodzieło",
+    "Tavern": "Karczma",
+    "Timewarped": "Skok czasowy"
+   },
+   "trinketTier": {
+    "greater": "Większa",
+    "lesser": "Pomniejsza"
+   },
+   "category": {
+    "buddy": "Towarzysze",
+    "token": "Żetony",
+    "darkgift": "Mroczny dar"
+   }
+  },
+  "pt": {
+   "keyword": {
+    "Activate": "Ativar",
+    "Avenge": "Vingar",
+    "Battlecry": "Grito de Guerra",
+    "Charge": "Investida",
+    "Deathrattle": "Último Suspiro",
+    "Discover": "Descubra",
+    "Divine Shield": "Escudo Divino",
+    "Frenzy": "Frenesi",
+    "Immune": "Imune",
+    "Magnetic": "Magnético",
+    "Overkill": "Massacre",
+    "Pass": "Passar",
+    "Poisonous": "Venenoso",
+    "Rally": "Conclamar",
+    "Reborn": "Renascer",
+    "Refresh": "Atualizar",
+    "Secret": "Segredo",
+    "Spellcraft": "Feitiçaria",
+    "Start of Combat": "Início do Combate",
+    "Stealth": "Furtividade",
+    "Taunt": "Provocar",
+    "Venomous": "Peçonhento",
+    "Windfury": "Fúria dos Ventos"
+   },
+   "tribe": {
+    "Aberration": "Aberração",
+    "All": "Tudo",
+    "Beast": "Fera",
+    "Demon": "Demônio",
+    "Dragon": "Dragão",
+    "Mech": "Mecanoide",
+    "Pirate": "Pirata",
+    "Quilboar": "Javatusco",
+    "Undead": "Morto-Vivo"
+   },
+   "cardType": {
+    "anomaly": "Anomalia",
+    "hero": "Herói",
+    "hero_power": "Poder Heroico",
+    "minion": "Lacaio",
+    "quest": "Missão",
+    "reward": "Recompensa",
+    "spell": "Feitiço",
+    "trinket": "Berloque"
+   },
+   "spellSchool": {
+    "Battlecruiser": "Cruzador de Batalha",
+    "Spellcraft": "Feitiçaria",
+    "Tavern": "Taverna",
+    "Timewarped": "Distorção Temporal"
+   },
+   "trinketTier": {
+    "greater": "Superior",
+    "lesser": "Inferior"
+   },
+   "category": {
+    "buddy": "Camaradas",
+    "darkgift": "Dádiva Sinistra"
+   }
+  },
+  "th": {
+   "keyword": {
+    "Activate": "เปิดใช้",
+    "Avenge": "แก้แค้น",
+    "Battlecry": "คำรามสู้ศึก",
+    "Charge": "บุกทะลวง",
+    "Deathrattle": "เสียงสุดท้าย",
+    "Discover": "ค้นพบ",
+    "Divine Shield": "โล่ศักดิ์สิทธิ์",
+    "Frenzy": "บ้าเลือด",
+    "Immune": "คงกระพัน",
+    "Magnetic": "แม่เหล็ก",
+    "Overkill": "สังหารโหด",
+    "Pass": "ส่ง",
+    "Poisonous": "พิษ",
+    "Rally": "ปลุกใจ",
+    "Reborn": "คืนชีพ",
+    "Refresh": "รีเฟรช",
+    "Secret": "กับดัก",
+    "Spellcraft": "เสกอาคม",
+    "Start of Combat": "เริ่มการต่อสู้",
+    "Stealth": "ซ่อนตัว",
+    "Taunt": "ยั่วยุ",
+    "Venomous": "ปล่อยพิษ",
+    "Windfury": "วายุพิโรธ"
+   },
+   "tribe": {
+    "Aberration": "อสูรวิปริต",
+    "All": "ทุกอย่าง",
+    "Beast": "สัตว์",
+    "Demon": "ปีศาจ",
+    "Dragon": "มังกร",
+    "Elemental": "วิญญาณธาตุ",
+    "Mech": "เครื่องจักร",
+    "Murloc": "เมอร์ล็อค",
+    "Naga": "นากา",
+    "Pirate": "โจรสลัด",
+    "Quilboar": "ควิลบอร์",
+    "Undead": "อันเดด"
+   },
+   "cardType": {
+    "anomaly": "ความผิดปกติ",
+    "hero": "ฮีโร่",
+    "hero_power": "พลังฮีโร่",
+    "minion": "มินเนี่ยน",
+    "quest": "เควสต์",
+    "reward": "รางวัล",
+    "spell": "เวทมนตร์",
+    "trinket": "เครื่องประดับ"
+   },
+   "spellSchool": {
+    "Battlecruiser": "แบทเทิลครูเซอร์",
+    "Spellcraft": "เสกอาคม",
+    "Tavern": "โรงเตี๊ยม",
+    "Timewarped": "ไทม์วาร์ป"
+   },
+   "trinketTier": {
+    "greater": "ระดับสูง",
+    "lesser": "ระดับต่ำ"
+   },
+   "category": {
+    "buddy": "คู่หู",
+    "token": "โทเคน",
+    "darkgift": "ของขวัญพลังมืด"
+   }
+  },
+  "zh-cn": {
+   "keyword": {
+    "Activate": "发动",
+    "Aura": "光环",
+    "Avenge": "复仇",
+    "Battlecry": "战吼",
+    "Charge": "冲锋",
+    "Choose One": "抉择",
+    "Deathrattle": "亡语",
+    "Discover": "发现",
+    "Divine Shield": "圣盾",
+    "End of Turn": "回合结束",
+    "Frenzy": "暴怒",
+    "Immune": "免疫",
+    "Magnetic": "磁力",
+    "Overkill": "超杀",
+    "Pass": "传递",
+    "Poisonous": "剧毒",
+    "Rally": "进击",
+    "Reborn": "复生",
+    "Refresh": "刷新",
+    "Secret": "奥秘",
+    "Spellcraft": "塑造法术",
+    "Start of Combat": "战斗开始时",
+    "Start of Turn": "回合开始",
+    "Stealth": "潜行",
+    "Taunt": "嘲讽",
+    "Venomous": "烈毒",
+    "Windfury": "风怒"
+   },
+   "tribe": {
+    "Aberration": "畸变怪",
+    "All": "全部",
+    "Beast": "野兽",
+    "Demon": "恶魔",
+    "Dragon": "龙",
+    "Dual-Type": "双类型",
+    "Elemental": "元素",
+    "Mech": "机械",
+    "Murloc": "鱼人",
+    "Naga": "纳迦",
+    "Neutral": "中立",
+    "Pirate": "海盗",
+    "Quilboar": "野猪人",
+    "Undead": "亡灵"
+   },
+   "cardType": {
+    "anomaly": "畸变",
+    "hero": "英雄",
+    "hero_power": "英雄技能",
+    "minion": "随从",
+    "quest": "任务",
+    "reward": "奖励",
+    "spell": "法术",
+    "trinket": "饰品"
+   },
+   "spellSchool": {
+    "Battlecruiser": "战列巡航舰",
+    "Darkmoon": "暗月",
+    "Spellcraft": "塑造法术",
+    "Tavern": "酒馆",
+    "Timewarped": "时空扭曲"
+   },
+   "trinketTier": {
+    "greater": "大型",
+    "lesser": "小型"
+   },
+   "category": {
+    "buddy": "伙伴",
+    "token": "衍生物",
+    "darkgift": "黑暗之赐"
+   }
+  },
+  "zh-tw": {
+   "keyword": {
+    "Activate": "啟動",
+    "Avenge": "報復",
+    "Battlecry": "戰吼",
+    "Charge": "衝鋒",
+    "Deathrattle": "死亡之聲",
+    "Discover": "發現",
+    "Divine Shield": "聖盾術",
+    "Frenzy": "盛怒",
+    "Immune": "免疫",
+    "Magnetic": "合體",
+    "Overkill": "滅殺",
+    "Pass": "傳遞",
+    "Poisonous": "致命劇毒",
+    "Rally": "奮戰",
+    "Reborn": "重生",
+    "Refresh": "重置",
+    "Secret": "秘密",
+    "Spellcraft": "造法",
+    "Start of Combat": "戰鬥開始",
+    "Stealth": "潛行",
+    "Taunt": "嘲諷",
+    "Venomous": "毒素",
+    "Windfury": "風怒"
+   },
+   "tribe": {
+    "Aberration": "變異怪",
+    "All": "全部",
+    "Beast": "野獸",
+    "Demon": "惡魔",
+    "Dragon": "龍類",
+    "Elemental": "元素",
+    "Mech": "機械",
+    "Murloc": "魚人",
+    "Naga": "納迦",
+    "Pirate": "海盜",
+    "Quilboar": "野豬人",
+    "Undead": "不死族"
+   },
+   "cardType": {
+    "anomaly": "異象",
+    "hero": "英雄",
+    "hero_power": "英雄能力",
+    "minion": "手下",
+    "quest": "任務",
+    "reward": "獎勵",
+    "spell": "法術",
+    "trinket": "飾品"
+   },
+   "spellSchool": {
+    "Battlecruiser": "戰巡艦",
+    "Spellcraft": "造法",
+    "Tavern": "旅店",
+    "Timewarped": "時光扭曲"
+   },
+   "trinketTier": {
+    "greater": "強效",
+    "lesser": "次級"
+   },
+   "category": {
+    "buddy": "夥伴",
+    "token": "衍生物",
+    "darkgift": "黑暗贈禮"
+   }
+  }
+ }
+}

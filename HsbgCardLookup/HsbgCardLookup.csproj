@@ -112,6 +112,9 @@
     <Compile Include="Ui\RecapPanel.cs" />
     <Compile Include="Ui\RecapSessionRowHook.cs" />
     <Compile Include="Data\CardStore.cs" />
+    <Compile Include="Data\Locales.cs" />
+    <Compile Include="Data\GameLocale.cs" />
+    <Compile Include="Data\LocaleTerms.cs" />
     <Compile Include="Data\TribeTally.cs" />
     <Compile Include="Game\LeaderboardRaceScry.cs" />
     <Compile Include="Ui\TribeIcons.cs" />
@@ -163,6 +166,10 @@
   <ItemGroup>
     <!-- Bundled card snapshot, copied next to the DLL (CardStore loads it from there). -->
     <None Include="data\cards.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Per-language search words + filter labels (tools\gen-locale-terms.js, from the site's terms table). -->
+    <None Include="data\locale-terms.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <!-- Bundled tier/tribe icons (small, shipped so distributed users have them offline). -->

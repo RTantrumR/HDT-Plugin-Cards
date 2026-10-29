@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace HsbgCardLookup.Search
@@ -15,17 +16,47 @@ namespace HsbgCardLookup.Search
     /// <summary>
     /// Port of the web app's lib/search. Smart = structured (t3 / 5/5 / tribes / keywords), sorted
     /// tier→name. Simple = name/text substring + fuzzy fallback, relevance-ranked.
+    ///
+    /// Names and text are matched in the card language AND in English (BgCard.Search*): a player on
+    /// a German client finds "Wildtier" and "beast" alike. The structural filters (keywords, text
+    /// patterns) keep reading the English record, which is what their canonical values name.
     /// </summary>
     public static class SearchEngine
     {
         private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
         private static readonly Regex WordSplit = new Regex(@"[\s\-,']+", RegexOptions.Compiled);
 
-        public static string Normalize(string s) => Whitespace.Replace(s.ToLowerInvariant(), "");
+        /// <summary>Lower-case with Latin diacritics stripped (the site's fold(): "Käfer" → "kafer"),
+        /// so an accent typed or omitted makes no difference. Only Latin letters are decomposed —
+        /// Hangul, kana and Thai keep their code points, so their lengths and the Levenshtein
+        /// thresholds built on them stay what the player typed. Idempotent.</summary>
+        public static string Fold(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            string lower = s.ToLowerInvariant();
+            bool latinAccents = false;
+            foreach (char ch in lower)
+                if ((ch >= 'À' && ch <= 'ɏ') || (ch >= 'Ḁ' && ch <= 'ỿ')) { latinAccents = true; break; }
+            if (!latinAccents) return lower;
+            try
+            {
+                string d = lower.Normalize(NormalizationForm.FormD);
+                var sb = new StringBuilder(d.Length);
+                foreach (char ch in d)
+                    if (ch < '̀' || ch > 'ͯ') sb.Append(ch);
+                return sb.ToString();
+            }
+            catch { return lower; }
+        }
+
+        /// <summary>Fold + drop whitespace (the site's normalize()).</summary>
+        public static string Normalize(string s) => Whitespace.Replace(Fold(s), "");
 
         private static string[] Words(string s) =>
             WordSplit.Split(s).Where(w => w.Length > 0).ToArray();
 
+        /// <summary>Edit distance of a query to a card name — whole name, or its best word / word
+        /// prefix. Both arguments may be raw or already folded (Fold is idempotent).</summary>
         public static int FuzzyNameScore(string query, string cardName)
         {
             string qn = Normalize(query);
@@ -41,7 +72,7 @@ namespace HsbgCardLookup.Search
 
             // 2. Word-level
             int best = int.MaxValue;
-            foreach (var word in Words(cardName.ToLowerInvariant()))
+            foreach (var word in Words(Fold(cardName)))
             {
                 if (Math.Abs(word.Length - qn.Length) <= threshold + 2)
                 {
@@ -63,42 +94,62 @@ namespace HsbgCardLookup.Search
             return best;
         }
 
+        // The English name/text while a locale is applied; the only name/text otherwise.
+        private static string EnName(BgCard c) => c.SearchNameEn ?? c.SearchName;
+        private static string EnText(BgCard c) => c.SearchTextEn ?? c.SearchText;
+
+        // A folded query word somewhere in the card's name or text, in either language.
+        private static bool Has(BgCard c, string w) =>
+            c.SearchName.IndexOf(w, StringComparison.Ordinal) >= 0 ||
+            c.SearchText.IndexOf(w, StringComparison.Ordinal) >= 0 ||
+            (c.SearchNameEn != null && c.SearchNameEn.IndexOf(w, StringComparison.Ordinal) >= 0) ||
+            (c.SearchTextEn != null && c.SearchTextEn.IndexOf(w, StringComparison.Ordinal) >= 0);
+
+        // Has(), or a near-miss of the name (either language) for words of 4+ letters.
+        private static bool HasOrFuzzy(BgCard c, string w)
+        {
+            if (Has(c, w)) return true;
+            if (w.Length < 4) return false;
+            int threshold = Math.Max(1, w.Length / 3);
+            if (FuzzyNameScore(w, c.SearchName) <= threshold) return true;
+            return c.SearchNameEn != null && FuzzyNameScore(w, c.SearchNameEn) <= threshold;
+        }
+
         private static int ScoreCard(BgCard card, string query)
         {
-            string qTrim = query.Trim();
-            string qLower = qTrim.ToLowerInvariant();
-            string qn = Normalize(qTrim);
-            string nLower = card.Name.ToLowerInvariant();
-            string nn = Normalize(card.Name);
+            string qLower = Fold(query.Trim());
+            string qn = Whitespace.Replace(qLower, "");
 
-            int nameScore = 0;
-            if (qn.Length > 0)
-            {
-                if (nn == qn) nameScore = 1000;
-                else if (nn.StartsWith(qn, StringComparison.Ordinal)) nameScore = 800 - Math.Min(50, nn.Length - qn.Length);
-                else
-                {
-                    var words = Words(nLower);
-                    if (words.Any(w => w.StartsWith(qLower, StringComparison.Ordinal)))
-                        nameScore = 600 - Math.Min(40, nn.Length - qn.Length);
-                    else if (nn.IndexOf(qn, StringComparison.Ordinal) >= 0)
-                        nameScore = 400 - Math.Min(30, nn.Length - qn.Length);
-                    else if (qn.Length >= 4)
-                    {
-                        int d = FuzzyNameScore(qTrim, card.Name);
-                        int threshold = Math.Max(1, qn.Length / 3);
-                        if (d <= threshold) nameScore = Math.Max(50, 200 - d * 30);
-                    }
-                }
-            }
+            int nameScore = ScoreName(qLower, qn, card.SearchName);
+            if (card.SearchNameEn != null)
+                nameScore = Math.Max(nameScore, ScoreName(qLower, qn, card.SearchNameEn));
 
             int textScore = 0;
-            string textLower = (card.Text ?? "").ToLowerInvariant();
-            if (qLower.Length > 0 && textLower.IndexOf(qLower, StringComparison.Ordinal) >= 0)
+            if (qLower.Length > 0 && (card.SearchText.IndexOf(qLower, StringComparison.Ordinal) >= 0 ||
+                                      (card.SearchTextEn != null && card.SearchTextEn.IndexOf(qLower, StringComparison.Ordinal) >= 0)))
                 textScore = 50;
 
             int tierBonus = card.Tier.HasValue ? Math.Max(0, 8 - card.Tier.Value) : 0;
             return nameScore + textScore + (nameScore > 0 ? tierBonus : 0);
+        }
+
+        // One name's relevance to a folded query: exact > prefix > word prefix > substring > fuzzy.
+        private static int ScoreName(string qLower, string qn, string nLower)
+        {
+            if (qn.Length == 0) return 0;
+            string nn = Whitespace.Replace(nLower, "");
+            if (nn == qn) return 1000;
+            if (nn.StartsWith(qn, StringComparison.Ordinal)) return 800 - Math.Min(50, nn.Length - qn.Length);
+            var words = Words(nLower);
+            if (words.Any(w => w.StartsWith(qLower, StringComparison.Ordinal))) return 600 - Math.Min(40, nn.Length - qn.Length);
+            if (nn.IndexOf(qn, StringComparison.Ordinal) >= 0) return 400 - Math.Min(30, nn.Length - qn.Length);
+            if (qn.Length >= 4)
+            {
+                int d = FuzzyNameScore(qLower, nLower);
+                int threshold = Math.Max(1, qn.Length / 3);
+                if (d <= threshold) return Math.Max(50, 200 - d * 30);
+            }
+            return 0;
         }
 
         private static List<BgCard> SortByRelevance(IEnumerable<BgCard> cards, string query, bool demoteSecondary) =>
@@ -109,7 +160,7 @@ namespace HsbgCardLookup.Search
         private static List<BgCard> SortTierThenName(IEnumerable<BgCard> cards, bool demoteSecondary) =>
             cards.OrderBy(c => SecondaryKey(c, demoteSecondary))
                  .ThenBy(c => c.Tier ?? 99)
-                 .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                 .ThenBy(c => c.DisplayName, StringComparer.InvariantCultureIgnoreCase)
                  .ToList();
 
         // Sort key: 0 = primary card (top). Demoted cards get 1+rank so they sit below all primaries
@@ -156,13 +207,17 @@ namespace HsbgCardLookup.Search
 
         // Don't demote when the query names a derived category (so "beast buddy" / "token" / "spellcraft"
         // surface those at the top as before). Substring match catches plurals (buddy/buddies, token/tokens).
+        // The card language's words for those categories (Aliases.LocaleSecondaryWords) count too.
         private static readonly string[] SecondaryAliasWords =
             { "buddy", "token", "spellcraft", "timewarped", "battlecruiser", "darkmoon" };
 
         private static bool QueryWantsSecondary(string query)
         {
-            string q = (query ?? "").ToLowerInvariant();
-            return SecondaryAliasWords.Any(w => q.IndexOf(w, StringComparison.Ordinal) >= 0);
+            string q = Fold(query ?? "");
+            if (SecondaryAliasWords.Any(w => q.IndexOf(w, StringComparison.Ordinal) >= 0)) return true;
+            foreach (var w in Aliases.LocaleSecondaryWords)
+                if (w.Length > 0 && q.IndexOf(w, StringComparison.Ordinal) >= 0) return true;
+            return false;
         }
 
         public static SearchResult Smart(IList<BgCard> cards, string query)
@@ -179,19 +234,20 @@ namespace HsbgCardLookup.Search
             if (parsed.ManaCost.HasValue)
                 result = result.Where(c => c.ManaCost == parsed.ManaCost);
 
+            // Canonical keyword values are English: the Keywords array first, then the English name/text.
             foreach (var keyword in parsed.Keywords)
             {
-                string kw = keyword.ToLowerInvariant();
+                string kw = Fold(keyword);
                 result = result.Where(c =>
-                    (c.Keywords ?? new List<string>()).Any(k => k.ToLowerInvariant() == kw) ||
-                    c.Name.ToLowerInvariant().Contains(kw) ||
-                    (c.Text ?? "").ToLowerInvariant().Contains(kw));
+                    (c.Keywords ?? new List<string>()).Any(k => Fold(k) == kw) ||
+                    EnName(c).IndexOf(kw, StringComparison.Ordinal) >= 0 ||
+                    EnText(c).IndexOf(kw, StringComparison.Ordinal) >= 0);
             }
 
             foreach (var tk in parsed.TextKeywords)
             {
-                string pattern = (tk.TextPattern ?? tk.Canonical).ToLowerInvariant();
-                result = result.Where(c => (c.Text ?? "").ToLowerInvariant().Contains(pattern));
+                string pattern = Fold(tk.TextPattern ?? tk.Canonical);
+                result = result.Where(c => EnText(c).IndexOf(pattern, StringComparison.Ordinal) >= 0);
             }
 
             // Card type filters first; then a tribe/category no card of that type has is demoted to
@@ -248,7 +304,7 @@ namespace HsbgCardLookup.Search
             if (!string.IsNullOrEmpty(effectiveNameQuery))
             {
                 var resultList = res;
-                var queryWords = Words2(effectiveNameQuery.ToLowerInvariant());
+                var queryWords = Words2(Fold(effectiveNameQuery));
 
                 // Only tribes that were actually applied as a filter count for the union; demoted
                 // tribes are already handled by the substring branch below.
@@ -257,12 +313,7 @@ namespace HsbgCardLookup.Search
 
                 if (nameOverlapsTribe)
                 {
-                    var textMatches = preTribe.Where(c =>
-                    {
-                        string nameLower = c.Name.ToLowerInvariant();
-                        string textLower = (c.Text ?? "").ToLowerInvariant();
-                        return queryWords.All(w => nameLower.Contains(w) || textLower.Contains(w));
-                    });
+                    var textMatches = preTribe.Where(c => queryWords.All(w => Has(c, w)));
                     var idSet = new HashSet<int>(resultList.Select(c => c.Id));
                     foreach (var card in textMatches)
                         if (!idSet.Contains(card.Id)) resultList.Add(card);
@@ -270,12 +321,7 @@ namespace HsbgCardLookup.Search
                 }
                 else
                 {
-                    var substring = resultList.Where(c =>
-                    {
-                        string nameLower = c.Name.ToLowerInvariant();
-                        string textLower = (c.Text ?? "").ToLowerInvariant();
-                        return queryWords.All(w => nameLower.Contains(w) || textLower.Contains(w));
-                    }).ToList();
+                    var substring = resultList.Where(c => queryWords.All(w => Has(c, w))).ToList();
 
                     if (substring.Count > 0)
                     {
@@ -283,21 +329,7 @@ namespace HsbgCardLookup.Search
                     }
                     else
                     {
-                        var fuzzy = resultList.Where(c =>
-                        {
-                            string nameLower = c.Name.ToLowerInvariant();
-                            string textLower = (c.Text ?? "").ToLowerInvariant();
-                            return queryWords.All(w =>
-                            {
-                                if (nameLower.Contains(w) || textLower.Contains(w)) return true;
-                                if (w.Length >= 4)
-                                {
-                                    int threshold = Math.Max(1, w.Length / 3);
-                                    return FuzzyNameScore(w, c.Name) <= threshold;
-                                }
-                                return false;
-                            });
-                        }).ToList();
+                        var fuzzy = resultList.Where(c => queryWords.All(w => HasOrFuzzy(c, w))).ToList();
 
                         if (fuzzy.Count > 0) { res = fuzzy; isFuzzy = true; }
                         else res = new List<BgCard>();
@@ -311,34 +343,14 @@ namespace HsbgCardLookup.Search
 
         public static SearchResult Simple(IList<BgCard> cards, string query)
         {
-            var queryWords = Words2(query.ToLowerInvariant());
+            var queryWords = Words2(Fold(query));
             bool demote = !QueryWantsSecondary(query);
 
-            var substring = cards.Where(c =>
-            {
-                string nameLower = c.Name.ToLowerInvariant();
-                string textLower = (c.Text ?? "").ToLowerInvariant();
-                return queryWords.All(w => nameLower.Contains(w) || textLower.Contains(w));
-            });
-            var subList = substring.ToList();
+            var subList = cards.Where(c => queryWords.All(w => Has(c, w))).ToList();
             if (subList.Count > 0)
                 return new SearchResult { Cards = SortByRelevance(subList, query, demote), IsFuzzy = false };
 
-            var fuzzy = cards.Where(c =>
-            {
-                string nameLower = c.Name.ToLowerInvariant();
-                string textLower = (c.Text ?? "").ToLowerInvariant();
-                return queryWords.All(w =>
-                {
-                    if (nameLower.Contains(w) || textLower.Contains(w)) return true;
-                    if (w.Length >= 4)
-                    {
-                        int threshold = Math.Max(1, w.Length / 3);
-                        return FuzzyNameScore(w, c.Name) <= threshold;
-                    }
-                    return false;
-                });
-            }).ToList();
+            var fuzzy = cards.Where(c => queryWords.All(w => HasOrFuzzy(c, w))).ToList();
 
             if (fuzzy.Count > 0)
                 return new SearchResult { Cards = SortByRelevance(fuzzy, query, demote), IsFuzzy = true };

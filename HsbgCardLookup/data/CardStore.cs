@@ -18,6 +18,21 @@ namespace HsbgCardLookup.Data
         public string Patch { get; private set; } = "";
         public string LoadInfo { get; private set; } = "(not loaded)";
 
+        // ── Card language ──
+        // The English snapshot above is the structural truth; a locale is an overlay of names, text and
+        // render paths laid over it card by card (BgCard.Local*), from the site's /api/cards?locale=
+        // payload cached as cache\cards.<web>.json. Load() re-applies it, so a data refresh keeps the
+        // language.
+        private string _localeWeb = Locales.English;
+        /// <summary>The language in use: "en" or a site locale web code.</summary>
+        public string LocaleWeb => _localeWeb;
+        /// <summary>True while the locale's snapshot is applied (false for English, and for a locale
+        /// whose file is not cached yet — the UI shows English until it arrives).</summary>
+        public bool LocaleApplied { get; private set; }
+        /// <summary>Cards that received at least one localized field.</summary>
+        public int LocaleCount { get; private set; }
+        public string LocalePatch { get; private set; } = "";
+
         // Real filter lists, derived from the current pool at load (not hardcoded placeholders).
         public List<string> Types { get; private set; } = new List<string>();
         public List<string> Tribes { get; private set; } = new List<string>();
@@ -95,6 +110,7 @@ namespace HsbgCardLookup.Data
                 Legacy = searchable.Where(c => !c.Pool).ToList();
 
                 BuildFilterLists();
+                ApplyLocale();   // a fresh snapshot is English; lay the language back over it
 
                 LoadInfo = $"{All.Count} cards (patch {Patch}); current={Current.Count}, legacy={Legacy.Count}; "
                     + $"types={Types.Count}, tribes={Tribes.Count}, tiers=[{string.Join(",", Tiers)}]; from {path}";
@@ -110,6 +126,69 @@ namespace HsbgCardLookup.Data
         /// <summary>Find our card record for an in-game entity's CardId string, or null.</summary>
         public BgCard Lookup(string externalId) =>
             !string.IsNullOrEmpty(externalId) && ByExternalId.TryGetValue(externalId, out var c) ? c : null;
+
+        /// <summary>The cached locale snapshot: the English payload with the client's names, text and
+        /// render paths swapped in (the site's /api/cards?locale=&lt;web&gt;).</summary>
+        public static string LocaleCachePath(string web) =>
+            Path.Combine(Config.PluginConfig.DataDir, "cache", "cards." + web + ".json");
+
+        public const string LocaleRenderPrefix = "/cards/production/locales/";
+        /// <summary>Is this image path a locale render (as opposed to the English thumb)?</summary>
+        public static bool IsLocaleRender(string image) =>
+            !string.IsNullOrEmpty(image) && image.StartsWith(LocaleRenderPrefix, StringComparison.Ordinal);
+
+        /// <summary>Switch the card language. English clears the overlay; another locale applies its
+        /// cached snapshot when there is one. Returns false when that file is not cached yet — the
+        /// caller downloads it and calls again; until then the cards read English.</summary>
+        public bool SetLocale(string web)
+        {
+            _localeWeb = string.IsNullOrEmpty(web) ? Locales.English : web;
+            return ApplyLocale();
+        }
+
+        private bool ApplyLocale()
+        {
+            foreach (var c in All) c.ClearLocale();
+            LocaleApplied = false; LocaleCount = 0; LocalePatch = "";
+            if (_localeWeb == Locales.English) return true;
+
+            bool ok = false;
+            try
+            {
+                string path = LocaleCachePath(_localeWeb);
+                if (File.Exists(path))
+                {
+                    var file = JsonConvert.DeserializeObject<CardsFile>(File.ReadAllText(path));
+                    if (file?.Cards != null && file.Cards.Count > 0)
+                    {
+                        int n = 0;
+                        foreach (var loc in file.Cards)
+                            if (loc != null && ById.TryGetValue(loc.Id, out var c) && Overlay(c, loc)) n++;
+                        LocaleApplied = true; LocaleCount = n; LocalePatch = file.Patch ?? "";
+                        ok = true;
+                    }
+                }
+            }
+            catch { }
+            return ok;
+        }
+
+        // Only what differs from English is laid over: the site keeps English for cards Blizzard did
+        // not localize, and an equal value would only cost the search its "English form" shortcut.
+        private static bool Overlay(BgCard c, BgCard loc)
+        {
+            bool any = false;
+            if (Differs(loc.Name, c.Name)) { c.LocalName = loc.Name; any = true; }
+            if (Differs(loc.Text, c.Text)) { c.LocalText = loc.Text; any = true; }
+            if (Differs(loc.TextGold, c.TextGold)) { c.LocalTextGold = loc.TextGold; any = true; }
+            if (IsLocaleRender(loc.Image)) { c.LocalImage = loc.Image; any = true; }
+            if (IsLocaleRender(loc.ImageGold)) { c.LocalImageGold = loc.ImageGold; any = true; }
+            if (any) c.InvalidateSearchIndex();
+            return any;
+        }
+
+        private static bool Differs(string loc, string en) =>
+            !string.IsNullOrEmpty(loc) && !string.Equals(loc, en, StringComparison.Ordinal);
 
         private void BuildFilterLists()
         {

@@ -10,10 +10,12 @@ namespace HsbgCardLookup.Game
     /// </summary>
     public sealed class DarkGift
     {
-        public string Name;
+        public string Name;      // English — the key the static metadata and the pool rules match on
         public int MinTurn;
         public int? MaxTurn;     // null = no upper bound
         public string Text;      // effect (EN, from the dev post; site data may replace this later)
+        public string DisplayName;  // what the panel shows: the card language's name when the site has one, else Name
+        public string DisplayText;  // likewise for the effect text
         public string Note;      // short offering-condition note, or null
         public string TribeOnly; // offerable only on this tribe (e.g. "Quilboar"), or null
         public bool TypedOnly;   // offerable only on minions WITH a type
@@ -30,6 +32,7 @@ namespace HsbgCardLookup.Game
             string[] notWithTribes = null)
         {
             Name = name; MinTurn = min; MaxTurn = max; Text = text; Note = note;
+            DisplayName = name; DisplayText = text;
             TribeOnly = tribeOnly; TypedOnly = typedOnly; Requires = requires;
             NotWithTribes = notWithTribes;
         }
@@ -69,7 +72,11 @@ namespace HsbgCardLookup.Game
                     int min; int? max;
                     if (c.DarkGiftMinTurn.HasValue) { min = c.DarkGiftMinTurn.Value; max = c.DarkGiftMaxTurn; }   // data authoritative (null max = open)
                     else { min = st?.MinTurn ?? 3; max = st?.MaxTurn; }
-                    outp.Add(new DarkGift(c.Name, min, max, CleanText(c.Text), st?.Note, st?.TribeOnly, st?.TypedOnly ?? false, st?.Requires, st?.NotWithTribes));
+                    var gift = new DarkGift(c.Name, min, max, CleanText(c.Text), st?.Note, st?.TribeOnly, st?.TypedOnly ?? false, st?.Requires, st?.NotWithTribes);
+                    // The panel reads the card language (English when the site has no translation).
+                    gift.DisplayName = c.DisplayName ?? c.Name;
+                    gift.DisplayText = CleanText(c.DisplayText ?? c.Text);
+                    outp.Add(gift);
                 }
                 // Sanity: only trust the data when the set looks complete (a partial rollout or a
                 // filtered store must not silently shrink the list).
@@ -77,7 +84,7 @@ namespace HsbgCardLookup.Game
                 {
                     outp.Sort((a, b) => a.MinTurn != b.MinTurn
                         ? a.MinTurn.CompareTo(b.MinTurn)
-                        : string.Compare(a.Name, b.Name, System.StringComparison.Ordinal));
+                        : string.Compare(a.DisplayName, b.DisplayName, System.StringComparison.InvariantCultureIgnoreCase));
                     return outp;
                 }
             }

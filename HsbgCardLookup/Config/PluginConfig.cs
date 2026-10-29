@@ -19,6 +19,12 @@ namespace HsbgCardLookup.Config
         public string FocusKey { get; set; } = "S";
         // Whether duos-only cards appear in results/browse.
         public bool ShowDuos { get; set; } = true;
+        // Card language — names, text, art and the words the search and filters understand. "" =
+        // follow the Hearthstone client (as HDT reports it), "en" = English whatever the client runs
+        // in, or one of the site's locale codes (Data.Locales: de, es, es-mx, fr, it, ja, ko, pl, pt,
+        // th, zh-cn, zh-tw). The data is the site's /api/cards?locale= snapshot, cached like the
+        // English one; the plugin's own UI strings stay English.
+        public string Language { get; set; } = "";
         // Magnifying-glass button on the in-game overlay (left of the game's card-list book,
         // bottom-right) that toggles the search — a mouse path for players without the hotkey.
         public bool ShowSearchButton { get; set; } = true;
@@ -137,6 +143,10 @@ namespace HsbgCardLookup.Config
 
         // Content hash (patch-independent) of the last loaded card snapshot — drives the data refresh.
         public string LastDataHash { get; set; } = "";
+        // The locale snapshot on disk (cache\cards.<web>.json) and its content hash — one language is
+        // cached at a time; a switch downloads the new one and drops the old.
+        public string LocaleDataWeb { get; set; } = "";
+        public string LocaleDataHash { get; set; } = "";
         // Last GitHub update check (UTC "o"); throttles the check.
         public string LastUpdateCheckUtc { get; set; } = "";
         // Highest notification id already seen (bell); larger ids are unread.

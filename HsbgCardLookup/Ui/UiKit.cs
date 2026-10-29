@@ -401,7 +401,7 @@ namespace HsbgCardLookup.Ui
             img.SetBinding(ArtImage.CardProperty, new Binding(path));
             sp.AppendChild(img);
             var name = new FrameworkElementFactory(typeof(TextBlock));
-            name.SetBinding(TextBlock.TextProperty, new Binding(path + ".Name"));
+            name.SetBinding(TextBlock.TextProperty, new Binding(path + ".DisplayName"));
             name.SetValue(TextBlock.ForegroundProperty, TextPrimary);
             name.SetValue(TextBlock.FontSizeProperty, 15.0);
             name.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
