@@ -67,9 +67,13 @@ namespace HsbgCardLookup.Game
         private DateTime _lastBlobFail = DateTime.MinValue;
         private volatile bool _fetching;
 
-        public BgMmr(PluginConfig config, Dispatcher ui, Action<string> log)
+        // Hero name for a hero card id, in the card language (Plugin passes the store's DisplayName
+        // lookup); null → HDT's English card name, as before.
+        private readonly Func<string, string> _heroName;
+
+        public BgMmr(PluginConfig config, Dispatcher ui, Action<string> log, Func<string, string> heroName = null)
         {
-            _config = config; _ui = ui; _log = log;
+            _config = config; _ui = ui; _log = log; _heroName = heroName;
             _raceScry = new LeaderboardRaceScry(log);
             HookGameEvents();
         }
@@ -239,7 +243,7 @@ namespace HsbgCardLookup.Game
                     // The hero name is read unconditionally: the panel can display it in place of the
                     // player name (streamer mode), not just when there is no battletag to show.
                     string heroName = null;
-                    try { heroName = e.Card?.Name; } catch { }
+                    try { heroName = _heroName?.Invoke(cid) ?? _heroName?.Invoke(NormHero(cid)) ?? e.Card?.Name; } catch { }
 
                     string name = heroToName.TryGetValue(NormHero(cid), out var n) ? n : null;
                     int rating = 0, delta = 0; bool pending = _players == null;
@@ -390,7 +394,7 @@ namespace HsbgCardLookup.Game
                     bool inPlay = false;
                     try { inPlay = e.IsInPlay; } catch { }
                     string heroName = null;
-                    try { heroName = e.Card?.Name; } catch { }
+                    try { heroName = _heroName?.Invoke(cid) ?? _heroName?.Invoke(NormHero(cid)) ?? e.Card?.Name; } catch { }
 
                     if (!recs.TryGetValue(pid, out var rec))
                         recs[pid] = new DuoRec { Pid = pid, EntityId = e.Id, CardId = cid, HeroName = heroName, Place = place, InPlay = inPlay };

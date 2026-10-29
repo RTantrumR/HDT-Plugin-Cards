@@ -81,6 +81,23 @@ boxes to where you want them, in the game itself.
 
 Opponent ratings come from the hsbg.cards leaderboard. Players who are not on it show as `8000↓`.
 
+## Languages
+
+The plugin speaks the game's languages. Two settings, both under **Card search & floating cards**:
+
+- **Card language** follows the Hearthstone client by default: card names, text and art, and the
+  words the search understands (tribes, keywords, card types) come from hsbg.cards in that language —
+  German, Spanish (EU and Latin America), French, Italian, Japanese, Korean, Polish, Portuguese, Thai,
+  Simplified and Traditional Chinese. The search also keeps understanding English, so `taunt` and
+  `Spott` both work on a German client. A Russian client gets English.
+- **Plugin language** follows HDT's language setting by default: the plugin's own menus, tooltips and
+  messages, in the same languages plus Ukrainian. These texts are machine-translated and unreviewed;
+  corrections are welcome as edits to `HsbgCardLookup/data/ui/<language>.json`.
+
+Switching either setting downloads nothing by itself. A card language's data (about 1 MB) is fetched
+the first time it is actually used, and its card art is fetched card by card as you look at them. The
+English art pack is downloaded once, as before.
+
 ## Updates
 
 The plugin tells you when a new release is out and links to it. It never downloads or installs

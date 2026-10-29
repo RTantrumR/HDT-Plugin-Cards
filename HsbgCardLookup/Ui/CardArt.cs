@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Net;
 using HsbgCardLookup.Search;
 
@@ -17,6 +18,13 @@ namespace HsbgCardLookup.Ui
     /// Resolves card art to frozen <see cref="BitmapSource"/>s. All art is the full WebP on disk (one
     /// file per card, from <see cref="ArtPack"/> or a lazy per-card fetch); the grid decodes it down,
     /// the detail pane decodes native. Order: memory cache → local dev PNG → disk → CDN download.
+    ///
+    /// Card language: when the active language has a render for the card, the site's snapshot points
+    /// the card's image at /cards/production/locales/&lt;web&gt;/… (BgCard.LocalImage); that render is
+    /// fetched per card as it is viewed and cached under art-cache\locales\&lt;web&gt;\, apart from the
+    /// English files the art pack syncs. Memory keys carry the language, so a switch never serves a
+    /// stale bitmap (CardLanguage clears the memory cache). A locale render that is not there falls
+    /// back to the English one; a missing golden falls back to the base render.
     /// </summary>
     internal static class CardArt
     {
@@ -35,22 +43,32 @@ namespace HsbgCardLookup.Ui
         // Dev-only opt-in: use local public/ PNGs instead of pack/CDN WebP. Off by default.
         internal static bool UseLocalArt = false;
 
+        /// <summary>The English render's file (what the art pack fills).</summary>
         internal static string FullDiskPath(int id, bool golden) =>
             Path.Combine(CacheDir, id + "_full" + (golden ? "_g" : "") + ".webp");
 
-        // Drop decoded bitmaps so re-decodes pick up freshly-swapped disk files (after a pack update).
+        /// <summary>A card language's render, kept apart from the English pack (which ArtPack diffs by id).</summary>
+        internal static string LocaleDiskPath(string web, int id, bool golden) =>
+            Path.Combine(CacheDir, "locales", web, id + "_full" + (golden ? "_g" : "") + ".webp");
+
+        private static string DiskPath(int id, bool golden, string web) =>
+            web == null ? FullDiskPath(id, golden) : LocaleDiskPath(web, id, golden);
+
+        // Drop decoded bitmaps so re-decodes pick up freshly-swapped disk files (after a pack update)
+        // or the other language's renders (after a language switch).
         internal static void ClearMemory() => Mem.Clear();
 
         internal enum FetchResult { Ok, NotFound, Failed }
 
-        /// <summary>Download one card's full WebP straight to the disk cache (no decode), capped.
-        /// Used by <see cref="ArtPack"/> incremental updates. <see cref="FetchResult.NotFound"/> is a
-        /// definitive 404 (no such file on the CDN); everything else that isn't Ok is transient.</summary>
+        /// <summary>Download one card's ENGLISH full WebP straight to the disk cache (no decode), capped.
+        /// Used by <see cref="ArtPack"/> incremental updates, which sync the English pack only.
+        /// <see cref="FetchResult.NotFound"/> is a definitive 404 (no such file on the CDN); everything
+        /// else that isn't Ok is transient.</summary>
         internal static async Task<FetchResult> FetchToDiskAsync(BgCard c, bool golden)
         {
             try
             {
-                string url = CdnUrl(c, golden);
+                string url = CdnUrl(Src(c, golden, localized: false));
                 if (url == null) return FetchResult.Failed;
                 byte[] bytes; int status;
                 await Gate.WaitAsync().ConfigureAwait(false);
@@ -65,19 +83,29 @@ namespace HsbgCardLookup.Ui
             catch { return FetchResult.Failed; }
         }
 
-        // Mem key includes decode width (grid downscaled vs detail native share one disk file).
-        private static string Key(BgCard c, bool golden, int decode) =>
-            c.Id + "|" + (golden ? "g" : "n") + "|" + decode;
+        // The image path to show: the card language's render when the site has one, else English.
+        // Golden falls back to the base image when the card has no golden render; a card whose base
+        // render is localized but whose golden is not shows the English golden (the site's own rule).
+        private static string Src(BgCard c, bool golden, bool localized)
+        {
+            if (golden && !string.IsNullOrEmpty(c.ImageGold))
+                return localized ? (c.LocalImageGold ?? c.ImageGold) : c.ImageGold;
+            return localized ? (c.LocalImage ?? c.Image) : c.Image;
+        }
 
-        // Direct static-CDN thumb URL from the card's image path. Since the site retired PNGs
-        // (2026-09-03) the API serves the thumb path itself (…/thumbs/full/….webp) — use it as is.
-        // Older snapshots carry pngs/full → thumbs/full, .png → .webp. Hits the CDN, not the
-        // rate-limited /api/v1 image route. golden falls back to base.
+        // Mem key includes decode width (grid downscaled vs detail native share one disk file) and the
+        // render's language.
+        private static string Key(BgCard c, bool golden, int decode) =>
+            c.Id + "|" + (golden ? "g" : "n") + "|" + decode + "|" + (Locales.WebFromRenderPath(Src(c, golden, true)) ?? Locales.English);
+
+        // Direct static-CDN thumb URL from an image path. Since the site retired PNGs (2026-09-03)
+        // the API serves the thumb path itself (…/thumbs/full/….webp, or …/locales/<web>/….webp) —
+        // use it as is. Older snapshots carry pngs/full → thumbs/full, .png → .webp. Hits the CDN,
+        // not the rate-limited /api/v1 image route.
         private const string PngPrefix = "/cards/production/pngs/full/";
 
-        private static string CdnUrl(BgCard c, bool golden)
+        private static string CdnUrl(string src)
         {
-            string src = golden && !string.IsNullOrEmpty(c.ImageGold) ? c.ImageGold : c.Image;
             if (string.IsNullOrEmpty(src)) return null;
             if (src.EndsWith(".webp")) return AssetClient.SiteBase + src;
             if (!src.EndsWith(".png")) return null;
@@ -124,30 +152,25 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
-                byte[] bytes = null;
+                // The requested render in the card language (disk, else CDN) …
+                string src = Src(c, golden, localized: true);
+                string web = Locales.WebFromRenderPath(src);
+                byte[] bytes = await ReadOrFetch(c.Id, golden, src, web).ConfigureAwait(false);
 
-                var disk = FullDiskPath(c.Id, golden);
-                if (!File.Exists(disk) && golden) disk = FullDiskPath(c.Id, false);   // no golden → base
-                if (File.Exists(disk))
-                {
-                    try { bytes = File.ReadAllBytes(disk); } catch { bytes = null; }
-                }
+                // … else the English render of the same variant (a locale render that is not there) …
+                if (Empty(bytes) && web != null)
+                    bytes = await ReadOrFetch(c.Id, golden, Src(c, golden, localized: false), null).ConfigureAwait(false);
 
-                if (bytes == null || bytes.Length == 0)   // not cached → download + store
+                // … else, for golden, the base render (same language first, then English).
+                if (Empty(bytes) && golden)
                 {
-                    string url = CdnUrl(c, golden);
-                    if (url == null) return null;
-                    await Gate.WaitAsync().ConfigureAwait(false);
-                    try { bytes = await AssetClient.GetBytesAsync(url).ConfigureAwait(false); }
-                    finally { Gate.Release(); }
-                    if (bytes == null || bytes.Length == 0) return null;
-                    try
-                    {
-                        Directory.CreateDirectory(CacheDir);
-                        File.WriteAllBytes(FullDiskPath(c.Id, golden), bytes);
-                    }
-                    catch { }
+                    string baseSrc = Src(c, false, localized: true);
+                    string baseWeb = Locales.WebFromRenderPath(baseSrc);
+                    bytes = await ReadOrFetch(c.Id, false, baseSrc, baseWeb).ConfigureAwait(false);
+                    if (Empty(bytes) && baseWeb != null)
+                        bytes = await ReadOrFetch(c.Id, false, Src(c, false, localized: false), null).ConfigureAwait(false);
                 }
+                if (Empty(bytes)) return null;
 
                 var bmp = DecodeAndTrim(bytes, decode);
                 if (bmp != null) Mem[key] = bmp;
@@ -155,6 +178,38 @@ namespace HsbgCardLookup.Ui
             }
             catch { return null; }
             finally { InFlight.TryRemove(key, out _); }
+        }
+
+        private static bool Empty(byte[] b) => b == null || b.Length == 0;
+
+        // One variant's bytes: its file on disk, else downloaded from the CDN and stored for next time.
+        private static async Task<byte[]> ReadOrFetch(int id, bool golden, string src, string web)
+        {
+            var disk = DiskPath(id, golden, web);
+            if (File.Exists(disk))
+            {
+                try
+                {
+                    var onDisk = File.ReadAllBytes(disk);
+                    if (!Empty(onDisk)) return onDisk;
+                }
+                catch { }
+            }
+
+            string url = CdnUrl(src);
+            if (url == null) return null;
+            byte[] bytes;
+            await Gate.WaitAsync().ConfigureAwait(false);
+            try { bytes = await AssetClient.GetBytesAsync(url).ConfigureAwait(false); }
+            finally { Gate.Release(); }
+            if (Empty(bytes)) return null;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(disk));
+                File.WriteAllBytes(disk, bytes);
+            }
+            catch { }
+            return bytes;
         }
 
         private static BitmapSource DecodeAndTrim(byte[] webp, int decode)
