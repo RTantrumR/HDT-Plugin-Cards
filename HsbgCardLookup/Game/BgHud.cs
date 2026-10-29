@@ -7,6 +7,7 @@ using Hearthstone_Deck_Tracker;                       // Core
 using Hearthstone_Deck_Tracker.Hearthstone.Entities;  // Entity
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Search;
 using HsbgCardLookup.Ui;
 
@@ -38,8 +39,15 @@ namespace HsbgCardLookup.Game
         // Arrange-mode slot labels. Boxes 1 and 2 keep their familiar names even though the fill is
         // positional: in the ordinary match that IS what lands in them, and a transform putting a
         // second greater in box 1 is exactly the case the player needs to notice.
-        private static readonly string[] TrinketLabels =
-            { "Lesser Trinket", "Greater Trinket", "Trinket 3", "Trinket 4" };
+        private static string TrinketLabel(int index)
+        {
+            switch (index)
+            {
+                case 0: return Strings.T("hud.lesserTrinket");
+                case 1: return Strings.T("hud.greaterTrinket");
+                default: return Strings.F("hud.trinketN", index + 1);
+            }
+        }
 
         private readonly CardStore _store;
         private readonly PluginConfig _config;
@@ -173,11 +181,11 @@ namespace HsbgCardLookup.Game
             {
                 if (trinkets)
                     EnterEditSlot(_trinkets[i], d.InMatch ? d.Trinkets[i] : null,
-                                  SampleTrinket(_store, greater: i == 1), TrinketLabels[i]);
+                                  SampleTrinket(_store, greater: i == 1), TrinketLabel(i));
                 else _trinkets[i].Hide();
             }
             if (_arrange == ArrangeTarget.Anomaly)
-                EnterEditSlot(_anomaly, d.InMatch ? d.Anomaly : null, SampleAnomaly(_store), "Anomaly");
+                EnterEditSlot(_anomaly, d.InMatch ? d.Anomaly : null, SampleAnomaly(_store), Strings.T("hud.anomaly"));
             else _anomaly.Hide();
         }
 
@@ -346,16 +354,16 @@ namespace HsbgCardLookup.Game
             if (_editing) return;   // arrange mode: right-click does nothing (boxes are placeholders)
             try
             {
-                string feature = slot.IsAnomaly ? "anomaly display" : "trinket display";
+                string turnOff = Strings.T(slot.IsAnomaly ? "hud.menu.turnOffAnomaly" : "hud.menu.turnOffTrinkets");
                 HudContextMenu.ShowMenu(new[]
                 {
-                    new KeyValuePair<string, Action>("Close until end of match", () =>
+                    new KeyValuePair<string, Action>(Strings.T("hud.menu.closeUntilMatchEnd"), () =>
                     {
                         slot.Suppressed = true;
                         slot.Hide();
                         _lastSig = null;
                     }),
-                    new KeyValuePair<string, Action>("Turn off " + feature, () =>
+                    new KeyValuePair<string, Action>(turnOff, () =>
                     {
                         if (slot.IsAnomaly) _config.ShowAnomaly = false;
                         else _config.ShowTrinkets = false;

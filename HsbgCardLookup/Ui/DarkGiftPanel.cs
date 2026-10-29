@@ -13,6 +13,7 @@ using System.Windows.Threading;
 using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
 using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
 using HsbgCardLookup.Search;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Ui
 {
@@ -135,7 +136,7 @@ namespace HsbgCardLookup.Ui
             var header = new DockPanel { LastChildFill = true, Margin = new Thickness(2, 0, 22, 7) };
             var title = new TextBlock
             {
-                Text = "Dark Gifts",
+                Text = Strings.T("gifts.title"),
                 Foreground = UiKit.AccentBrush,
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
@@ -418,7 +419,7 @@ namespace HsbgCardLookup.Ui
                 _artCaption.Text = poolCaption ?? "";
                 _artCaption.Visibility = string.IsNullOrEmpty(poolCaption) ? Visibility.Collapsed : Visibility.Visible;
                 _artCaption.MaxWidth = _artWrap.Width;
-                if (poolTotal > n) { _artMore.Text = "+" + (poolTotal - n) + " more in the pool"; _artMore.Visibility = Visibility.Visible; }
+                if (poolTotal > n) { _artMore.Text = Strings.F("gifts.moreInPool", poolTotal - n); _artMore.Visibility = Visibility.Visible; }
                 else _artMore.Visibility = Visibility.Collapsed;
 
                 _artColumn.Visibility = Visibility.Visible;
@@ -492,7 +493,7 @@ namespace HsbgCardLookup.Ui
             };
             AddColoredRuns(text, r.Text);
             if (!string.IsNullOrEmpty(r.Note))
-                text.Inlines.Add(new Run("  — " + r.Note)
+                text.Inlines.Add(new Run(Strings.F("gifts.rowNote", r.Note))
                 {
                     Foreground = UiKit.TextSecondary,   // italic already distinguishes it — don't dim
                     FontStyle = FontStyles.Italic,

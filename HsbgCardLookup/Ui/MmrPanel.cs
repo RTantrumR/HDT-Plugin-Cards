@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Ui
 {
@@ -67,7 +68,7 @@ namespace HsbgCardLookup.Ui
             _rows.Children.Clear();
             _rows.Children.Add(new TextBlock
             {
-                Text = "Lobby MMR",
+                Text = Strings.T("mmr.panel.title"),
                 Foreground = UiKit.AccentBrush,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,

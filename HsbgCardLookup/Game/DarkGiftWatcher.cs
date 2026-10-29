@@ -8,6 +8,7 @@ using Hearthstone_Deck_Tracker;                 // Core
 using HearthDb.Enums;                            // GameTag
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Search;
 using HsbgCardLookup.Ui;
 
@@ -344,7 +345,9 @@ namespace HsbgCardLookup.Game
             if (mode != "gifts" && pa != null && pa.Pool.Count > 0)
             {
                 c.PoolTotal = pa.Pool.Count;
-                c.PoolCaption = $"Guaranteed {tribe} — Tier {(wmax > wmin ? wmin + "–" + wmax : wmin.ToString())} ({c.PoolTotal})";
+                c.PoolCaption = wmax > wmin
+                    ? Strings.F("gifts.poolCaption.range", tribe, wmin, wmax, c.PoolTotal)
+                    : Strings.F("gifts.poolCaption.single", tribe, wmin, c.PoolTotal);
                 int show = _config.DarkGiftPoolCount;   // the config property clamps to 0..Max
                 if (show > 0)
                     c.Minions = pa.Pool
@@ -635,10 +638,10 @@ namespace HsbgCardLookup.Game
             var parts = new List<string>();
             if (targetTurn >= 6)
                 parts.Add(_topTribes.Count > 0
-                    ? $"one offer guaranteed: {string.Join("/", _topTribes)} (your top type)"
-                    : "one offer will be your most common type");
+                    ? Strings.F("gifts.header.guaranteedType", string.Join("/", _topTribes))
+                    : Strings.T("gifts.header.mostCommonType"));
             else
-                parts.Add("from turn 6, one offer is your most common type");
+                parts.Add(Strings.T("gifts.header.fromTurn6"));
 
             return string.Join(" • ", parts);
         }

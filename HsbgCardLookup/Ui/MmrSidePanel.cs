@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
 using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Ui
 {
@@ -230,7 +231,7 @@ namespace HsbgCardLookup.Ui
             };
             var editLabelText = new TextBlock
             {
-                Text = "Opponents' MMR",
+                Text = Strings.T("mmr.editLabel"),
                 Foreground = new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E)),
                 FontSize = 12, FontWeight = FontWeights.SemiBold
             };
