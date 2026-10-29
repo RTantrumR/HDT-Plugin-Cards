@@ -28,8 +28,8 @@ The project, DLL and plugin folder are named `HsbgCardLookup`, the plugin's orig
   - `Game/`: Game state reading and HUD logic.
   - `Ui/`: WPF overlays, floating cards, and settings UI.
   - `Net/`: API and update notification clients.
-  - `Localization/`: the two language services (`CardLanguage` for game content, `UiLanguage` for the
-    plugin's own texts), the locale registry, the vocabulary table and the snapshot sync client.
+  - `Localization/`: the language service (`CardLanguage`: game content and the plugin's own texts), the
+    locale registry, the vocabulary table and the snapshot sync client.
   - `data/ui/<language>.json`: the plugin's UI strings; `en.json` is the key source, every other file
     is a partial overlay (a missing key renders English).
   - `data/locale-terms.json`: the game's words per language (tribes, keywords, card types, spell

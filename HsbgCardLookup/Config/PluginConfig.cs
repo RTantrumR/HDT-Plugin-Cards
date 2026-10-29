@@ -19,16 +19,14 @@ namespace HsbgCardLookup.Config
         public string FocusKey { get; set; } = "S";
         // Whether duos-only cards appear in results/browse.
         public bool ShowDuos { get; set; } = true;
-        // GAME-CONTENT language — card names, text, art and the game's own words (tribes, keywords,
-        // card types) in the search and the filters. "" = follow the Hearthstone client, "en" =
-        // English whatever the client runs in, or one of the site's card-language codes
-        // (Localization.Locales.Cards: de, es, es-mx, fr, it, ja, ko, pl, pt, th, zh-cn, zh-tw). The
-        // data is the site's /api/cards?locale= snapshot, fetched when the language is used.
+        // The plugin's language — card names, text, art and the game's own words (tribes, keywords,
+        // card types) in the search and the filters, AND the plugin's own menus, tooltips and
+        // messages. "" = follow the Hearthstone client, "en" = English whatever the client runs in,
+        // or one of the site's card-language codes (Localization.Locales.Cards: de, es, es-mx, fr,
+        // it, ja, ko, pl, pt, th, zh-cn, zh-tw). The card data is the site's /api/cards?locale=
+        // snapshot, fetched when the language is used; the plugin's texts are bundled catalogs
+        // (data\ui\<web>.json). Switching downloads nothing by itself.
         public string Language { get; set; } = "";
-        // PLUGIN-CONTENT language — the plugin's own menus, tooltips and messages. "" = follow HDT's
-        // language setting, "en", or one of the card-language codes. Bundled
-        // catalogs (data\ui\<web>.json); switching downloads nothing.
-        public string UiLanguage { get; set; } = "";
         // Magnifying-glass button on the in-game overlay (left of the game's card-list book,
         // bottom-right) that toggles the search — a mouse path for players without the hotkey.
         public bool ShowSearchButton { get; set; } = true;

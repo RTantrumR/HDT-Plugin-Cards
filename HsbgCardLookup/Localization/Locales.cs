@@ -20,7 +20,7 @@ namespace HsbgCardLookup.Localization
     /// The locale registry — a port of the site's lib/locales.ts. English is the unprefixed base
     /// ("en" / enUS). <see cref="Cards"/> are the twelve languages hsbg.cards serves card data in,
     /// at /&lt;web&gt; and through /api/cards?locale=&lt;web&gt;; the plugin's own texts exist in the
-    /// same twelve (<see cref="Ui"/>). Russian (ruRU) is deliberately absent on the site and here: a
+    /// same twelve. Russian (ruRU) is deliberately absent on the site and here: a
     /// Russian client or HDT gets English, like any code the registry does not know.
     /// </summary>
     public static class Locales
@@ -44,15 +44,12 @@ namespace HsbgCardLookup.Localization
             new Locale("zh-tw", "zhTW", "繁體中文"),
         };
 
-        /// <summary>The languages the plugin's own UI exists in: the same twelve.</summary>
-        public static readonly IReadOnlyList<Locale> Ui = Cards;
-
         private static readonly Dictionary<string, Locale> ByWebMap = new Dictionary<string, Locale>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, Locale> ByGameMap = new Dictionary<string, Locale>(StringComparer.OrdinalIgnoreCase);
 
         static Locales()
         {
-            foreach (var l in Ui)
+            foreach (var l in Cards)
             {
                 ByWebMap[l.Web] = l;
                 if (l.Game != null) ByGameMap[l.Game] = l;
@@ -62,9 +59,6 @@ namespace HsbgCardLookup.Localization
         /// <summary>True for one of the twelve card languages (not for "en").</summary>
         public static bool IsCardLocale(string web) => ByWeb(web)?.HasCards == true;
 
-        /// <summary>True for a language the plugin's UI exists in (not for "en").</summary>
-        public static bool IsUiLocale(string web) => !string.IsNullOrEmpty(web) && ByWebMap.ContainsKey(web);
-
         public static Locale ByWeb(string web) =>
             !string.IsNullOrEmpty(web) && ByWebMap.TryGetValue(web, out var l) ? l : null;
 
@@ -72,15 +66,6 @@ namespace HsbgCardLookup.Localization
         /// ruRU and anything unknown or null.</summary>
         public static string WebFromGame(string game) =>
             !string.IsNullOrEmpty(game) && ByGameMap.TryGetValue(game, out var l) ? l.Web : English;
-
-        /// <summary>The UI language for HDT's own language setting (its Language enum name): the game
-        /// codes as above, plus ptPT → Portuguese; ukUA, ruRU and unknown → English.</summary>
-        public static string UiWebFromHdt(string code)
-        {
-            if (string.IsNullOrEmpty(code)) return English;
-            if (string.Equals(code, "ptPT", StringComparison.OrdinalIgnoreCase)) return "pt";
-            return WebFromGame(code);
-        }
 
         public static string NativeName(string web)
         {

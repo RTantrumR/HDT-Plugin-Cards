@@ -13,7 +13,7 @@ namespace HsbgCardLookup.Localization
     /// source; <c>data\ui\&lt;web&gt;.json</c> is a partial overlay — a key it lacks renders English, a
     /// key no catalog has renders as the key itself (visible in the UI, never an exception). All
     /// catalogs are bundled and loaded at start (a few hundred strings each); <see cref="SetLocale"/>
-    /// is a reference swap on the UI thread, done by <see cref="UiLanguage"/>.
+    /// is a reference swap on the UI thread, done by <see cref="CardLanguage"/>.
     ///
     /// Keys are dotted by surface ("settings.cardSearch.title", "overlay.search.placeholder").
     /// Format strings carry {0}-style placeholders and go through <see cref="F"/>; every catalog must
@@ -36,7 +36,7 @@ namespace HsbgCardLookup.Localization
         {
             Catalogs.Clear();
             var loaded = new List<string>();
-            foreach (var web in new[] { Locales.English }.Concat(Locales.Ui.Select(l => l.Web)))
+            foreach (var web in new[] { Locales.English }.Concat(Locales.Cards.Select(l => l.Web)))
             {
                 var cat = Read(CardStore.BundledDataPath(Path.Combine("ui", web + ".json")));
                 if (cat == null) continue;
@@ -61,7 +61,7 @@ namespace HsbgCardLookup.Localization
         {
             if (string.IsNullOrEmpty(key)) return "";
             // HDT reads the plugin's Description, ButtonText and menu before OnLoad has run
-            // UiLanguage.Initialize(): load the bundled catalogs on first use rather than show keys.
+            // CardLanguage.Initialize(): load the bundled catalogs on first use rather than show keys.
             if (!_loaded) Load();
             string s;
             if (_active.TryGetValue(key, out s) && s != null) return s;

@@ -83,19 +83,17 @@ Opponent ratings come from the hsbg.cards leaderboard. Players who are not on it
 
 ## Languages
 
-The plugin speaks the game's languages. Two settings, both under **Card search & floating cards**:
+One setting, **Card search & floating cards → Language**, follows the Hearthstone client by default:
+card names, text and art, the words the search understands (tribes, keywords, card types) and the
+plugin's own menus and messages all come in that language — German, Spanish (EU and Latin America),
+French, Italian, Japanese, Korean, Polish, Portuguese, Thai, Simplified and Traditional Chinese. The
+search also keeps understanding English, so `taunt` and `Spott` both work on a German client. A
+Russian client gets English, and any language can be pinned instead. The plugin's own texts are
+machine-translated and unreviewed; corrections are welcome as edits to
+`HsbgCardLookup/data/ui/<language>.json`.
 
-- **Card language** follows the Hearthstone client by default: card names, text and art, and the
-  words the search understands (tribes, keywords, card types) come from hsbg.cards in that language —
-  German, Spanish (EU and Latin America), French, Italian, Japanese, Korean, Polish, Portuguese, Thai,
-  Simplified and Traditional Chinese. The search also keeps understanding English, so `taunt` and
-  `Spott` both work on a German client. A Russian client gets English.
-- **Plugin language** follows HDT's language setting by default: the plugin's own menus, tooltips and
-  messages, in the same languages. These texts are machine-translated and unreviewed;
-  corrections are welcome as edits to `HsbgCardLookup/data/ui/<language>.json`.
-
-Switching either setting downloads nothing by itself. A card language's data (about 1 MB) is fetched
-the first time it is actually used, and its card art is fetched card by card as you look at them. The
+Switching the language downloads nothing by itself. A language's card data (about 1 MB) is fetched the
+first time it is actually used, and its card art is fetched card by card as you look at them. The
 English art pack is downloaded once, as before.
 
 ## Updates

@@ -32,9 +32,9 @@ namespace HsbgCardLookup.Ui
 
         private readonly PluginConfig _config;
         private readonly Data.CardStore _store;   // the previews render real cards
-        private readonly CardLanguage _cardLanguage;   // game content: the "Card language" row and its status line
-        private readonly UiLanguage _uiLanguage;       // plugin content: the "Plugin language" row
-        private Action _currentPage;                   // the builder of the page on screen — re-run on a plugin-language change
+        private readonly CardLanguage _cardLanguage;   // the "Language" row and its status line
+        private Action _currentPage;                   // the builder of the page on screen — re-run on a language change
+        private string _builtWeb = Strings.Web;        // the catalog language the page on screen was built in
         private readonly HotkeyManager _hotkey;
         private readonly Action _onChanged;
         private readonly Action<ArrangeTarget> _onArrange;   // enter/exit arrange for one feature
@@ -73,7 +73,7 @@ namespace HsbgCardLookup.Ui
         /// <summary>How many recap records take part in the averages right now (set by Plugin).</summary>
         internal Func<int> RecapComparableCount;
 
-        internal SettingsWindow(PluginConfig config, Data.CardStore store, CardLanguage cardLanguage, UiLanguage uiLanguage,
+        internal SettingsWindow(PluginConfig config, Data.CardStore store, CardLanguage cardLanguage,
             HotkeyManager hotkey, Action onChanged, Action<ArrangeTarget> onArrange,
             string currentVersion, Action checkForUpdates, Action<UpdateNotice> openDownloadPage,
             Action<string> skipUpdate)
@@ -81,7 +81,6 @@ namespace HsbgCardLookup.Ui
             _config = config;
             _store = store;
             _cardLanguage = cardLanguage;
-            _uiLanguage = uiLanguage;
             _hotkey = hotkey;
             _onChanged = onChanged;
             _onArrange = onArrange;
@@ -137,23 +136,22 @@ namespace HsbgCardLookup.Ui
 
         // ── Languages ─────────────────────────────────────────────────────────────────────────
 
-        /// <summary>The plugin language changed: retitle and rebuild the page on screen (every page
-        /// is built from the catalog by its builder). UI thread.</summary>
+        /// <summary>The language changed, or its card data arrived. A catalog change retitles and
+        /// rebuilds the page on screen (every page is built from the catalog by its builder); the
+        /// data arriving only repaints the rows that show it (the status line). UI thread.</summary>
         public void OnLanguageChanged()
         {
             try
             {
-                Title = Strings.F("settings.windowTitle", Plugin.DisplayName);
-                _currentPage?.Invoke();
+                if (Strings.Web != _builtWeb)
+                {
+                    _builtWeb = Strings.Web;
+                    Title = Strings.F("settings.windowTitle", Plugin.DisplayName);
+                    _currentPage?.Invoke();
+                }
+                else foreach (var r in _modeRefresh) { try { r(); } catch { } }
             }
             catch { }
-        }
-
-        /// <summary>The card language changed or its data arrived: repaint the rows that show it
-        /// (the status line, the "Automatic (…)" caption) without rebuilding the page.</summary>
-        public void OnCardLanguageChanged()
-        {
-            foreach (var r in _modeRefresh) { try { r(); } catch { } }
         }
 
         // "" = automatic, then English, then the languages themselves.
@@ -399,24 +397,16 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(Separator());
 
-            // Two languages: what the game owns (cards, art, its own words) follows the client; what
-            // the plugin owns (menus, messages) follows HDT's setting. Both can be pinned. Flipping
-            // either downloads nothing — the card data is pulled when the language is first used.
-            string cardAuto = Locales.WebFromGame(_cardLanguage?.ClientCode);
-            stack.Children.Add(CycleRow(Strings.T("settings.language.card"),
-                LanguageValues(Locales.Cards), LanguageCaptions(Locales.Cards, cardAuto),
+            // One language for everything — cards, art, the game's words and the plugin's own texts —
+            // following the client by default; any language can be pinned. Flipping it downloads
+            // nothing: the card data is pulled when the language is first used.
+            string auto = Locales.WebFromGame(_cardLanguage?.ClientCode);
+            stack.Children.Add(CycleRow(Strings.T("settings.language"),
+                LanguageValues(Locales.Cards), LanguageCaptions(Locales.Cards, auto),
                 LanguageHints(Locales.Cards,
-                    Strings.F("settings.language.cardAutoHint", Locales.NativeName(cardAuto)),
-                    Strings.T("settings.language.cardEnglishHint"), "settings.language.cardHint"),
+                    Strings.F("settings.language.autoHint", Locales.NativeName(auto)),
+                    Strings.T("settings.language.englishHint"), "settings.language.hint"),
                 () => _config.Language ?? "", v => _config.Language = v));
-
-            string uiAuto = Locales.UiWebFromHdt(_uiLanguage?.HdtCode);
-            stack.Children.Add(CycleRow(Strings.T("settings.language.plugin"),
-                LanguageValues(Locales.Ui), LanguageCaptions(Locales.Ui, uiAuto),
-                LanguageHints(Locales.Ui,
-                    Strings.F("settings.language.pluginAutoHint", Locales.NativeName(uiAuto)),
-                    Strings.T("settings.language.pluginEnglishHint"), "settings.language.pluginHint"),
-                () => _config.UiLanguage ?? "", v => _config.UiLanguage = v));
 
             var languageStatus = new TextBlock
             {

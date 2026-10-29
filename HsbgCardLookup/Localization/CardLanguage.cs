@@ -8,11 +8,12 @@ using HsbgCardLookup.Search;
 namespace HsbgCardLookup.Localization
 {
     /// <summary>
-    /// The GAME-CONTENT language: the one card names, text, renders and the game's own words
-    /// (tribes, keywords, card types…) appear in. One instance, owned by Plugin, and the only place
+    /// The plugin's language: the one card names, text, renders, the game's own words (tribes,
+    /// keywords, card types…) AND the plugin's own menus and messages (<see cref="Strings"/>) appear
+    /// in. One instance, owned by Plugin, and the only place
     /// that decides it: the setting (<see cref="PluginConfig.Language"/>), else the Hearthstone
-    /// client's language, else English. Applying it switches the store's overlay, the search alias
-    /// table, the name sort and the art cache's memory, then raises <see cref="Changed"/> once — the
+    /// client's language, else English. Applying it switches the string catalog, the store's overlay,
+    /// the search alias table, the name sort and the art cache's memory, then raises <see cref="Changed"/> once — the
     /// seam every language-aware surface hangs on. UI thread, except the download bodies.
     ///
     /// Nothing here downloads on a switch: a snapshot is fetched only by <see cref="EnsureDataAsync"/>,
@@ -63,6 +64,8 @@ namespace HsbgCardLookup.Localization
         /// from cache. No network.</summary>
         public void Initialize()
         {
+            Strings.Load();
+            _log?.Invoke("Strings: " + Strings.LoadInfo);
             LocaleTerms.Load();
             _log?.Invoke("LocaleTerms: " + LocaleTerms.LoadInfo);
             ClientCode = ClientLanguage.Detect();
@@ -169,6 +172,7 @@ namespace HsbgCardLookup.Localization
             if (!force && same) return;
 
             Web = web;
+            Strings.SetLocale(web);                // the plugin's own texts (bundled)
             _store.SetLocale(web);                 // the cached overlay, or English until the snapshot lands
             Vocab = LocaleTerms.For(web);
             Aliases.SetLocale(Vocab);
