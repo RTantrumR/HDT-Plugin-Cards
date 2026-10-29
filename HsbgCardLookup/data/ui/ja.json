@@ -1,5 +1,6 @@
 {
   "gifts.title": "悪夢の恵み",
+  "gifts.marker.empty": "{0} — まだ表示するものはありません",
   "gifts.moreInPool": "プールに他{0}体",
   "gifts.rowNote": "  — {0}",
   "gifts.poolCaption.range": "確定：{0} — ティア{1}～{2}（{3}）",

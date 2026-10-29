@@ -1,5 +1,6 @@
 {
   "gifts.title": "Dunkle Gaben",
+  "gifts.marker.empty": "{0} – noch nichts anzuzeigen",
   "gifts.moreInPool": "+{0} weitere im Pool",
   "gifts.rowNote": "  — {0}",
   "gifts.poolCaption.range": "Garantiert {0} — Stufe {1}–{2} ({3})",

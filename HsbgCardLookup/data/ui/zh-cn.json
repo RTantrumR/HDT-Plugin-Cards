@@ -1,5 +1,6 @@
 {
   "gifts.title": "黑暗之赐",
+  "gifts.marker.empty": "{0} — 暂无可显示内容",
   "gifts.moreInPool": "卡池中还有{0}个",
   "gifts.rowNote": "  — {0}",
   "gifts.poolCaption.range": "保底{0}——等级{1}–{2}（{3}）",

@@ -202,6 +202,7 @@ namespace HsbgCardLookup.Game
             _gifts = null;
             _lastSig = null;
             try { _panel?.Relabel(); } catch { }
+            try { _marker?.Relabel(); } catch { }
         }
 
         private static string NormMode(string m)

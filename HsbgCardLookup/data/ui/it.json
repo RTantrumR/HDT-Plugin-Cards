@@ -1,5 +1,6 @@
 {
   "gifts.title": "Doni Oscuri",
+  "gifts.marker.empty": "{0}: ancora niente da mostrare",
   "gifts.moreInPool": "+{0} altri nel pool",
   "gifts.rowNote": "  — {0}",
   "gifts.poolCaption.range": "Garantito: {0} — Livello {1}–{2} ({3})",

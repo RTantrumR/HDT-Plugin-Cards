@@ -1,5 +1,6 @@
 {
   "gifts.title": "ของขวัญพลังมืด",
+  "gifts.marker.empty": "{0} — ยังไม่มีอะไรให้แสดง",
   "gifts.moreInPool": "+{0} ตัวในพูล",
   "gifts.rowNote": "  — {0}",
   "gifts.poolCaption.range": "การันตี {0} — ขั้น {1}–{2} ({3})",

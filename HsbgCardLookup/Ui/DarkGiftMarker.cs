@@ -7,6 +7,8 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Hearthstone_Deck_Tracker.Utility.Extensions;  // OverlayExtensions
 
+using HsbgCardLookup.Localization;
+
 namespace HsbgCardLookup.Ui
 {
     /// <summary>
@@ -106,6 +108,15 @@ namespace HsbgCardLookup.Ui
         /// stays where it is instead of vanishing — its spot should be predictable — but it is faded
         /// and does not respond to a click, since opening nothing is worse than not opening. Canvas
         /// thread.</summary>
+        private static string Tooltip(bool dim) =>
+            dim ? Strings.F("gifts.marker.empty", Strings.T("gifts.title")) : Strings.T("gifts.title");
+
+        /// <summary>Re-set the tooltip in the current language (keeps the dimmed wording). Canvas thread.</summary>
+        public void Relabel()
+        {
+            if (_root != null) _root.ToolTip = Tooltip(_dim);
+        }
+
         public void SetDimmed(bool dim)
         {
             if (_dim == dim) return;
@@ -114,7 +125,7 @@ namespace HsbgCardLookup.Ui
             {
                 _root.Opacity = dim ? 0.45 : 1.0;
                 _root.Cursor = dim ? Cursors.Arrow : Cursors.Hand;
-                _root.ToolTip = dim ? "Dark Gifts — nothing to show yet" : "Dark Gifts";
+                _root.ToolTip = Tooltip(dim);
             }
             ApplyColors();
         }
@@ -153,7 +164,7 @@ namespace HsbgCardLookup.Ui
                 BorderBrush = new SolidColorBrush(RimColor),
                 Child = _glyph,
                 Cursor = Cursors.Hand,
-                ToolTip = "Dark Gifts"
+                ToolTip = Tooltip(false)
             };
             _root.MouseEnter += (s, e) => { _hover = true; ApplyColors(); };
             _root.MouseLeave += (s, e) => { _hover = false; ApplyColors(); };

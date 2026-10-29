@@ -1,5 +1,6 @@
 {
   "gifts.title": "Regalos oscuros",
+  "gifts.marker.empty": "{0}: aún no hay nada que mostrar",
   "gifts.moreInPool": "+{0} más en la reserva",
   "gifts.rowNote": "  — {0}",
   "gifts.poolCaption.range": "Garantizado: {0} — Nivel {1}–{2} ({3})",

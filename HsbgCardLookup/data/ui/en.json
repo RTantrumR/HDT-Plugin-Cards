@@ -1,5 +1,6 @@
 {
   "gifts.title": "Dark Gifts",
+  "gifts.marker.empty": "{0} — nothing to show yet",
   "gifts.moreInPool": "+{0} more in the pool",
   "gifts.rowNote": "  — {0}",
   "gifts.poolCaption.range": "Guaranteed {0} — Tier {1}–{2} ({3})",
