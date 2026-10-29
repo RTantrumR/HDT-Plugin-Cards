@@ -1104,7 +1104,7 @@ namespace HsbgCardLookup.Ui
                 // trinkets, anomalies. Within a group: tier then name. (See CardStore.BrowseRank.)
                 cards = pool.OrderBy(CardStore.BrowseRank)
                             .ThenBy(c => c.Tier ?? 99)
-                            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
+                            .ThenBy(c => c.DisplayName, SearchEngine.NameComparer).ToList();
             else
             {
                 var r = _smart ? SearchEngine.Smart(pool, q) : SearchEngine.Simple(pool, q);
@@ -1243,7 +1243,7 @@ namespace HsbgCardLookup.Ui
             stack.Children.Add(thumb);
             stack.Children.Add(new TextBlock
             {
-                Text = card.Name, Foreground = UiKit.TextSecondary, FontSize = 12.5,
+                Text = card.DisplayName, Foreground = UiKit.TextSecondary, FontSize = 12.5,
                 TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
                 Margin = new Thickness(0, 3, 0, 0)
             });
