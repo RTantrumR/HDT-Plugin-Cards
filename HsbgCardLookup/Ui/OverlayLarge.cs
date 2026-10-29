@@ -261,6 +261,8 @@ namespace HsbgCardLookup.Ui
             if (_refreshBtn != null) _refreshBtn.ToolTip = Strings.T("overlay.checkUpdatesTooltip");
             if (_helpAnchor != null) _helpAnchor.ToolTip = Strings.T("overlay.helpTooltip");
             if (_bell != null) _bell.ToolTip = Strings.T("overlay.bell.tooltip");
+            UpdateBell();
+            if (_bellPopup != null && _bellPopup.IsOpen) _bellPopup.Child = BuildBellPopupContent();   // notices read in the new language
             Refresh();
         }
 
@@ -802,16 +804,17 @@ namespace HsbgCardLookup.Ui
             }
             titleRow.Children.Add(new TextBlock
             {
-                Text = n.Title ?? Strings.T("overlay.bell.untitled"),
+                Text = n.TitleFor(Strings.Web) ?? Strings.T("overlay.bell.untitled"),
                 Foreground = UiKit.TextPrimary, FontSize = 14.5, FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });
             col.Children.Add(titleRow);
 
-            if (!string.IsNullOrEmpty(n.Description))
+            string description = n.DescriptionFor(Strings.Web);
+            if (!string.IsNullOrEmpty(description))
                 col.Children.Add(new TextBlock
                 {
-                    Text = n.Description, Foreground = UiKit.TextSecondary, FontSize = 12.5,
+                    Text = description, Foreground = UiKit.TextSecondary, FontSize = 12.5,
                     TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0)
                 });
 
@@ -844,21 +847,28 @@ namespace HsbgCardLookup.Ui
             return row;
         }
 
+        // The date in the plugin language: English keeps "Oct 30, 2026"; a language gets its own
+        // culture's short date (the registry's tag), since "MMM d, yyyy" is an English word order.
         private static string FormatNoticeDate(string iso)
         {
             if (string.IsNullOrEmpty(iso)) return null;
-            return DateTime.TryParse(iso, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d)
-                ? d.ToLocalTime().ToString("MMM d, yyyy")
-                : null;
+            if (!DateTime.TryParse(iso, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d)) return null;
+            var local = d.ToLocalTime();
+            string tag = Locales.ByWeb(Strings.Web)?.Tag;
+            if (tag != null)
+                try { return local.ToString("d", System.Globalization.CultureInfo.GetCultureInfo(tag)); } catch { }
+            return local.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         private void OpenNotice(PluginNotice n)
         {
             try
             {
-                string url = string.IsNullOrEmpty(n.Url)
-                    ? AssetClient.SiteBase + "/patch-notes?utm_source=hdt&utm_medium=plugin&utm_campaign=patch-notes"
-                    : n.Url;
+                // The language's own link when the notice has one; else the site's patch notes in
+                // that language, which the site serves at /<web>/patch-notes.
+                string url = n.UrlFor(Strings.Web);
+                if (string.IsNullOrEmpty(url))
+                    url = AssetClient.SiteBase + Locales.SitePath(Strings.Web, "/patch-notes") + "?utm_source=hdt&utm_medium=plugin&utm_campaign=patch-notes";
                 Process.Start(url);
             }
             catch { /* launching the browser is best-effort */ }

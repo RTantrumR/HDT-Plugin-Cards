@@ -78,6 +78,11 @@ namespace HsbgCardLookup.Localization
             return WebFromGame(code);
         }
 
+        /// <summary>The site's path for a language — its lib/locales.ts localeHref: "/de/patch-notes"
+        /// for de, the path itself for English.</summary>
+        public static string SitePath(string web, string path) =>
+            string.IsNullOrEmpty(web) || string.Equals(web, English, StringComparison.OrdinalIgnoreCase) ? path : "/" + web + path;
+
         public static string NativeName(string web)
         {
             if (string.IsNullOrEmpty(web) || string.Equals(web, English, StringComparison.OrdinalIgnoreCase)) return "English";

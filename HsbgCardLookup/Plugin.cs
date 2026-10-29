@@ -206,25 +206,41 @@ namespace HsbgCardLookup
         {
             try
             {
-                var found = new List<PluginNotice>();
-                int id = _config.PatchNoticeLastSeenId + 1;
-                int misses = 0, scanned = 0;
-                while (misses < NoticeMaxGap && scanned < NoticeMaxScan)
+                // One cacheable request: the site folds every active notice, in every language, into
+                // feed.json. The per-id probe is the pre-feed path, kept only for a site that has not
+                // shipped the feed yet (no feed → probe), never run beside it.
+                var feed = await AssetClient.GetJsonAsync<PluginNoticeFeed>(AssetClient.SiteBase + "/plugin/notifications/feed.json");
+                List<PluginNotice> found;
+                if (feed?.Notices != null)
                 {
-                    string url = AssetClient.SiteBase + "/plugin/notifications/" + id + ".json?_=" + DateTime.UtcNow.Ticks;
-                    var n = await AssetClient.GetJsonAsync<PluginNotice>(url);
-                    scanned++;
-                    if (n == null) { misses++; id++; continue; }
-                    misses = 0;
-                    n.Id = id;                 // the filename is the authoritative id
-                    found.Add(n);
-                    id++;
+                    found = feed.Notices.Where(n => n != null && n.Id > 0).OrderBy(n => n.Id).ToList();
+                    Log($"Notices: feed has {found.Count} (generated {feed.GeneratedAt ?? "?"})");
                 }
+                else { Log("Notices: no feed yet (site not deployed, or offline) — probing ids"); found = await ProbeNoticesAsync(); }
                 if (found.Count == 0) return;
                 _ui?.BeginInvoke(new Action(() => _overlayLarge?.SetNotices(found)));
-                Log($"Notices: found {found.Count} (probed from id {_config.PatchNoticeLastSeenId + 1})");
             }
             catch (Exception ex) { Log("CheckNoticesAsync error: " + ex.Message); }
+        }
+
+        // Pre-feed path: ids upward from the last-seen one, each its own file.
+        private async Task<List<PluginNotice>> ProbeNoticesAsync()
+        {
+            var found = new List<PluginNotice>();
+            int id = _config.PatchNoticeLastSeenId + 1;
+            int misses = 0, scanned = 0;
+            while (misses < NoticeMaxGap && scanned < NoticeMaxScan)
+            {
+                var n = await AssetClient.GetJsonAsync<PluginNotice>(AssetClient.SiteBase + "/plugin/notifications/" + id + ".json");
+                scanned++;
+                if (n == null) { misses++; id++; continue; }
+                misses = 0;
+                n.Id = id;                 // the filename is the authoritative id
+                found.Add(n);
+                id++;
+            }
+            if (found.Count > 0) Log($"Notices: probed {found.Count} (from id {_config.PatchNoticeLastSeenId + 1})");
+            return found;
         }
 
         // Plugin folder via CodeBase (the real Plugins dir, surviving HDT's shadow-copy).
