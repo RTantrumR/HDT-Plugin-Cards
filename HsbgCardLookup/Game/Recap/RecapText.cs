@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Game.Recap
 {
@@ -59,16 +60,16 @@ namespace HsbgCardLookup.Game.Recap
                 t.AvgPerCombat = avgPer;
 
                 if (rec.MatchApm > avgApm)
-                    t.Sentences.Add(new KeyValuePair<string, bool>(string.Format("APM above your average over your last {0} matches, keep it up!", n), true));
+                    t.Sentences.Add(new KeyValuePair<string, bool>(Strings.F("recap.apmAboveAverage", n), true));
                 else if (rec.MatchApm < avgApm)
-                    t.Sentences.Add(new KeyValuePair<string, bool>(string.Format("APM below your average over your last {0} matches.", n), false));
+                    t.Sentences.Add(new KeyValuePair<string, bool>(Strings.F("recap.apmBelowAverage", n), false));
 
                 if (rec.CombatsFought > 0)
                 {
                     if (rec.DamagePerCombat > avgPer)
-                        t.Sentences.Add(new KeyValuePair<string, bool>("More damage per combat than you usually deal, keep it up!", true));
+                        t.Sentences.Add(new KeyValuePair<string, bool>(Strings.T("recap.damageAboveAverage"), true));
                     else if (rec.DamagePerCombat < avgPer)
-                        t.Sentences.Add(new KeyValuePair<string, bool>("Less damage per combat than you usually deal.", false));
+                        t.Sentences.Add(new KeyValuePair<string, bool>(Strings.T("recap.damageBelowAverage"), false));
                 }
             }
             return t;
@@ -78,10 +79,10 @@ namespace HsbgCardLookup.Game.Recap
         {
             switch (n)
             {
-                case 1: return "1st";
-                case 2: return "2nd";
-                case 3: return "3rd";
-                default: return n + "th";
+                case 1: return Strings.T("recap.ordinal.first");
+                case 2: return Strings.T("recap.ordinal.second");
+                case 3: return Strings.T("recap.ordinal.third");
+                default: return Strings.F("recap.ordinal.other", n);
             }
         }
     }

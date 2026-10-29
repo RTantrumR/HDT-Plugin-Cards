@@ -12,6 +12,7 @@ using Hearthstone_Deck_Tracker.Plugins;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
 using HsbgCardLookup.Hotkey;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Net;
 using HsbgCardLookup.Search;
 using HsbgCardLookup.Ui;
@@ -68,11 +69,9 @@ namespace HsbgCardLookup
             catch { return false; }
         }
 
-        public string Description =>
-            "Battlegrounds tools on the in-game overlay: opponent MMR, tiers and minion types, " +
-            "Dark Gifts, trinket and anomaly HUD, match recap, card search, match export.";
+        public string Description => Strings.T("plugin.description");
 
-        public string ButtonText => "Settings";
+        public string ButtonText => Strings.T("plugin.settings");
 
         public string Author => "hsbg.cards";
 
@@ -88,7 +87,7 @@ namespace HsbgCardLookup
         {
             var root = new MenuItem { Header = DisplayName };
 
-            var open = new MenuItem { Header = "Open overlay" };
+            var open = new MenuItem { Header = Strings.T("plugin.menu.openOverlay") };
             open.Click += (s, e) => _ui?.BeginInvoke(new Action(() =>
             {
                 if (_overlays != null)
@@ -96,10 +95,10 @@ namespace HsbgCardLookup
                 _overlayLarge?.Toggle();
             }));
 
-            var settings = new MenuItem { Header = "Settings" };
+            var settings = new MenuItem { Header = Strings.T("plugin.settings") };
             settings.Click += (s, e) => _ui?.BeginInvoke(new Action(OpenSettings));
 
-            var update = new MenuItem { Header = "Check for updates" };
+            var update = new MenuItem { Header = Strings.T("plugin.menu.checkForUpdates") };
             update.Click += (s, e) => _ui?.BeginInvoke(new Action(CheckForUpdatesInteractive));
 
             root.Items.Add(open);
@@ -329,7 +328,7 @@ namespace HsbgCardLookup
         internal void CheckForUpdatesInteractive()
         {
             if (_overlayLarge?.IsVisible == true)
-                _overlayLarge.SetUpdateNotice("Checking for updates…", false, null);
+                _overlayLarge.SetUpdateNotice(Strings.T("plugin.checkingForUpdates"), false, null);
             Task.Run(async () =>
             {
                 Update.UpdateNotice notice = null;
@@ -352,31 +351,32 @@ namespace HsbgCardLookup
         private void HandleManualNotice(Update.UpdateNotice notice)
         {
             if (notice == null)
-                notice = new Update.UpdateNotice("Couldn't check for updates right now — please try again later.", true);
+                notice = new Update.UpdateNotice(Strings.T("plugin.updateCheckFailed"), true);
 
             bool overlayOpen = _overlayLarge?.IsVisible == true;
             SetUpdateState(notice);
 
             if (overlayOpen) return;           // the banner already shows the result
 
+            string title = Strings.F("plugin.updatesTitle", DisplayName);
             if (notice.AvailableForDownload)
             {
                 var ans = MessageBox.Show(
-                    $"Version {notice.AvailableVersion} is available.\n\nOpen the releases page in your browser?",
-                    DisplayName + " — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    Strings.F("plugin.openReleasesPrompt", Strings.F("updates.versionAvailable", notice.AvailableVersion)),
+                    title, MessageBoxButton.YesNo, MessageBoxImage.Information);
                 if (ans == MessageBoxResult.Yes)
                     try { System.Diagnostics.Process.Start(notice.Url); } catch { }
             }
             else if (!string.IsNullOrEmpty(notice.Url))
             {
-                var ans = MessageBox.Show(notice.Message + "\n\nOpen the releases page in your browser?",
-                    DisplayName + " — Updates", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                var ans = MessageBox.Show(Strings.F("plugin.openReleasesPrompt", notice.Message),
+                    title, MessageBoxButton.YesNo, MessageBoxImage.Information);
                 if (ans == MessageBoxResult.Yes)
                     try { System.Diagnostics.Process.Start(notice.Url); } catch { }
             }
             else
             {
-                MessageBox.Show(notice.Message, DisplayName + " — Updates",
+                MessageBox.Show(notice.Message, title,
                     MessageBoxButton.OK, notice.IsError ? MessageBoxImage.Warning : MessageBoxImage.Information);
             }
         }

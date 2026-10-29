@@ -10,6 +10,7 @@ using System.Windows.Media.Effects;
 using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
 using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
 using HsbgCardLookup.Game.Recap;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Ui
 {
@@ -116,18 +117,19 @@ namespace HsbgCardLookup.Ui
             if (!string.IsNullOrEmpty(t.Hero))
                 _title.Inlines.Add(new System.Windows.Documents.Run(t.Hero + "   ") { Foreground = UiKit.AccentBrush });
             else
-                _title.Inlines.Add(new System.Windows.Documents.Run("Match recap   ") { Foreground = UiKit.AccentBrush });
-            string meta = (t.Place != null ? t.Place + " · " : "") + t.Turns + (t.Turns == 1 ? " turn" : " turns");
+                _title.Inlines.Add(new System.Windows.Documents.Run(Strings.T("recap.title") + "   ") { Foreground = UiKit.AccentBrush });
+            string turns = t.Turns == 1 ? Strings.F("recap.turns.one", t.Turns) : Strings.F("recap.turns.many", t.Turns);
+            string meta = t.Place != null ? Strings.F("recap.titleMeta", t.Place, turns) : turns;
             _title.Inlines.Add(new System.Windows.Documents.Run(meta) { Foreground = UiKit.TextSecondary, FontWeight = FontWeights.Normal, FontSize = 13 });
 
             _body.Children.Clear();
-            _body.Children.Add(StatRow("APM", t.Apm.ToString("0", inv), ApmColor,
-                t.PeakCount > 0 ? string.Format(inv, "peak {0} actions in {1:0} s on turn {2}", t.PeakCount, t.PeakWindow, t.PeakTurn) : null,
-                t.AvgApm.HasValue ? "avg " + t.AvgApm.Value.ToString("0", inv) : null));
+            _body.Children.Add(StatRow(Strings.T("recap.apm"), t.Apm.ToString("0", inv), ApmColor,
+                t.PeakCount > 0 ? Strings.F("recap.apmPeak", t.PeakCount, t.PeakWindow.ToString("0", inv), t.PeakTurn) : null,
+                t.AvgApm.HasValue ? Strings.F("recap.avg", t.AvgApm.Value.ToString("0", inv)) : null));
             _body.Children.Add(HRule());
-            _body.Children.Add(StatRow("Damage dealt", t.Damage.ToString(inv), DamageColor,
-                string.Format(inv, "{0:0.0} per combat", t.PerCombat),
-                t.AvgPerCombat.HasValue ? "avg " + t.AvgPerCombat.Value.ToString("0.0", inv) + " per combat" : null));
+            _body.Children.Add(StatRow(Strings.T("recap.damageDealt"), t.Damage.ToString(inv), DamageColor,
+                Strings.F("recap.perCombat", t.PerCombat.ToString("0.0", inv)),
+                t.AvgPerCombat.HasValue ? Strings.F("recap.avgPerCombat", t.AvgPerCombat.Value.ToString("0.0", inv)) : null));
 
             if (t.Sentences.Count > 0)
             {

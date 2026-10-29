@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using HsbgCardLookup.Config;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Net;
 
 namespace HsbgCardLookup.Update
@@ -64,8 +65,8 @@ namespace HsbgCardLookup.Update
                     config.Save();
                     var pv = ParseVersion(prev);
                     if (pv != null && pv < current)
-                        return new UpdateNotice($"Updated to version {current}.", false, ReleasesUrl)
-                            { LinkLabel = "View release notes ↗" };
+                        return new UpdateNotice(Strings.F("updates.updatedTo", current), false, ReleasesUrl)
+                            { LinkLabel = Strings.T("updates.viewReleaseNotes") };
                 }
 
                 // 2. Throttle (background only), then check the latest release.
@@ -79,15 +80,14 @@ namespace HsbgCardLookup.Update
                 config.Save();
                 if (rel == null)
                     return manual
-                        ? new UpdateNotice("Couldn't check for updates — you may be offline, or no release "
-                            + "has been published yet. You can check manually:", true, ReleasesUrl)
+                        ? new UpdateNotice(Strings.T("updates.couldNotCheck"), true, ReleasesUrl)
                         : null;
 
                 var v = ParseVersion(rel.TagName);
                 if (v == null)
-                    return manual ? new UpdateNotice("Couldn't read the latest release info.", true, ReleasesUrl) : null;
+                    return manual ? new UpdateNotice(Strings.T("updates.couldNotReadRelease"), true, ReleasesUrl) : null;
                 if (v <= current)
-                    return manual ? new UpdateNotice($"You're on the latest version (v{current}).") : null;
+                    return manual ? new UpdateNotice(Strings.F("updates.upToDate", current)) : null;
 
                 if (!manual)
                 {
@@ -95,7 +95,7 @@ namespace HsbgCardLookup.Update
                     if (skipped != null && v <= skipped) return null;
                 }
 
-                return new UpdateNotice($"Version {v} is available.")
+                return new UpdateNotice(Strings.F("updates.versionAvailable", v))
                 {
                     AvailableForDownload = true,
                     AvailableVersion = v.ToString(),
