@@ -13,6 +13,7 @@ using System.Windows.Shapes;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
 using HsbgCardLookup.Hotkey;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Net;
 using HsbgCardLookup.Search;
 
@@ -118,16 +119,16 @@ namespace HsbgCardLookup.Ui
             {
                 Cursor = Cursors.Hand, Padding = new Thickness(4), Background = Brushes.Transparent,
                 VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = "Smart search (Tab): parse t3, 5/5, tribes, keywords. Off = plain text."
+                ToolTip = Strings.F("overlay.smartTooltip", "Tab")
             };
             _bulbHost.MouseLeftButtonUp += (s, e) => ToggleSmart();
             // Clear-search "✕" sits just left of the lamp; visible only when there's text.
-            _clearSearch = UiKit.ClearButton(() => { _search.Clear(); FocusSearch(); }, "Clear search");
+            _clearSearch = UiKit.ClearButton(() => { _search.Clear(); FocusSearch(); }, Strings.T("overlay.clearSearch"));
             _clearSearch.Visibility = Visibility.Collapsed;
             var trailing = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             trailing.Children.Add(_clearSearch);
             trailing.Children.Add(_bulbHost);
-            _searchField = UiKit.SearchField("Search: name, tribe, keyword, t3, 5/5…", out _search, 18, trailing);
+            _searchField = UiKit.SearchField(Strings.T("overlay.search.placeholder"), out _search, 18, trailing);
             topRow.Children.Add(_searchField);
             Grid.SetRow(topRow, 0);
             grid.Children.Add(topRow);
@@ -200,7 +201,7 @@ namespace HsbgCardLookup.Ui
         private void BuildDropdownsInto(StackPanel dds)
         {
             var typeItems = _store.Types.Select(t => new Dropdown.Item(t, UiKit.Pretty(t))).ToList();
-            dds.Children.Add(new Dropdown(this, "All Types", typeItems, v =>
+            dds.Children.Add(new Dropdown(this, Strings.T("overlay.allTypes"), typeItems, v =>
             {
                 _type = v;
                 if (v != "minion") { _tribe = null; _tribeDd?.SetSelected(null); }
@@ -210,23 +211,23 @@ namespace HsbgCardLookup.Ui
                 Refresh();
             }));
 
-            var tierItems = _store.Tiers.Select(t => new Dropdown.Item(t.ToString(), "Tier " + t, CardStore.TierIconPath(t))).ToList();
-            dds.Children.Add(new Dropdown(this, "All Tiers", tierItems, v => { _tier = v == null ? (int?)null : int.Parse(v); Refresh(); }, 26));
+            var tierItems = _store.Tiers.Select(t => new Dropdown.Item(t.ToString(), Strings.F("overlay.tierN", t), CardStore.TierIconPath(t))).ToList();
+            dds.Children.Add(new Dropdown(this, Strings.T("overlay.allTiers"), tierItems, v => { _tier = v == null ? (int?)null : int.Parse(v); Refresh(); }, 26));
 
             var tribeItems = _store.Tribes.Select(t => new Dropdown.Item(t, t, CardStore.TribeIconPath(t))).ToList();
-            _tribeDd = new Dropdown(this, "All Tribes", tribeItems, v => { _tribe = v; Refresh(); }, 22);
+            _tribeDd = new Dropdown(this, Strings.T("overlay.allTribes"), tribeItems, v => { _tribe = v; Refresh(); }, 22);
             dds.Children.Add(_tribeDd);
 
             var spellItems = _store.SpellSchools.Select(s => new Dropdown.Item(s, s)).ToList();
-            _spellDd = new Dropdown(this, "All Schools", spellItems, v => { _spellSchool = v; Refresh(); });
+            _spellDd = new Dropdown(this, Strings.T("overlay.allSchools"), spellItems, v => { _spellSchool = v; Refresh(); });
             dds.Children.Add(_spellDd);
 
             var trinketItems = new List<Dropdown.Item>
             {
-                new Dropdown.Item("lesser", "Lesser"),
-                new Dropdown.Item("greater", "Greater"),
+                new Dropdown.Item("lesser", Strings.T("overlay.trinket.lesser")),
+                new Dropdown.Item("greater", Strings.T("overlay.trinket.greater")),
             };
-            _trinketDd = new Dropdown(this, "All Trinkets", trinketItems, v => { _trinketTier = v; Refresh(); });
+            _trinketDd = new Dropdown(this, Strings.T("overlay.allTrinkets"), trinketItems, v => { _trinketTier = v; Refresh(); });
             dds.Children.Add(_trinketDd);
         }
 
@@ -248,7 +249,7 @@ namespace HsbgCardLookup.Ui
                 MaxHeight = 350,   // a bit shorter so a minion's Golden button + first related row fit without scroll
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Cursor = Cursors.Hand,
-                ToolTip = "Drag out for a floating card"
+                ToolTip = Strings.T("overlay.art.dragTooltip")
             };
             // Detail portrait: a past-threshold drag pulls the card out as a free-floating raw card
             // (FloatingCard) that follows the cursor until mouse-up. A plain click does nothing.
@@ -257,7 +258,7 @@ namespace HsbgCardLookup.Ui
             _art.MouseLeftButtonUp += Art_Up;
             stack.Children.Add(_art);
 
-            _goldenLabel = new TextBlock { Text = "☆ Golden", FontSize = 15, Foreground = UiKit.TextSecondary, VerticalAlignment = VerticalAlignment.Center };
+            _goldenLabel = new TextBlock { Text = Strings.T("overlay.golden.off"), FontSize = 15, Foreground = UiKit.TextSecondary, VerticalAlignment = VerticalAlignment.Center };
             _goldenBtn = new Border
             {
                 Margin = new Thickness(0, 10, 0, 0),
@@ -276,7 +277,7 @@ namespace HsbgCardLookup.Ui
 
             _relatedHeader = new TextBlock
             {
-                Text = "RELATED", Foreground = UiKit.AccentBrush, FontSize = 12, FontWeight = FontWeights.SemiBold,
+                Text = Strings.T("overlay.related"), Foreground = UiKit.AccentBrush, FontSize = 12, FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 10, 0, 6), Visibility = Visibility.Collapsed
             };
             stack.Children.Add(_relatedHeader);
@@ -308,7 +309,7 @@ namespace HsbgCardLookup.Ui
 
             var version = new TextBlock
             {
-                Text = "v" + (_version ?? "?"),
+                Text = Strings.F("overlay.version", _version ?? "?"),
                 Foreground = UiKit.TextMuted, FontSize = 11.5,
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -316,11 +317,11 @@ namespace HsbgCardLookup.Ui
             bar.Children.Add(version);
 
             // Right side (docked far-right first, so visual order R→L is gear · ⟳ · help).
-            var gear = GearButton("Settings", () => _openSettings?.Invoke());
+            var gear = GearButton(Strings.T("overlay.settingsTooltip"), () => _openSettings?.Invoke());
             DockPanel.SetDock(gear, Dock.Right);
             bar.Children.Add(gear);
 
-            var refresh = IconButton("⟳", "Check for updates", () => _checkForUpdates?.Invoke());   // ⟳
+            var refresh = IconButton("⟳", Strings.T("overlay.checkUpdatesTooltip"), () => _checkForUpdates?.Invoke());   // ⟳
             DockPanel.SetDock(refresh, Dock.Right);
             bar.Children.Add(refresh);
 
@@ -417,7 +418,7 @@ namespace HsbgCardLookup.Ui
                 Width = 18, Height = 18, CornerRadius = new CornerRadius(9),
                 BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
                 Background = Brushes.Transparent, Cursor = Cursors.Hand,
-                Margin = new Thickness(6, 0, 0, 0), Child = q, ToolTip = "Keybinds & tips"
+                Margin = new Thickness(6, 0, 0, 0), Child = q, ToolTip = Strings.T("overlay.helpTooltip")
             };
             circle.MouseEnter += (s, e) => { q.Foreground = UiKit.AccentBrush; circle.BorderBrush = UiKit.AccentBrush; };
             circle.MouseLeave += (s, e) => { if (_helpPopup == null || !_helpPopup.IsOpen) { q.Foreground = UiKit.TextMuted; circle.BorderBrush = UiKit.StrokeBrush; } };
@@ -450,19 +451,19 @@ namespace HsbgCardLookup.Ui
         {
             var list = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
 
-            list.Children.Add(HelpHeader("KEYBINDS"));
-            list.Children.Add(HelpRow("Open / close overlay", _config.BrowserKey));
-            list.Children.Add(HelpRow("Smart search on / off", "Tab"));
-            list.Children.Add(HelpRow("Open first result", "Enter"));
-            list.Children.Add(HelpRow("Close", "Esc"));
-            list.Children.Add(HelpRow("Toggle golden", _config.GoldenKey));
-            list.Children.Add(HelpRow("Focus search box", _config.FocusKey));
-            list.Children.Add(HelpRow("Open card on hsbg.cards", "click art"));
+            list.Children.Add(HelpHeader(Strings.T("overlay.help.keybinds")));
+            list.Children.Add(HelpRow(Strings.T("overlay.help.openClose"), _config.BrowserKey));
+            list.Children.Add(HelpRow(Strings.T("overlay.help.smartToggle"), "Tab"));
+            list.Children.Add(HelpRow(Strings.T("overlay.help.openFirst"), "Enter"));
+            list.Children.Add(HelpRow(Strings.T("overlay.help.close"), "Esc"));
+            list.Children.Add(HelpRow(Strings.T("overlay.help.toggleGolden"), _config.GoldenKey));
+            list.Children.Add(HelpRow(Strings.T("overlay.help.focusSearch"), _config.FocusKey));
+            list.Children.Add(HelpRow(Strings.T("overlay.help.openOnSite"), Strings.T("overlay.help.clickArt")));
 
-            list.Children.Add(HelpHeader("TIPS"));
-            list.Children.Add(HelpNote("Smart search: try t3 · 5/5 · a tribe or keyword · cost 2"));
-            list.Children.Add(HelpNote("Drag a card out of the art to pin it on screen — drag its top-right corner to resize, right-click to dismiss."));
-            list.Children.Add(HelpNote("Trinkets/anomaly HUD and grid drag-out are toggled in Settings (the gear below)."));
+            list.Children.Add(HelpHeader(Strings.T("overlay.help.tips")));
+            list.Children.Add(HelpNote(Strings.T("overlay.help.tip.smart")));
+            list.Children.Add(HelpNote(Strings.T("overlay.help.tip.drag")));
+            list.Children.Add(HelpNote(Strings.T("overlay.help.tip.settings")));
 
             return new Border
             {
@@ -614,7 +615,7 @@ namespace HsbgCardLookup.Ui
                 Cursor = Cursors.Hand, Background = Brushes.Transparent,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0),
                 Child = box, Visibility = Visibility.Collapsed,
-                ToolTip = "Notifications"
+                ToolTip = Strings.T("overlay.bell.tooltip")
             };
             _bell.MouseEnter += (s, e) => _bellGlyph.Stroke = UiKit.AccentBrush;
             _bell.MouseLeave += (s, e) => { if (_bellPopup == null || !_bellPopup.IsOpen) _bellGlyph.Stroke = UiKit.TextMuted; };
@@ -704,7 +705,7 @@ namespace HsbgCardLookup.Ui
             var list = new StackPanel();
             list.Children.Add(new TextBlock
             {
-                Text = "NOTIFICATIONS",
+                Text = Strings.T("overlay.bell.title"),
                 Foreground = UiKit.AccentBrush, FontSize = 11, FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(14, 11, 14, 6)
             });
@@ -713,7 +714,7 @@ namespace HsbgCardLookup.Ui
             if (shown.Count == 0)
                 list.Children.Add(new TextBlock
                 {
-                    Text = "No new notifications.", Foreground = UiKit.TextMuted, FontSize = 13,
+                    Text = Strings.T("overlay.bell.empty"), Foreground = UiKit.TextMuted, FontSize = 13,
                     Margin = new Thickness(14, 2, 14, 12)
                 });
             else
@@ -753,7 +754,7 @@ namespace HsbgCardLookup.Ui
             }
             titleRow.Children.Add(new TextBlock
             {
-                Text = n.Title ?? "Notification",
+                Text = n.Title ?? Strings.T("overlay.bell.untitled"),
                 Foreground = UiKit.TextPrimary, FontSize = 14.5, FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });
@@ -776,7 +777,7 @@ namespace HsbgCardLookup.Ui
             }
             var open = new TextBlock
             {
-                Text = "Open →", Foreground = UiKit.AccentBrush, FontSize = 11.5, FontWeight = FontWeights.SemiBold
+                Text = Strings.T("overlay.bell.open"), Foreground = UiKit.AccentBrush, FontSize = 11.5, FontWeight = FontWeights.SemiBold
             };
             DockPanel.SetDock(open, Dock.Right);
             meta.Children.Add(open);
@@ -851,7 +852,7 @@ namespace HsbgCardLookup.Ui
             });
             if (!string.IsNullOrEmpty(url))
                 row.Children.Add(NoticeAction(linkLabel ?? url, () => { try { Process.Start(url); } catch { } }));
-            row.Children.Add(NoticeAction("Dismiss", () => { _notice.Visibility = Visibility.Collapsed; }, UiKit.TextSecondary));
+            row.Children.Add(NoticeAction(Strings.T("overlay.notice.dismiss"), () => { _notice.Visibility = Visibility.Collapsed; }, UiKit.TextSecondary));
 
             _notice.Child = row;
             _notice.Background = isError
@@ -895,14 +896,14 @@ namespace HsbgCardLookup.Ui
             };
             row.Children.Add(new TextBlock
             {
-                Text = $"Update v{version} is available.",
+                Text = Strings.F("overlay.update.available", version),
                 Foreground = UiKit.TextPrimary,
                 FontSize = 13.5,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 16, 0)
             });
-            row.Children.Add(NoticeAction("Download page ↗", onOpenDownloadPage));
-            row.Children.Add(NoticeAction("Skip this version", onSkip, UiKit.TextSecondary));
+            row.Children.Add(NoticeAction(Strings.T("overlay.update.downloadPage"), onOpenDownloadPage));
+            row.Children.Add(NoticeAction(Strings.T("overlay.update.skip"), onSkip, UiKit.TextSecondary));
 
             _notice.Child = row;
             _notice.Background = UiKit.Br(UiKit.PanelActive);
@@ -1063,7 +1064,9 @@ namespace HsbgCardLookup.Ui
                 fuzzy = r.IsFuzzy;
             }
 
-            _status.Text = cards.Count + " result" + (cards.Count == 1 ? "" : "s") + (fuzzy ? " (fuzzy)" : "");
+            string status = Strings.F(cards.Count == 1 ? "overlay.results.one" : "overlay.results.many", cards.Count);
+            if (fuzzy) status = Strings.F("overlay.results.fuzzy", status);
+            _status.Text = status;
 
             if (cards.Count > 0)
             {
@@ -1075,7 +1078,7 @@ namespace HsbgCardLookup.Ui
             {
                 _grid.ItemsSource = null;
                 bool noFilters = q.Length == 0 && _type == null && _tier == null && _tribe == null && _spellSchool == null;
-                _hint.Text = noFilters ? "Start typing, or pick filters…" : "No matches. Try a different query or fewer filters.";
+                _hint.Text = Strings.T(noFilters ? "overlay.hint.start" : "overlay.hint.noMatches");
                 _hint.Visibility = Visibility.Visible;
                 _selected = null;
                 ClearDetail();
@@ -1163,7 +1166,7 @@ namespace HsbgCardLookup.Ui
 
             bool canGold = c.CardType == "minion" && c.HasGoldenDiff;
             _goldenBtn.Visibility = canGold ? Visibility.Visible : Visibility.Collapsed;
-            _goldenLabel.Text = (_golden ? "★ Golden" : "☆ Golden") + "  (" + _config.GoldenKey + ")";
+            _goldenLabel.Text = Strings.F("overlay.golden.withKey", Strings.T(_golden ? "overlay.golden.on" : "overlay.golden.off"), _config.GoldenKey);
             _goldenLabel.Foreground = _golden ? UiKit.AccentBrush : UiKit.TextSecondary;
             _goldenBtn.Background = _golden ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
             _goldenBtn.BorderBrush = _golden ? UiKit.AccentBrush : UiKit.StrokeBrush;

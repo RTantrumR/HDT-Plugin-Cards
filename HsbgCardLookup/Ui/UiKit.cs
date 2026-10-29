@@ -12,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Search;
 
 namespace HsbgCardLookup.Ui
@@ -184,7 +185,7 @@ namespace HsbgCardLookup.Ui
         /// won't bubble to a parent (e.g. a dropdown that would otherwise reopen). The caller
         /// controls visibility (typically shown only when there's something to clear).
         /// </summary>
-        public static Border ClearButton(Action onClear, string tooltip = "Clear", double fontSize = 15)
+        public static Border ClearButton(Action onClear, string tooltip = null, double fontSize = 15)
         {
             var glyph = new TextBlock
             {
@@ -195,7 +196,7 @@ namespace HsbgCardLookup.Ui
             {
                 Background = Brushes.Transparent, Cursor = Cursors.Hand,
                 Padding = new Thickness(5, 2, 5, 2), VerticalAlignment = VerticalAlignment.Center,
-                Child = glyph, ToolTip = tooltip
+                Child = glyph, ToolTip = tooltip ?? Strings.T("common.clear")
             };
             b.MouseEnter += (s, e) => glyph.Foreground = TextPrimary;
             b.MouseLeave += (s, e) => glyph.Foreground = TextMuted;
@@ -465,7 +466,7 @@ namespace HsbgCardLookup.Ui
         {
             return new TextBlock
             {
-                Text = hotkey + "  ·  " + label + "   ·   Esc / hotkey to close",
+                Text = Strings.F("common.variantTag", hotkey, label, "Esc"),
                 Foreground = TextMuted, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right
             };
         }

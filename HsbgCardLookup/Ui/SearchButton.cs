@@ -7,6 +7,7 @@ using System.Windows.Shapes;
 using Hearthstone_Deck_Tracker;                     // Core (the canvas is API.Core, qualified inline)
 using Hearthstone_Deck_Tracker.Utility.Extensions;  // OverlayExtensions
 using HsbgCardLookup.Config;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Update;
 
 namespace HsbgCardLookup.Ui
@@ -180,7 +181,7 @@ namespace HsbgCardLookup.Ui
                 BorderBrush = new SolidColorBrush(RimColor),
                 Child = _glyph,
                 Cursor = Cursors.Hand,
-                ToolTip = "Card search"
+                ToolTip = Strings.T("searchButton.tooltip")
             };
             _root.MouseEnter += (s, e) =>
             {
@@ -270,7 +271,7 @@ namespace HsbgCardLookup.Ui
 
             if (!show) { _badge.Visibility = Visibility.Collapsed; return; }
 
-            _badgeText.Text = "Update available";
+            _badgeText.Text = Strings.T("searchButton.updateAvailable");
             _badgeClose.Visibility = Visibility.Visible;   // the ✕ skips this version
 
             _badge.Visibility = Visibility.Visible;

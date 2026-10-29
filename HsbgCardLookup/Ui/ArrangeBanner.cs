@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
 using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Ui
 {
@@ -87,7 +88,7 @@ namespace HsbgCardLookup.Ui
                 _attached = true;
             }
 
-            _title.Text = "Positioning: " + Describe(target);
+            _title.Text = Strings.F("arrange.positioning", Describe(target));
             _root.Visibility = Visibility.Visible;
             Layout();
         }
@@ -96,9 +97,9 @@ namespace HsbgCardLookup.Ui
         {
             switch (t)
             {
-                case ArrangeTarget.Trinkets: return "trinket boxes";
-                case ArrangeTarget.Anomaly: return "anomaly box";
-                case ArrangeTarget.MmrPanel: return "opponents' MMR panel";
+                case ArrangeTarget.Trinkets: return Strings.T("arrange.target.trinkets");
+                case ArrangeTarget.Anomaly: return Strings.T("arrange.target.anomaly");
+                case ArrangeTarget.MmrPanel: return Strings.T("arrange.target.mmrPanel");
                 default: return "";
             }
         }
@@ -114,14 +115,14 @@ namespace HsbgCardLookup.Ui
             };
             _hint = new TextBlock
             {
-                Text = "Drag it to move  ·  drag its top-right corner to resize",
+                Text = Strings.T("arrange.hint"),
                 Foreground = new SolidColorBrush(Color.FromRgb(0xB6, 0xC1, 0xD2)),
                 VerticalAlignment = VerticalAlignment.Center
             };
 
             _doneLabel = new TextBlock
             {
-                Text = "Done", Foreground = UiKit.AccentBrush, FontWeight = FontWeights.SemiBold,
+                Text = Strings.T("arrange.done"), Foreground = UiKit.AccentBrush, FontWeight = FontWeights.SemiBold,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
             };
             _done = new Border

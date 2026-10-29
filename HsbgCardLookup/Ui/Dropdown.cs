@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Ui
 {
@@ -164,7 +165,7 @@ namespace HsbgCardLookup.Ui
             // When a filter is set, offer a one-click clear "✕" just left of the chevron.
             if (active)
             {
-                var clear = UiKit.ClearButton(() => { SetSelected(null); _onChange?.Invoke(null); }, "Clear filter", 13);
+                var clear = UiKit.ClearButton(() => { SetSelected(null); _onChange?.Invoke(null); }, Strings.T("common.clearFilter"), 13);
                 clear.Margin = new Thickness(6, 0, 0, 0);
                 DockPanel.SetDock(clear, Dock.Right);
                 _buttonContent.Children.Add(clear);
