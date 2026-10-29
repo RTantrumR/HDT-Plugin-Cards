@@ -63,7 +63,15 @@ namespace HsbgCardLookup.Game
         private bool _exhausted;              // button pressed this turn (clears next turn)
         private int _uses = -1, _tierMin, _tierMax;
         private int _turn;
-        private readonly List<string> _topTribes = new List<string>();   // most common board type(s)
+        private readonly List<string> _topTribes = new List<string>();   // most common board type(s), English values
+        /// <summary>The card language's word for a tribe value ("Beast" → "Wildtier") for the panel's
+        /// captions; null = the English value. Set by Plugin (reads the live vocabulary); the settings
+        /// preview instance shares it. The values themselves stay English — the rules compare them.</summary>
+        public static Func<string, string> TribeLabel;
+        private static string Label(string tribe)
+        {
+            try { return TribeLabel?.Invoke(tribe) ?? tribe; } catch { return tribe; }
+        }
         private volatile IReadOnlyList<DarkGift> _gifts;   // effective gift list (site data or static fallback), resolved per match; nulled by a language change
         private bool _duos;                       // mode filter for the pool (Duos-only vs Solos-only cards)
         private readonly HashSet<string> _lobbyTribes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // this lobby's tribes (empty until the mirror read succeeds)
@@ -356,8 +364,8 @@ namespace HsbgCardLookup.Game
             {
                 c.PoolTotal = pa.Pool.Count;
                 c.PoolCaption = wmax > wmin
-                    ? Strings.F("gifts.poolCaption.range", tribe, wmin, wmax, c.PoolTotal)
-                    : Strings.F("gifts.poolCaption.single", tribe, wmin, c.PoolTotal);
+                    ? Strings.F("gifts.poolCaption.range", Label(tribe), wmin, wmax, c.PoolTotal)
+                    : Strings.F("gifts.poolCaption.single", Label(tribe), wmin, c.PoolTotal);
                 int show = _config.DarkGiftPoolCount;   // the config property clamps to 0..Max
                 if (show > 0)
                     c.Minions = pa.Pool
@@ -653,7 +661,7 @@ namespace HsbgCardLookup.Game
             var parts = new List<string>();
             if (targetTurn >= 6)
                 parts.Add(_topTribes.Count > 0
-                    ? Strings.F("gifts.header.guaranteedType", string.Join("/", _topTribes))
+                    ? Strings.F("gifts.header.guaranteedType", string.Join("/", _topTribes.Select(Label)))
                     : Strings.T("gifts.header.mostCommonType"));
             else
                 parts.Add(Strings.T("gifts.header.fromTurn6"));

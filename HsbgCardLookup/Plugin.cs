@@ -143,6 +143,7 @@ namespace HsbgCardLookup
             _cardLanguage = new CardLanguage(_store, _config, _ui, Log);
             _cardLanguage.Initialize();
             Ui.DarkGiftPanel.SetKeywordHighlight(_cardLanguage.Vocab.Keyword.Values);
+            Game.DarkGiftWatcher.TribeLabel = t => _cardLanguage.Vocab.TribeLabel(t) ?? t;   // reads the live vocabulary
 
             Ui.CardArt.UseLocalArt = _config.UseLocalDevArt;   // dev-only local-PNG shortcut, off by default
             if (!string.IsNullOrWhiteSpace(_config.ArtCacheDir)) Ui.CardArt.CacheDir = _config.ArtCacheDir;  // user-relocated art cache
