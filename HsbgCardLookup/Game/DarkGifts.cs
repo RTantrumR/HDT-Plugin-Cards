@@ -84,7 +84,7 @@ namespace HsbgCardLookup.Game
                 {
                     outp.Sort((a, b) => a.MinTurn != b.MinTurn
                         ? a.MinTurn.CompareTo(b.MinTurn)
-                        : string.Compare(a.DisplayName, b.DisplayName, System.StringComparison.InvariantCultureIgnoreCase));
+                        : Search.SearchEngine.NameComparer.Compare(a.DisplayName, b.DisplayName));
                     return outp;
                 }
             }

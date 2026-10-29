@@ -3,13 +3,20 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Search;
 using Newtonsoft.Json;
 
 namespace HsbgCardLookup.Data
 {
     /// <summary>Loads the card snapshot (API cache → bundled → dev path) and exposes searchable
-    /// pools, derived filter lists, and id/externalId lookups.</summary>
+    /// pools, derived filter lists, and id/externalId lookups.
+    ///
+    /// The English snapshot is the structural truth; a card language is an overlay of names, text
+    /// and render paths laid over it card by card (BgCard.Local*), from the site's
+    /// /api/cards?locale= payload that <see cref="LocaleSync"/> caches. <see cref="Load"/> re-applies
+    /// the current language, so a data refresh keeps it. Mutations happen on the UI thread; HDT's
+    /// poll threads read card fields as plain references.</summary>
     public sealed class CardStore
     {
         public List<BgCard> All { get; private set; } = new List<BgCard>();
@@ -19,15 +26,11 @@ namespace HsbgCardLookup.Data
         public string LoadInfo { get; private set; } = "(not loaded)";
 
         // ── Card language ──
-        // The English snapshot above is the structural truth; a locale is an overlay of names, text and
-        // render paths laid over it card by card (BgCard.Local*), from the site's /api/cards?locale=
-        // payload cached as cache\cards.<web>.json. Load() re-applies it, so a data refresh keeps the
-        // language.
         private string _localeWeb = Locales.English;
-        /// <summary>The language in use: "en" or a site locale web code.</summary>
+        /// <summary>The language in use: "en" or a card-language web code.</summary>
         public string LocaleWeb => _localeWeb;
-        /// <summary>True while the locale's snapshot is applied (false for English, and for a locale
-        /// whose file is not cached yet — the UI shows English until it arrives).</summary>
+        /// <summary>True while the language's snapshot is laid over the cards (false for English, and
+        /// for a language whose file is not cached yet — the cards read English until it arrives).</summary>
         public bool LocaleApplied { get; private set; }
         /// <summary>Cards that received at least one localized field.</summary>
         public int LocaleCount { get; private set; }
@@ -97,20 +100,30 @@ namespace HsbgCardLookup.Data
                 var file = JsonConvert.DeserializeObject<CardsFile>(json);
                 if (file?.Cards == null) { LoadInfo = "parse returned no cards"; return false; }
 
-                All = file.Cards;
-                Patch = file.Patch ?? "";
-                ById = All.GroupBy(c => c.Id).ToDictionary(g => g.Key, g => g.First());
-                ByExternalId = All.Where(c => !string.IsNullOrEmpty(c.ExternalId))
+                var all = file.Cards;
+                var byId = all.GroupBy(c => c.Id).ToDictionary(g => g.Key, g => g.First());
+                var byExternalId = all.Where(c => !string.IsNullOrEmpty(c.ExternalId))
                     .GroupBy(c => c.ExternalId)
                     .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
                 // Excluded everywhere: alternate versions + developer cards.
-                var searchable = All.Where(c => !c.VersionOf.HasValue && c.CardType != "developer").ToList();
-                Current = searchable.Where(c => c.Pool).ToList();
-                Legacy = searchable.Where(c => !c.Pool).ToList();
+                var searchable = all.Where(c => !c.VersionOf.HasValue && c.CardType != "developer").ToList();
+                var current = searchable.Where(c => c.Pool).ToList();
+                var legacy = searchable.Where(c => !c.Pool).ToList();
+
+                // Lay the card language over the fresh objects BEFORE publishing them: no reader ever
+                // sees a half-switched store, and no folded search form is cached off English.
+                var overlay = ApplyLocale(all, byId);
+
+                All = all;
+                Patch = file.Patch ?? "";
+                ById = byId;
+                ByExternalId = byExternalId;
+                Current = current;
+                Legacy = legacy;
+                LocaleApplied = overlay.applied; LocaleCount = overlay.count; LocalePatch = overlay.patch;
 
                 BuildFilterLists();
-                ApplyLocale();   // a fresh snapshot is English; lay the language back over it
 
                 LoadInfo = $"{All.Count} cards (patch {Patch}); current={Current.Count}, legacy={Legacy.Count}; "
                     + $"types={Types.Count}, tribes={Tribes.Count}, tiers=[{string.Join(",", Tiers)}]; from {path}";
@@ -127,64 +140,73 @@ namespace HsbgCardLookup.Data
         public BgCard Lookup(string externalId) =>
             !string.IsNullOrEmpty(externalId) && ByExternalId.TryGetValue(externalId, out var c) ? c : null;
 
-        /// <summary>The cached locale snapshot: the English payload with the client's names, text and
-        /// render paths swapped in (the site's /api/cards?locale=&lt;web&gt;).</summary>
-        public static string LocaleCachePath(string web) =>
-            Path.Combine(Config.PluginConfig.DataDir, "cache", "cards." + web + ".json");
-
-        public const string LocaleRenderPrefix = "/cards/production/locales/";
-        /// <summary>Is this image path a locale render (as opposed to the English thumb)?</summary>
-        public static bool IsLocaleRender(string image) =>
-            !string.IsNullOrEmpty(image) && image.StartsWith(LocaleRenderPrefix, StringComparison.Ordinal);
-
-        /// <summary>Switch the card language. English clears the overlay; another locale applies its
-        /// cached snapshot when there is one. Returns false when that file is not cached yet — the
-        /// caller downloads it and calls again; until then the cards read English.</summary>
+        /// <summary>Switch the card language. English clears the overlay; another language applies
+        /// its cached snapshot when there is one. Returns false when that file is not cached yet — the
+        /// cards read English until <see cref="CardLanguage.EnsureDataAsync"/> fetches it. UI thread.</summary>
         public bool SetLocale(string web)
         {
             _localeWeb = string.IsNullOrEmpty(web) ? Locales.English : web;
-            return ApplyLocale();
+            var overlay = ApplyLocale(All, ById);
+            LocaleApplied = overlay.applied; LocaleCount = overlay.count; LocalePatch = overlay.patch;
+            return _localeWeb == Locales.English || overlay.applied;
         }
 
-        private bool ApplyLocale()
+        // Lay the current language's cached snapshot over a set of cards, by id, in one pass per card.
+        private (bool applied, int count, string patch) ApplyLocale(List<BgCard> all, Dictionary<int, BgCard> byId)
         {
-            foreach (var c in All) c.ClearLocale();
-            LocaleApplied = false; LocaleCount = 0; LocalePatch = "";
-            if (_localeWeb == Locales.English) return true;
+            if (_localeWeb == Locales.English)
+            {
+                foreach (var c in all) c.ClearLocale();
+                return (false, 0, "");
+            }
 
-            bool ok = false;
+            Dictionary<int, BgCard> localized = null; string patch = "";
             try
             {
-                string path = LocaleCachePath(_localeWeb);
+                string path = LocaleSync.SnapshotPath(_localeWeb);
                 if (File.Exists(path))
                 {
                     var file = JsonConvert.DeserializeObject<CardsFile>(File.ReadAllText(path));
                     if (file?.Cards != null && file.Cards.Count > 0)
                     {
-                        int n = 0;
-                        foreach (var loc in file.Cards)
-                            if (loc != null && ById.TryGetValue(loc.Id, out var c) && Overlay(c, loc)) n++;
-                        LocaleApplied = true; LocaleCount = n; LocalePatch = file.Patch ?? "";
-                        ok = true;
+                        localized = file.Cards.Where(c => c != null).GroupBy(c => c.Id).ToDictionary(g => g.Key, g => g.First());
+                        patch = file.Patch ?? "";
                     }
                 }
             }
-            catch { }
-            return ok;
+            catch { localized = null; }
+
+            if (localized == null)
+            {
+                foreach (var c in all) c.ClearLocale();
+                return (false, 0, "");
+            }
+
+            int n = 0;
+            foreach (var c in all)
+            {
+                BgCard loc;
+                if (localized.TryGetValue(c.Id, out loc) && Overlay(c, loc)) n++;
+                else c.ClearLocale();
+            }
+            return (true, n, patch);
         }
 
         // Only what differs from English is laid over: the site keeps English for cards Blizzard did
         // not localize, and an equal value would only cost the search its "English form" shortcut.
+        // One assignment per field, then the folded forms are dropped — a poll thread reading
+        // meanwhile sees a whole old or a whole new value.
         private static bool Overlay(BgCard c, BgCard loc)
         {
-            bool any = false;
-            if (Differs(loc.Name, c.Name)) { c.LocalName = loc.Name; any = true; }
-            if (Differs(loc.Text, c.Text)) { c.LocalText = loc.Text; any = true; }
-            if (Differs(loc.TextGold, c.TextGold)) { c.LocalTextGold = loc.TextGold; any = true; }
-            if (IsLocaleRender(loc.Image)) { c.LocalImage = loc.Image; any = true; }
-            if (IsLocaleRender(loc.ImageGold)) { c.LocalImageGold = loc.ImageGold; any = true; }
-            if (any) c.InvalidateSearchIndex();
-            return any;
+            string name = Differs(loc.Name, c.Name) ? loc.Name : null;
+            string text = Differs(loc.Text, c.Text) ? loc.Text : null;
+            string textGold = Differs(loc.TextGold, c.TextGold) ? loc.TextGold : null;
+            string image = Locales.IsLocaleRender(loc.Image) ? loc.Image : null;
+            string imageGold = Locales.IsLocaleRender(loc.ImageGold) ? loc.ImageGold : null;
+            c.LocalName = name; c.LocalText = text; c.LocalTextGold = textGold;
+            c.LocalImage = image; c.LocalImageGold = imageGold;
+            c.InvalidateSearchIndex();
+            return name != null || text != null || textGold != null || image != null || imageGold != null;
         }
 
         private static bool Differs(string loc, string en) =>
@@ -228,6 +250,19 @@ namespace HsbgCardLookup.Data
         public static string CachePath =>
             Path.Combine(Config.PluginConfig.DataDir, "cache", "cards.json");
 
+        /// <summary>A file shipped next to the DLL under data\ (cards.json, locale-terms.json,
+        /// ui\en.json, the tier and tribe icons), or null when it is not there.</summary>
+        public static string BundledDataPath(string relative)
+        {
+            try
+            {
+                var asmDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                var path = Path.Combine(asmDir, "data", relative);
+                return File.Exists(path) ? path : null;
+            }
+            catch { return null; }
+        }
+
         private static string FindCardsJson()
         {
             // 1. API-refreshed snapshot (newest patch we've fetched). Takes precedence so a new
@@ -235,9 +270,8 @@ namespace HsbgCardLookup.Data
             if (File.Exists(CachePath)) return CachePath;
 
             // 2. Bundled next to the DLL (production layout) — the offline floor.
-            var asmDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            var bundled = Path.Combine(asmDir, "data", "cards.json");
-            if (File.Exists(bundled)) return bundled;
+            var bundled = BundledDataPath("cards.json");
+            if (bundled != null) return bundled;
 
             // 3. Dev fallback: the web-app source of truth.
             var dev = @"E:\RiderProjects\Testing\ConsoleApp1\data\production\cards.json";
@@ -296,13 +330,8 @@ namespace HsbgCardLookup.Data
 
         private static string FindBundledAsset(string subfolder, string file)
         {
-            try
-            {
-                var asmDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-                var bundled = Path.Combine(asmDir, "data", subfolder, file);
-                if (File.Exists(bundled)) return bundled;
-            }
-            catch { /* fall through to dev path */ }
+            var bundled = BundledDataPath(Path.Combine(subfolder, file));
+            if (bundled != null) return bundled;
             var dev = Path.Combine(WebAppPublicDir, subfolder, file);
             return File.Exists(dev) ? dev : null;
         }

@@ -98,7 +98,7 @@ namespace HsbgCardLookup.Search
         /// on the entry with the same canonical value and facet type, as on the site; a keyword the
         /// table only knows as a text keyword ("End of Turn") lands there. Words are folded like the
         /// query is, so "Dämon" and "damon" both resolve.</summary>
-        public static void SetLocale(Data.LocaleVocab vocab)
+        public static void SetLocale(Localization.LocaleVocab vocab)
         {
             if (vocab == null || vocab.IsEnglish)
             {

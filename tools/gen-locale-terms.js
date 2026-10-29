@@ -80,6 +80,7 @@ for (const web of WEBS) {
 }
 
 const out = {
+  format: 1,
   patch: terms.patch,
   generated: new Date().toISOString().slice(0, 10),
   source: "hsbg.cards data/production/terms.json + lib/i18n/catalogs (tools/gen-locale-terms.js)",

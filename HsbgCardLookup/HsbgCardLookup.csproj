@@ -112,9 +112,16 @@
     <Compile Include="Ui\RecapPanel.cs" />
     <Compile Include="Ui\RecapSessionRowHook.cs" />
     <Compile Include="Data\CardStore.cs" />
-    <Compile Include="Data\Locales.cs" />
-    <Compile Include="Data\GameLocale.cs" />
-    <Compile Include="Data\LocaleTerms.cs" />
+    <Compile Include="Localization\Locales.cs" />
+    <Compile Include="Localization\HdtProbe.cs" />
+    <Compile Include="Localization\ClientLanguage.cs" />
+    <Compile Include="Localization\HdtLanguage.cs" />
+    <Compile Include="Localization\LocaleVocab.cs" />
+    <Compile Include="Localization\LocaleTerms.cs" />
+    <Compile Include="Localization\LocaleSync.cs" />
+    <Compile Include="Localization\CardLanguage.cs" />
+    <Compile Include="Localization\UiLanguage.cs" />
+    <Compile Include="Localization\Strings.cs" />
     <Compile Include="Data\TribeTally.cs" />
     <Compile Include="Game\LeaderboardRaceScry.cs" />
     <Compile Include="Ui\TribeIcons.cs" />
@@ -170,6 +177,10 @@
     </None>
     <!-- Per-language search words + filter labels (tools\gen-locale-terms.js, from the site's terms table). -->
     <None Include="data\locale-terms.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- The plugin's own UI strings per language (en.json is the key source; tools\check-ui-strings.js). -->
+    <None Include="data\ui\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <!-- Bundled tier/tribe icons (small, shipped so distributed users have them offline). -->

@@ -26,27 +26,34 @@ namespace HsbgCardLookup.Search
         private static readonly Regex Whitespace = new Regex(@"\s+", RegexOptions.Compiled);
         private static readonly Regex WordSplit = new Regex(@"[\s\-,']+", RegexOptions.Compiled);
 
+        /// <summary>How card names sort: ordinal for English (today's order — a culture compare would
+        /// reorder the 252 English names with apostrophes or hyphens), culture-aware for a card
+        /// language so "Ä" does not sort after "Z". Set by CardLanguage on the UI thread.</summary>
+        public static StringComparer NameComparer = StringComparer.OrdinalIgnoreCase;
+
         /// <summary>Lower-case with Latin diacritics stripped (the site's fold(): "Käfer" → "kafer"),
-        /// so an accent typed or omitted makes no difference. Only Latin letters are decomposed —
-        /// Hangul, kana and Thai keep their code points, so their lengths and the Levenshtein
-        /// thresholds built on them stay what the player typed. Idempotent.</summary>
+        /// so an accent typed or omitted makes no difference. Each accented LATIN letter is
+        /// decomposed on its own; everything else — Cyrillic (the Ukrainian aliases), Hangul, kana,
+        /// Thai — keeps its code points, so lengths and the Levenshtein thresholds built on them stay
+        /// what the player typed. For ASCII this is ToLowerInvariant. Idempotent.</summary>
         public static string Fold(string s)
         {
             if (string.IsNullOrEmpty(s)) return "";
             string lower = s.ToLowerInvariant();
-            bool latinAccents = false;
-            foreach (char ch in lower)
-                if ((ch >= 'À' && ch <= 'ɏ') || (ch >= 'Ḁ' && ch <= 'ỿ')) { latinAccents = true; break; }
-            if (!latinAccents) return lower;
-            try
+            StringBuilder sb = null;
+            for (int i = 0; i < lower.Length; i++)
             {
-                string d = lower.Normalize(NormalizationForm.FormD);
-                var sb = new StringBuilder(d.Length);
-                foreach (char ch in d)
-                    if (ch < '̀' || ch > 'ͯ') sb.Append(ch);
-                return sb.ToString();
+                char ch = lower[i];
+                bool latinAccent = (ch >= 'À' && ch <= 'ɏ') || (ch >= 'Ḁ' && ch <= 'ỿ');
+                if (!latinAccent) { sb?.Append(ch); continue; }
+                if (sb == null) { sb = new StringBuilder(lower.Length); sb.Append(lower, 0, i); }
+                string d;
+                try { d = ch.ToString().Normalize(NormalizationForm.FormD); }
+                catch { d = ch.ToString(); }
+                foreach (char c in d)
+                    if (c < '̀' || c > 'ͯ') sb.Append(c);
             }
-            catch { return lower; }
+            return sb == null ? lower : sb.ToString();
         }
 
         /// <summary>Fold + drop whitespace (the site's normalize()).</summary>
@@ -160,7 +167,7 @@ namespace HsbgCardLookup.Search
         private static List<BgCard> SortTierThenName(IEnumerable<BgCard> cards, bool demoteSecondary) =>
             cards.OrderBy(c => SecondaryKey(c, demoteSecondary))
                  .ThenBy(c => c.Tier ?? 99)
-                 .ThenBy(c => c.DisplayName, StringComparer.InvariantCultureIgnoreCase)
+                 .ThenBy(c => c.DisplayName, NameComparer)
                  .ToList();
 
         // Sort key: 0 = primary card (top). Demoted cards get 1+rank so they sit below all primaries
