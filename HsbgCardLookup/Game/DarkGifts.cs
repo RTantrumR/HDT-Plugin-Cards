@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Game
 {
@@ -17,7 +16,7 @@ namespace HsbgCardLookup.Game
         public string Text;      // effect (EN, from the dev post; site data may replace this later)
         public string DisplayName;  // what the panel shows: the card language's name when the site has one, else Name
         public string DisplayText;  // likewise for the effect text
-        public string Note;      // short offering-condition note, or null
+        public string Note;      // short offering-condition note as a Strings catalog key ("gifts.note.…"), or null
         public string TribeOnly; // offerable only on this tribe (e.g. "Quilboar"), or null
         public bool TypedOnly;   // offerable only on minions WITH a type
         // Positive per-minion requirement the host must satisfy (drives the guaranteed-tribe pool
@@ -118,49 +117,49 @@ namespace HsbgCardLookup.Game
 
         public static readonly IReadOnlyList<DarkGift> All = new[]
         {
-            new DarkGift("Sunken Persistence", 3, null, "This minion's Spellcrafts are permanent.", Strings.T("gifts.note.spellcraftOnly"), requires: "Spellcraft"),
-            new DarkGift("Harpy's Talons",     3, null, "Divine Shield, Windfury", Strings.T("gifts.note.moreOftenOnRally")),
-            new DarkGift("Jaws of Death",      3, null, "Start of Combat: Trigger this minion's Deathrattles.", Strings.T("gifts.note.deathrattleOnly"), requires: "Deathrattle"),
+            new DarkGift("Sunken Persistence", 3, null, "This minion's Spellcrafts are permanent.", "gifts.note.spellcraftOnly", requires: "Spellcraft"),
+            new DarkGift("Harpy's Talons",     3, null, "Divine Shield, Windfury", "gifts.note.moreOftenOnRally"),
+            new DarkGift("Jaws of Death",      3, null, "Start of Combat: Trigger this minion's Deathrattles.", "gifts.note.deathrattleOnly", requires: "Deathrattle"),
             new DarkGift("Fortitude",          3, 3,    "+4/+4."),
-            new DarkGift("Affinity",           3, 4,    "At the end of every 2 turns, get a random minion of this type.", Strings.T("gifts.note.typedOnly"), typedOnly: true),
-            new DarkGift("Sharpened Sword",    3, 5,    "Whenever you play a card, gain +2 Attack.", Strings.T("gifts.note.notOnAvenge")),
-            new DarkGift("Toughened Shield",   3, 5,    "Whenever you play a card, gain +2 Health.", Strings.T("gifts.note.neverWithQuilboarOrNaga"), notWithTribes: new[] { "Quilboar", "Naga" }),
+            new DarkGift("Affinity",           3, 4,    "At the end of every 2 turns, get a random minion of this type.", "gifts.note.typedOnly", typedOnly: true),
+            new DarkGift("Sharpened Sword",    3, 5,    "Whenever you play a card, gain +2 Attack.", "gifts.note.notOnAvenge"),
+            new DarkGift("Toughened Shield",   3, 5,    "Whenever you play a card, gain +2 Health.", "gifts.note.neverWithQuilboarOrNaga", notWithTribes: new[] { "Quilboar", "Naga" }),
             new DarkGift("Steady Growth",      3, 6,    "At the end of your turn, gain +1/+2 / +2/+2 / +3/+3 / +4/+4 (by offer turn)."),
-            new DarkGift("Time Turning",       3, 9,    "This minion's end of turn effects also trigger at start of turn.", Strings.T("gifts.note.endOfTurnOnly"), requires: "EndOfTurn"),
-            new DarkGift("Furtiveness",        4, null, "Stealth", Strings.T("gifts.note.avengeOnly"), requires: "Avenge"),
-            new DarkGift("Consanguinity",      4, 5,    "Rally: Get 2 Blood Gems.", Strings.T("gifts.note.quilboarOnly"), tribeOnly: "Quilboar"),
+            new DarkGift("Time Turning",       3, 9,    "This minion's end of turn effects also trigger at start of turn.", "gifts.note.endOfTurnOnly", requires: "EndOfTurn"),
+            new DarkGift("Furtiveness",        4, null, "Stealth", "gifts.note.avengeOnly", requires: "Avenge"),
+            new DarkGift("Consanguinity",      4, 5,    "Rally: Get 2 Blood Gems.", "gifts.note.quilboarOnly", tribeOnly: "Quilboar"),
             new DarkGift("Fresh Perspective",  4, 5,    "Deathrattle: Gain 2 free Refreshes."),
             new DarkGift("Replication",        4, 6,    "At the end of every 2 turns, get a plain copy of this."),
-            new DarkGift("Battle Scars",       4, 6,    "Has +2/+2 for each Battlecry you've triggered this game.", Strings.T("gifts.note.needsTriggeredBattlecry")),
-            new DarkGift("Death's Embrace",    4, 6,    "Has +1/+1 for each Deathrattle you've triggered this game.", Strings.T("gifts.note.needsTriggeredDeathrattle")),
-            new DarkGift("Spell Siphon",       4, 6,    "Has +2/+2 for each Tavern spell you've cast this game.", Strings.T("gifts.note.needsCastTavernSpell")),
-            new DarkGift("Gilding",            4, 8,    "This is Golden, but doesn't give a Triple Reward.", Strings.T("gifts.note.lowestTierNotActivateRare")),
+            new DarkGift("Battle Scars",       4, 6,    "Has +2/+2 for each Battlecry you've triggered this game.", "gifts.note.needsTriggeredBattlecry"),
+            new DarkGift("Death's Embrace",    4, 6,    "Has +1/+1 for each Deathrattle you've triggered this game.", "gifts.note.needsTriggeredDeathrattle"),
+            new DarkGift("Spell Siphon",       4, 6,    "Has +2/+2 for each Tavern spell you've cast this game.", "gifts.note.needsCastTavernSpell"),
+            new DarkGift("Gilding",            4, 8,    "This is Golden, but doesn't give a Triple Reward.", "gifts.note.lowestTierNotActivateRare"),
             new DarkGift("Double Vision",      5, null, "Get an extra copy of this."),
-            new DarkGift("Toreth's Blessing",  5, null, "This minion's Divine Shield takes 2 more hits to break.", Strings.T("gifts.note.divineShieldOnly"), requires: "DivineShield"),
-            new DarkGift("Amalgamation",       5, null, "Has all minion types.", Strings.T("gifts.note.typelessOnly")),
-            new DarkGift("Demonology",         5, 8,    "Rally: Add a Fodder to your next 3 Refreshes.", Strings.T("gifts.note.demonsOnly"), tribeOnly: "Demon"),
-            new DarkGift("Polarization",       5, 8,    "At the end of your turn, Magnetize a random Mech to this.", Strings.T("gifts.note.mechsOnlyTier3"), tribeOnly: "Mech"),
+            new DarkGift("Toreth's Blessing",  5, null, "This minion's Divine Shield takes 2 more hits to break.", "gifts.note.divineShieldOnly", requires: "DivineShield"),
+            new DarkGift("Amalgamation",       5, null, "Has all minion types.", "gifts.note.typelessOnly"),
+            new DarkGift("Demonology",         5, 8,    "Rally: Add a Fodder to your next 3 Refreshes.", "gifts.note.demonsOnly", tribeOnly: "Demon"),
+            new DarkGift("Polarization",       5, 8,    "At the end of your turn, Magnetize a random Mech to this.", "gifts.note.mechsOnlyTier3", tribeOnly: "Mech"),
             new DarkGift("Mystic Essence",     5, 8,    "Deathrattle: Get a random Tavern spell."),
-            new DarkGift("Tarecgosa's Blessing", 6, null, "Permanently keeps stats and Bonus Keywords gained in combat.", Strings.T("gifts.note.dragonsOnly"), tribeOnly: "Dragon"),
-            new DarkGift("Dexterity",          6, 7,    "Whenever you play a card, this gains +2/+2.", Strings.T("gifts.note.typedOnly"), typedOnly: true),
-            new DarkGift("Incubation",         6, 8,    "+2/+2. In two turns, double this minion's stats.", Strings.T("gifts.note.typedOnly"), typedOnly: true),
-            new DarkGift("Echoing Voice",      6, null, "At the end of your turn, trigger this minion's Battlecries.", Strings.T("gifts.note.battlecryOnly"), requires: "Battlecry"),
-            new DarkGift("Offensive Sacrifice", 6, 9,   "Deathrattle: Give this minion's Attack to another friendly minion.", Strings.T("gifts.note.typedOnly"), typedOnly: true),
-            new DarkGift("Defensive Sacrifice", 6, 9,   "Deathrattle: Give this minion's max Health to another friendly minion.", Strings.T("gifts.note.typedOnly"), typedOnly: true),
-            new DarkGift("Transcendence",      7, null, "Start of Combat: Triple this minion's stats.", Strings.T("gifts.note.typelessOnly")),
-            new DarkGift("Battle Scars",       7, null, "Has +3/+3 for each Battlecry you've triggered this game.", Strings.T("gifts.note.needsTriggeredBattlecry")),
-            new DarkGift("Death's Embrace",    7, null, "Has +2/+2 for each Deathrattle you've triggered this game.", Strings.T("gifts.note.needsTriggeredDeathrattle")),
-            new DarkGift("Spell Siphon",       7, null, "Has +3/+3 for each Tavern spell you've cast this game.", Strings.T("gifts.note.needsCastTavernSpell")),
+            new DarkGift("Tarecgosa's Blessing", 6, null, "Permanently keeps stats and Bonus Keywords gained in combat.", "gifts.note.dragonsOnly", tribeOnly: "Dragon"),
+            new DarkGift("Dexterity",          6, 7,    "Whenever you play a card, this gains +2/+2.", "gifts.note.typedOnly", typedOnly: true),
+            new DarkGift("Incubation",         6, 8,    "+2/+2. In two turns, double this minion's stats.", "gifts.note.typedOnly", typedOnly: true),
+            new DarkGift("Echoing Voice",      6, null, "At the end of your turn, trigger this minion's Battlecries.", "gifts.note.battlecryOnly", requires: "Battlecry"),
+            new DarkGift("Offensive Sacrifice", 6, 9,   "Deathrattle: Give this minion's Attack to another friendly minion.", "gifts.note.typedOnly", typedOnly: true),
+            new DarkGift("Defensive Sacrifice", 6, 9,   "Deathrattle: Give this minion's max Health to another friendly minion.", "gifts.note.typedOnly", typedOnly: true),
+            new DarkGift("Transcendence",      7, null, "Start of Combat: Triple this minion's stats.", "gifts.note.typelessOnly"),
+            new DarkGift("Battle Scars",       7, null, "Has +3/+3 for each Battlecry you've triggered this game.", "gifts.note.needsTriggeredBattlecry"),
+            new DarkGift("Death's Embrace",    7, null, "Has +2/+2 for each Deathrattle you've triggered this game.", "gifts.note.needsTriggeredDeathrattle"),
+            new DarkGift("Spell Siphon",       7, null, "Has +3/+3 for each Tavern spell you've cast this game.", "gifts.note.needsCastTavernSpell"),
             new DarkGift("Admiration",         7, null, "Start of Combat: Gain the stats of the minion to the left."),
-            new DarkGift("Toxicity",           7, null, "Venomous", Strings.T("gifts.note.murlocsOnlyNotVenomous"), tribeOnly: "Murloc"),
-            new DarkGift("Charisma",           7, null, "Rally: Get a random minion of your most common type.", Strings.T("gifts.note.notOnTauntAvenge")),
-            new DarkGift("Resistance",         7, 10,   "Start of Combat: Double this minion's Health.", Strings.T("gifts.note.notOnBeastsUndeadTypeless")),
-            new DarkGift("Hostility",          7, 10,   "Start of Combat: Double this minion's Attack.", Strings.T("gifts.note.notOnAvengeTypeless")),
-            new DarkGift("Dexterity",          8, 9,    "Whenever you play a card, gain +4/+4.", Strings.T("gifts.note.typedOnly"), typedOnly: true),
-            new DarkGift("Golemancy",          9, 10,   "Deathrattle: Summon a Golem with this minion's stats.", Strings.T("gifts.note.notOnTypeless")),
-            new DarkGift("Persisting Horror",  10, null, "Reborn. Is Reborn with full stats and Bonus Keywords.", Strings.T("gifts.note.notOnTypelessRare")),
-            new DarkGift("Titanic Strength",   11, null, "+1000 Attack.", Strings.T("gifts.note.notOnDragonsRare")),
-            new DarkGift("Invulnerability",    12, null, "Immune while attacking.", Strings.T("gifts.note.notOnTauntTypelessRare")),
+            new DarkGift("Toxicity",           7, null, "Venomous", "gifts.note.murlocsOnlyNotVenomous", tribeOnly: "Murloc"),
+            new DarkGift("Charisma",           7, null, "Rally: Get a random minion of your most common type.", "gifts.note.notOnTauntAvenge"),
+            new DarkGift("Resistance",         7, 10,   "Start of Combat: Double this minion's Health.", "gifts.note.notOnBeastsUndeadTypeless"),
+            new DarkGift("Hostility",          7, 10,   "Start of Combat: Double this minion's Attack.", "gifts.note.notOnAvengeTypeless"),
+            new DarkGift("Dexterity",          8, 9,    "Whenever you play a card, gain +4/+4.", "gifts.note.typedOnly", typedOnly: true),
+            new DarkGift("Golemancy",          9, 10,   "Deathrattle: Summon a Golem with this minion's stats.", "gifts.note.notOnTypeless"),
+            new DarkGift("Persisting Horror",  10, null, "Reborn. Is Reborn with full stats and Bonus Keywords.", "gifts.note.notOnTypelessRare"),
+            new DarkGift("Titanic Strength",   11, null, "+1000 Attack.", "gifts.note.notOnDragonsRare"),
+            new DarkGift("Invulnerability",    12, null, "Immune while attacking.", "gifts.note.notOnTauntTypelessRare"),
         };
     }
 }

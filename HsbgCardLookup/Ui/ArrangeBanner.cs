@@ -106,6 +106,14 @@ namespace HsbgCardLookup.Ui
 
         private void OnCanvasSizeChanged(object s, SizeChangedEventArgs e) => Layout();
 
+        /// <summary>Re-set the set-once texts in the current plugin language (the title is re-set on
+        /// every Show).</summary>
+        public void Relabel()
+        {
+            if (_hint != null) _hint.Text = Strings.T("arrange.hint");
+            if (_doneLabel != null) _doneLabel.Text = Strings.T("arrange.done");
+        }
+
         private void Build()
         {
             _title = new TextBlock

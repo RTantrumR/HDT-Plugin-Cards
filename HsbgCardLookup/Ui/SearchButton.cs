@@ -263,6 +263,17 @@ namespace HsbgCardLookup.Ui
         private bool HasNoteworthyUpdate() =>
             _updateNotice != null && _updateNotice.AvailableForDownload;
 
+        /// <summary>Re-set the set-once tooltip (and the badge text) in the current plugin language.</summary>
+        public void Relabel()
+        {
+            try
+            {
+                if (_root != null) _root.ToolTip = Strings.T("searchButton.tooltip");
+                RefreshBadge();
+            }
+            catch { }
+        }
+
         private void RefreshBadge()
         {
             bool show = _attached && _root != null && _root.Visibility == Visibility.Visible && HasNoteworthyUpdate();

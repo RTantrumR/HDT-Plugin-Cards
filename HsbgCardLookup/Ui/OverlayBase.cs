@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Ui
 {
@@ -14,6 +15,8 @@ namespace HsbgCardLookup.Ui
     /// </summary>
     public abstract class OverlayBase : Window
     {
+        private Border _closeButton;   // the corner ✕ (SetRoot); relabelled on a language change
+
         protected OverlayBase(double width, double height)
         {
             WindowStyle = WindowStyle.None;
@@ -108,6 +111,12 @@ namespace HsbgCardLookup.Ui
         public void BeginPopup() => _popupGuard++;
         public void EndPopup() { if (_popupGuard > 0) _popupGuard--; }
 
+        /// <summary>Re-set the corner ✕'s tooltip in the current plugin language.</summary>
+        protected void RelabelClose()
+        {
+            if (_closeButton != null) _closeButton.ToolTip = Strings.T("common.closeEsc");
+        }
+
         protected void SetRoot(UIElement content)
         {
             var grid = new Grid();
@@ -132,7 +141,8 @@ namespace HsbgCardLookup.Ui
 
             // Corner close "✕" inside the strip's band, overlaid after it so the corner clicks
             // (the rest of the strip still drags) — the overlay is mouse-navigable end to end.
-            grid.Children.Add(UiKit.CornerCloseButton(HideIfOpen, "Close (Esc)"));
+            _closeButton = UiKit.CornerCloseButton(HideIfOpen, Strings.T("common.closeEsc"));
+            grid.Children.Add(_closeButton);
 
             Content = grid;
         }

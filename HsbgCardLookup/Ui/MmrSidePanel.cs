@@ -70,6 +70,7 @@ namespace HsbgCardLookup.Ui
         private readonly Border _handle;
         private readonly Rectangle _editOutline;
         private readonly Border _editLabel;
+        private TextBlock _editLabelText;   // the chip's text — set once, relabelled on a language change
         private readonly DispatcherTimer _handleHide;
 
         private readonly Canvas _host;      // null = HDT's overlay canvas
@@ -229,7 +230,7 @@ namespace HsbgCardLookup.Ui
                 Fill = Brushes.Transparent, RadiusX = 6, RadiusY = 6,
                 IsHitTestVisible = false, Visibility = Visibility.Collapsed
             };
-            var editLabelText = new TextBlock
+            _editLabelText = new TextBlock
             {
                 Text = Strings.T("mmr.editLabel"),
                 Foreground = new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E)),
@@ -242,7 +243,7 @@ namespace HsbgCardLookup.Ui
                 HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(4, 4, 0, 0),
                 IsHitTestVisible = false, Visibility = Visibility.Collapsed,
-                Child = editLabelText
+                Child = _editLabelText
             };
 
             var grid = new Grid();
@@ -467,6 +468,12 @@ namespace HsbgCardLookup.Ui
 
         /// <summary>Arrange mode: show the panel with sample standings + edit chrome, so it can be
         /// placed out of a match. Exiting hides it (the next poll restores live data if any).</summary>
+        /// <summary>Re-set the set-once chip text in the current plugin language.</summary>
+        public void Relabel()
+        {
+            if (_editLabelText != null) _editLabelText.Text = Strings.T("mmr.editLabel");
+        }
+
         public void SetEditMode(bool on)
         {
             _editing = on;

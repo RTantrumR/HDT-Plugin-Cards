@@ -13,14 +13,31 @@ namespace HsbgCardLookup.Update
     /// "couldn't check"), or an error with a manual-install link.</summary>
     internal sealed class UpdateNotice
     {
-        public string Message;
+        // A notice can sit in the banner for hours: kept as a catalog key + arguments and rendered
+        // on read, it follows a plugin-language switch (Plugin re-pushes it). Plain text still works
+        // for a caller that has only text.
+        private string _message, _linkLabel;
+        public string MessageKey;
+        public object[] MessageArgs;
+        public string LinkLabelKey;
+        public string Message
+        {
+            get { return MessageKey != null ? Strings.F(MessageKey, MessageArgs ?? new object[0]) : _message; }
+            set { _message = value; MessageKey = null; }
+        }
+        public string LinkLabel            // custom text for Url's link, instead of the raw URL
+        {
+            get { return LinkLabelKey != null ? Strings.T(LinkLabelKey) : _linkLabel; }
+            set { _linkLabel = value; LinkLabelKey = null; }
+        }
         public bool IsError;
         public string Url;                 // release page — where the download and the notes live
-        public string LinkLabel;           // custom text for Url's link, instead of the raw URL
         public bool AvailableForDownload;  // true => a newer version was found
         public string AvailableVersion;    // set when AvailableForDownload
         public UpdateNotice(string message, bool isError = false, string url = null)
-        { Message = message; IsError = isError; Url = url; }
+        { _message = message; IsError = isError; Url = url; }
+        public UpdateNotice(string messageKey, object[] messageArgs, bool isError, string url)
+        { MessageKey = messageKey; MessageArgs = messageArgs; IsError = isError; Url = url; }
     }
 
     /// <summary>
@@ -65,8 +82,8 @@ namespace HsbgCardLookup.Update
                     config.Save();
                     var pv = ParseVersion(prev);
                     if (pv != null && pv < current)
-                        return new UpdateNotice(Strings.F("updates.updatedTo", current), false, ReleasesUrl)
-                            { LinkLabel = Strings.T("updates.viewReleaseNotes") };
+                        return new UpdateNotice("updates.updatedTo", new object[] { current }, false, ReleasesUrl)
+                            { LinkLabelKey = "updates.viewReleaseNotes" };
                 }
 
                 // 2. Throttle (background only), then check the latest release.
@@ -80,14 +97,14 @@ namespace HsbgCardLookup.Update
                 config.Save();
                 if (rel == null)
                     return manual
-                        ? new UpdateNotice(Strings.T("updates.couldNotCheck"), true, ReleasesUrl)
+                        ? new UpdateNotice("updates.couldNotCheck", new object[0], true, ReleasesUrl)
                         : null;
 
                 var v = ParseVersion(rel.TagName);
                 if (v == null)
-                    return manual ? new UpdateNotice(Strings.T("updates.couldNotReadRelease"), true, ReleasesUrl) : null;
+                    return manual ? new UpdateNotice("updates.couldNotReadRelease", new object[0], true, ReleasesUrl) : null;
                 if (v <= current)
-                    return manual ? new UpdateNotice(Strings.F("updates.upToDate", current)) : null;
+                    return manual ? new UpdateNotice("updates.upToDate", new object[] { current }, false, null) : null;
 
                 if (!manual)
                 {
@@ -95,7 +112,7 @@ namespace HsbgCardLookup.Update
                     if (skipped != null && v <= skipped) return null;
                 }
 
-                return new UpdateNotice(Strings.F("updates.versionAvailable", v))
+                return new UpdateNotice("updates.versionAvailable", new object[] { v }, false, null)
                 {
                     AvailableForDownload = true,
                     AvailableVersion = v.ToString(),

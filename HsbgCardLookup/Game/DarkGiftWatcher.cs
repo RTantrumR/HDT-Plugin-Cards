@@ -64,7 +64,7 @@ namespace HsbgCardLookup.Game
         private int _uses = -1, _tierMin, _tierMax;
         private int _turn;
         private readonly List<string> _topTribes = new List<string>();   // most common board type(s)
-        private IReadOnlyList<DarkGift> _gifts;   // effective gift list (site data or static fallback), resolved per match
+        private volatile IReadOnlyList<DarkGift> _gifts;   // effective gift list (site data or static fallback), resolved per match; nulled by a language change
         private bool _duos;                       // mode filter for the pool (Duos-only vs Solos-only cards)
         private readonly HashSet<string> _lobbyTribes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // this lobby's tribes (empty until the mirror read succeeds)
 
@@ -184,6 +184,16 @@ namespace HsbgCardLookup.Game
         {
             if (!_config.ShowDarkGifts || !ArrangeSession.AllowsDarkGifts) { HideIfShown(); return; }
             _lastSig = null;   // the display mode may have changed → re-render on the next poll
+        }
+
+        /// <summary>Either language changed: the gift list is re-resolved (names and text come from
+        /// the store, notes from the catalog), the panel's title relabelled, and the next poll
+        /// re-renders. UI thread.</summary>
+        public void OnLanguageChanged()
+        {
+            _gifts = null;
+            _lastSig = null;
+            try { _panel?.Relabel(); } catch { }
         }
 
         private static string NormMode(string m)
@@ -352,7 +362,7 @@ namespace HsbgCardLookup.Game
                 if (show > 0)
                     c.Minions = pa.Pool
                         .OrderByDescending(m => pa.Sole.Contains(m))
-                        .ThenBy(m => m.Tier ?? 9).ThenBy(m => m.Name, StringComparer.Ordinal)
+                        .ThenBy(m => m.Tier ?? 9).ThenBy(m => m.DisplayName, SearchEngine.NameComparer)
                         .Take(show)
                         .Select(m => new DarkGiftPanel.MinionArt { Card = m, Emph = pa.Sole.Contains(m) ? 2 : 1 })
                         .ToList();
@@ -438,7 +448,12 @@ namespace HsbgCardLookup.Game
                         emph = n == 1 ? 2 : (n >= 2 ? Math.Max(emph, 1) : emph);
                     }
                 }
-                var row = new DarkGiftPanel.Row { Name = gft.Name, Text = gft.Text, Note = gft.Note, Current = cur, Emph = emph };
+                var row = new DarkGiftPanel.Row
+                {
+                    Name = gft.DisplayName, Text = gft.DisplayText,                  // the card language (English when the site has none)
+                    Note = gft.Note == null ? null : Strings.T(gft.Note),            // the plugin language
+                    Current = cur, Emph = emph
+                };
                 if (cur) current.Add(row);
                 else future.Add(new KeyValuePair<int, DarkGiftPanel.Row>(gft.MinTurn, row));
             }

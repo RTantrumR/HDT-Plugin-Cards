@@ -122,6 +122,23 @@ namespace HsbgCardLookup.Game
             catch { /* OnUpdate must never throw */ }
         }
 
+        /// <summary>Either language changed: a slot that already shows a card re-reconciles so its
+        /// render reloads in the card language, and the arrange labels relabel.</summary>
+        public void OnLanguageChanged()
+        {
+            try
+            {
+                Marshal(() =>
+                {
+                    if (_editing) { EnterEdit(); return; }
+                    foreach (var s in _trinkets) s.Hide();
+                    _anomaly.Hide();
+                    _lastSig = null;   // the next poll re-applies the desired state with fresh art
+                });
+            }
+            catch { }
+        }
+
         /// <summary>Re-apply immediately after a settings toggle.</summary>
         public void OnSettingsChanged()
         {

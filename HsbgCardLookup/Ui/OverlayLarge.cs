@@ -30,6 +30,7 @@ namespace HsbgCardLookup.Ui
 
         private readonly CardStore _store;
         private readonly PluginConfig _config;
+        private readonly CardLanguage _language;   // the game's words for the filter labels; may be null in a bare harness
         private readonly HotkeyManager _hotkey;
         private readonly FloatingCardManager _floating;
         private readonly Action _openSettings;   // opens the SettingsWindow (from the corner link)
@@ -57,6 +58,11 @@ namespace HsbgCardLookup.Ui
         private Border _bulbHost;
         private Border _clearSearch;
         private Border _searchField;                          // for the "active input" border tint
+        private TextBlock _watermark;                         // the search placeholder (relabelled on a language change)
+        private StackPanel _dds;                              // the filter dropdowns' host (rebuilt on a language change)
+        private Dropdown _typeDd, _tierDd;                    // the two dropdowns without a filter-context role
+        private TextBlock _versionText;                       // detail toolbar, set once
+        private Border _gearBtn, _refreshBtn;                 // detail toolbar buttons, tooltips set once
 
         // Notification bell (manual patch-notes notices), right of search.
         private Border _bell;
@@ -84,11 +90,12 @@ namespace HsbgCardLookup.Ui
         private Popup _helpPopup;       // keybinds & tips, anchored to the detail toolbar's "?"
         private Border _helpAnchor;
 
-        public OverlayLarge(CardStore store, PluginConfig config, HotkeyManager hotkey, FloatingCardManager floating,
+        public OverlayLarge(CardStore store, PluginConfig config, CardLanguage language, HotkeyManager hotkey, FloatingCardManager floating,
                             Action openSettings, Action checkForUpdates, string version) : base(880, 800)
         {
             _store = store;
             _config = config;
+            _language = language;
             _hotkey = hotkey;
             _floating = floating;
             _openSettings = openSettings;
@@ -106,10 +113,10 @@ namespace HsbgCardLookup.Ui
 
             // ── Top row: search (fill) + filter dropdowns (right) ──
             var topRow = new DockPanel { LastChildFill = true };
-            var dds = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(10, 0, 0, 0) };
-            BuildDropdownsInto(dds);
-            DockPanel.SetDock(dds, Dock.Right);
-            topRow.Children.Add(dds);
+            _dds = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(10, 0, 0, 0) };
+            BuildDropdownsInto(_dds);
+            DockPanel.SetDock(_dds, Dock.Right);
+            topRow.Children.Add(_dds);
             // Bell sits between the search box and the filter dropdowns (docked right, after dds, so
             // it lands to the left of the filters). Hidden until there's an unread notification.
             var bell = BuildBell();
@@ -128,7 +135,7 @@ namespace HsbgCardLookup.Ui
             var trailing = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             trailing.Children.Add(_clearSearch);
             trailing.Children.Add(_bulbHost);
-            _searchField = UiKit.SearchField(Strings.T("overlay.search.placeholder"), out _search, 18, trailing);
+            _searchField = UiKit.SearchField(Strings.T("overlay.search.placeholder"), out _search, out _watermark, 18, trailing);
             topRow.Children.Add(_searchField);
             Grid.SetRow(topRow, 0);
             grid.Children.Add(topRow);
@@ -198,10 +205,14 @@ namespace HsbgCardLookup.Ui
             Refresh();
         }
 
+        // The game's words in the card language (English when it has none) — filter item labels.
+        private LocaleVocab Vocab => _language?.Vocab ?? LocaleVocab.Empty;
+
         private void BuildDropdownsInto(StackPanel dds)
         {
-            var typeItems = _store.Types.Select(t => new Dropdown.Item(t, UiKit.Pretty(t))).ToList();
-            dds.Children.Add(new Dropdown(this, Strings.T("overlay.allTypes"), typeItems, v =>
+            var vocab = Vocab;
+            var typeItems = _store.Types.Select(t => new Dropdown.Item(t, vocab.CardTypeLabel(t) ?? UiKit.Pretty(t))).ToList();
+            _typeDd = new Dropdown(this, Strings.T("overlay.allTypes"), typeItems, v =>
             {
                 _type = v;
                 if (v != "minion") { _tribe = null; _tribeDd?.SetSelected(null); }
@@ -209,26 +220,63 @@ namespace HsbgCardLookup.Ui
                 if (v != "trinket") { _trinketTier = null; _trinketDd?.SetSelected(null); }
                 ApplyTypeContext();
                 Refresh();
-            }));
+            });
+            dds.Children.Add(_typeDd);
 
             var tierItems = _store.Tiers.Select(t => new Dropdown.Item(t.ToString(), Strings.F("overlay.tierN", t), CardStore.TierIconPath(t))).ToList();
-            dds.Children.Add(new Dropdown(this, Strings.T("overlay.allTiers"), tierItems, v => { _tier = v == null ? (int?)null : int.Parse(v); Refresh(); }, 26));
+            _tierDd = new Dropdown(this, Strings.T("overlay.allTiers"), tierItems, v => { _tier = v == null ? (int?)null : int.Parse(v); Refresh(); }, 26);
+            dds.Children.Add(_tierDd);
 
-            var tribeItems = _store.Tribes.Select(t => new Dropdown.Item(t, t, CardStore.TribeIconPath(t))).ToList();
+            var tribeItems = _store.Tribes.Select(t => new Dropdown.Item(t, vocab.TribeLabel(t) ?? t, CardStore.TribeIconPath(t))).ToList();
             _tribeDd = new Dropdown(this, Strings.T("overlay.allTribes"), tribeItems, v => { _tribe = v; Refresh(); }, 22);
             dds.Children.Add(_tribeDd);
 
-            var spellItems = _store.SpellSchools.Select(s => new Dropdown.Item(s, s)).ToList();
+            var spellItems = _store.SpellSchools.Select(s => new Dropdown.Item(s, vocab.SpellSchoolLabel(s) ?? s)).ToList();
             _spellDd = new Dropdown(this, Strings.T("overlay.allSchools"), spellItems, v => { _spellSchool = v; Refresh(); });
             dds.Children.Add(_spellDd);
 
             var trinketItems = new List<Dropdown.Item>
             {
-                new Dropdown.Item("lesser", Strings.T("overlay.trinket.lesser")),
-                new Dropdown.Item("greater", Strings.T("overlay.trinket.greater")),
+                new Dropdown.Item("lesser", vocab.TrinketTierLabel("lesser") ?? Strings.T("overlay.trinket.lesser")),
+                new Dropdown.Item("greater", vocab.TrinketTierLabel("greater") ?? Strings.T("overlay.trinket.greater")),
             };
             _trinketDd = new Dropdown(this, Strings.T("overlay.allTrinkets"), trinketItems, v => { _trinketTier = v; Refresh(); });
             dds.Children.Add(_trinketDd);
+        }
+
+        /// <summary>Either language changed: the filter captions and labels, the set-once texts and
+        /// tooltips, then a refresh so names, counts and art follow. The filters survive by value.
+        /// (Everything built on open — the help and bell popups — reads the catalog by itself.)</summary>
+        public void OnLanguageChanged()
+        {
+            RebuildFilters();
+            RelabelClose();
+            if (_bulbHost != null) _bulbHost.ToolTip = Strings.F("overlay.smartTooltip", "Tab");
+            if (_clearSearch != null) _clearSearch.ToolTip = Strings.T("overlay.clearSearch");
+            if (_watermark != null) _watermark.Text = Strings.T("overlay.search.placeholder");
+            if (_art != null) _art.ToolTip = Strings.T("overlay.art.dragTooltip");
+            if (_relatedHeader != null) _relatedHeader.Text = Strings.T("overlay.related");
+            if (_versionText != null) _versionText.Text = Strings.F("overlay.version", _version ?? "?");
+            if (_gearBtn != null) _gearBtn.ToolTip = Strings.T("overlay.settingsTooltip");
+            if (_refreshBtn != null) _refreshBtn.ToolTip = Strings.T("overlay.checkUpdatesTooltip");
+            if (_helpAnchor != null) _helpAnchor.ToolTip = Strings.T("overlay.helpTooltip");
+            if (_bell != null) _bell.ToolTip = Strings.T("overlay.bell.tooltip");
+            Refresh();
+        }
+
+        // Fresh dropdowns with the current words; the selections are re-applied by value (SetSelected
+        // repaints without firing the change callbacks).
+        private void RebuildFilters()
+        {
+            if (_dds == null) return;
+            _dds.Children.Clear();
+            BuildDropdownsInto(_dds);
+            _typeDd?.SetSelected(_type);
+            _tierDd?.SetSelected(_tier.HasValue ? _tier.Value.ToString() : null);
+            _tribeDd?.SetSelected(_tribe);
+            _spellDd?.SetSelected(_spellSchool);
+            _trinketDd?.SetSelected(_trinketTier);
+            ApplyTypeContext();
         }
 
         private void ApplyTypeContext()
@@ -307,23 +355,23 @@ namespace HsbgCardLookup.Ui
         {
             var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(2, 8, 2, 0) };
 
-            var version = new TextBlock
+            _versionText = new TextBlock
             {
                 Text = Strings.F("overlay.version", _version ?? "?"),
                 Foreground = UiKit.TextMuted, FontSize = 11.5,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            DockPanel.SetDock(version, Dock.Left);
-            bar.Children.Add(version);
+            DockPanel.SetDock(_versionText, Dock.Left);
+            bar.Children.Add(_versionText);
 
             // Right side (docked far-right first, so visual order R→L is gear · ⟳ · help).
-            var gear = GearButton(Strings.T("overlay.settingsTooltip"), () => _openSettings?.Invoke());
-            DockPanel.SetDock(gear, Dock.Right);
-            bar.Children.Add(gear);
+            _gearBtn = GearButton(Strings.T("overlay.settingsTooltip"), () => _openSettings?.Invoke());
+            DockPanel.SetDock(_gearBtn, Dock.Right);
+            bar.Children.Add(_gearBtn);
 
-            var refresh = IconButton("⟳", Strings.T("overlay.checkUpdatesTooltip"), () => _checkForUpdates?.Invoke());   // ⟳
-            DockPanel.SetDock(refresh, Dock.Right);
-            bar.Children.Add(refresh);
+            _refreshBtn = IconButton("⟳", Strings.T("overlay.checkUpdatesTooltip"), () => _checkForUpdates?.Invoke());   // ⟳
+            DockPanel.SetDock(_refreshBtn, Dock.Right);
+            bar.Children.Add(_refreshBtn);
 
             _helpAnchor = HelpButton();
             DockPanel.SetDock(_helpAnchor, Dock.Right);

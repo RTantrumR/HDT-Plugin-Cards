@@ -44,6 +44,9 @@ namespace HsbgCardLookup
         private Game.GameStateProbe _probe;                     // read-only BG state logger (Debug-only diagnostics)
         private Game.DarkGiftProbe _giftProbe;                  // Dark Gift / Dark Discovery capture (Debug-only)
 #endif
+        private CardLanguage _cardLanguage;                      // game content: cards, art, the game's words
+        private UiLanguage _uiLanguage;                          // plugin content: menus, tooltips, messages
+        private MenuItem _menuOpen, _menuSettings, _menuUpdate;  // HDT plugins-menu items, relabelled on a language change
         private Dictionary<Key, OverlayBase> _overlays;         // hotkey -> overlay (rebuilt on rewire)
         private readonly Dictionary<Key, DateTime> _lastToggle = new Dictionary<Key, DateTime>();
 
@@ -87,24 +90,32 @@ namespace HsbgCardLookup
         {
             var root = new MenuItem { Header = DisplayName };
 
-            var open = new MenuItem { Header = Strings.T("plugin.menu.openOverlay") };
-            open.Click += (s, e) => _ui?.BeginInvoke(new Action(() =>
+            _menuOpen = new MenuItem { Header = Strings.T("plugin.menu.openOverlay") };
+            _menuOpen.Click += (s, e) => _ui?.BeginInvoke(new Action(() =>
             {
                 if (_overlays != null)
                     foreach (var w in _overlays.Values) { if (!ReferenceEquals(w, _overlayLarge)) w.HideIfOpen(); }
+                NoteCardsNeeded();
                 _overlayLarge?.Toggle();
             }));
 
-            var settings = new MenuItem { Header = Strings.T("plugin.settings") };
-            settings.Click += (s, e) => _ui?.BeginInvoke(new Action(OpenSettings));
+            _menuSettings = new MenuItem { Header = Strings.T("plugin.settings") };
+            _menuSettings.Click += (s, e) => _ui?.BeginInvoke(new Action(OpenSettings));
 
-            var update = new MenuItem { Header = Strings.T("plugin.menu.checkForUpdates") };
-            update.Click += (s, e) => _ui?.BeginInvoke(new Action(CheckForUpdatesInteractive));
+            _menuUpdate = new MenuItem { Header = Strings.T("plugin.menu.checkForUpdates") };
+            _menuUpdate.Click += (s, e) => _ui?.BeginInvoke(new Action(CheckForUpdatesInteractive));
 
-            root.Items.Add(open);
-            root.Items.Add(settings);
-            root.Items.Add(update);
+            root.Items.Add(_menuOpen);
+            root.Items.Add(_menuSettings);
+            root.Items.Add(_menuUpdate);
             return root;
+        }
+
+        private void RelabelMenu()
+        {
+            if (_menuOpen != null) _menuOpen.Header = Strings.T("plugin.menu.openOverlay");
+            if (_menuSettings != null) _menuSettings.Header = Strings.T("plugin.settings");
+            if (_menuUpdate != null) _menuUpdate.Header = Strings.T("plugin.menu.checkForUpdates");
         }
 
         public void OnLoad()
@@ -123,6 +134,16 @@ namespace HsbgCardLookup
             _store.Load();
             Log("CardStore: " + _store.LoadInfo);
 
+            // The two languages, before the UI is built so its first render has the right words.
+            // Plugin content first (the catalog), then game content (the store's overlay from cache,
+            // the search words, the art keys) — no network either way; the launch chain below pulls
+            // the card language's snapshot once the English data has refreshed.
+            _uiLanguage = new UiLanguage(_config, _ui, Log);
+            _uiLanguage.Initialize();
+            _cardLanguage = new CardLanguage(_store, _config, _ui, Log);
+            _cardLanguage.Initialize();
+            Ui.DarkGiftPanel.SetKeywordHighlight(_cardLanguage.Vocab.Keyword.Values);
+
             Ui.CardArt.UseLocalArt = _config.UseLocalDevArt;   // dev-only local-PNG shortcut, off by default
             if (!string.IsNullOrWhiteSpace(_config.ArtCacheDir)) Ui.CardArt.CacheDir = _config.ArtCacheDir;  // user-relocated art cache
             Ui.WebpDecoder.Log = Log;
@@ -131,10 +152,10 @@ namespace HsbgCardLookup
             _hotkey.HotkeyPressed += OnHotkeyPressed;
 
             _floating = new FloatingCardManager(_config);
-            _overlayLarge = new OverlayLarge(_store, _config, _hotkey, _floating, OpenSettings, CheckForUpdatesInteractive, Version.ToString());
+            _overlayLarge = new OverlayLarge(_store, _config, _cardLanguage, _hotkey, _floating, OpenSettings, CheckForUpdatesInteractive, Version.ToString());
             _bgHud = new Game.BgHud(_store, _config, _ui);
             _recorder = new Game.MatchRecorder(_store, _config, Log);
-            _bgMmr = new Game.BgMmr(_config, _ui, Log);
+            _bgMmr = new Game.BgMmr(_config, _ui, Log, HeroDisplayName);
             _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
             _recap = new Game.Recap.RecapFeature(_config, _ui, Log);
             _searchButton = new Ui.SearchButton(_config, ToggleOverlayFromButton, SkipVersion, Log);
@@ -149,6 +170,11 @@ namespace HsbgCardLookup
             RewireHotkeys();
             _hotkey.Install();
 
+            // Every surface that shows card names, art or the plugin's own words follows a language
+            // change through these two events — the one place the fan-out lives.
+            _cardLanguage.Changed += OnCardLanguageChanged;
+            _uiLanguage.Changed += OnUiLanguageChanged;
+
             Log($"OnLoad  (overlay={_config.BrowserKey}, hook installed = {_hotkey.IsInstalled})");
 
             // Background, best-effort (offline / failures are no-ops): data refresh, the update
@@ -156,7 +182,7 @@ namespace HsbgCardLookup
             // the data refresh, not beside it: it diffs the manifest against the cards the store
             // knows, so on the launch that brings new cards it must see the new list, or their art
             // waits for the next launch (or first view).
-            Task.Run(async () => { await RefreshDataAsync(); await RefreshArtPackAsync(); });
+            Task.Run(async () => { await RefreshDataAsync(); await _cardLanguage.EnsureDataAsync(launch: true); await RefreshArtPackAsync(); });
             Task.Run(() => CheckForUpdateAsync());
             Task.Run(() => CheckNoticesAsync());
         }
@@ -351,7 +377,7 @@ namespace HsbgCardLookup
         private void HandleManualNotice(Update.UpdateNotice notice)
         {
             if (notice == null)
-                notice = new Update.UpdateNotice(Strings.T("plugin.updateCheckFailed"), true);
+                notice = new Update.UpdateNotice("plugin.updateCheckFailed", new object[0], true, null);
 
             bool overlayOpen = _overlayLarge?.IsVisible == true;
             SetUpdateState(notice);
@@ -411,7 +437,8 @@ namespace HsbgCardLookup
 
                 _ui?.Invoke(() =>
                 {
-                    _store.Load();                 // now reads the freshly-written cache copy
+                    _store.Load();                 // now reads the freshly-written cache copy (and re-lays the card language)
+                    _cardLanguage?.OnEnglishReloaded();
                     _overlayLarge?.RefreshPool();
                 });
                 Log($"Data refreshed: patch {file.Patch} ({_store.LoadInfo})");
@@ -463,13 +490,70 @@ namespace HsbgCardLookup
             {
                 if (_overlays != null)
                     foreach (var w in _overlays.Values) { if (!ReferenceEquals(w, _overlayLarge)) w.HideIfOpen(); }
+                NoteCardsNeeded();
                 _overlayLarge?.Toggle();
             }));
+        }
+
+        // ── Languages ────────────────────────────────────────────────────────────────────────────
+
+        // Hero names for the standings panel, in the card language (null → HDT's English name).
+        private string HeroDisplayName(string cardId) => _store?.Lookup(cardId)?.DisplayName;
+
+        // The card language switched (setting, client, or its snapshot arrived): everything that
+        // shows card names, art or the game's words follows. UI thread.
+        private void OnCardLanguageChanged()
+        {
+            Ui.DarkGiftPanel.SetKeywordHighlight(_cardLanguage.Vocab.Keyword.Values);
+            _overlayLarge?.OnLanguageChanged();
+            _darkGifts?.OnLanguageChanged();
+            _bgHud?.OnLanguageChanged();
+            _bgMmr?.OnLanguageChanged();
+            _settings?.OnCardLanguageChanged();
+            Log("Card language applied: " + _cardLanguage.Describe());
+        }
+
+        // The plugin language switched: relabel what is built once, re-push what is cached. UI thread.
+        private void OnUiLanguageChanged()
+        {
+            RelabelMenu();
+            _overlayLarge?.OnLanguageChanged();
+            _darkGifts?.OnLanguageChanged();
+            _bgHud?.OnLanguageChanged();
+            _bgMmr?.OnLanguageChanged();
+            _searchButton?.Relabel();
+            _arrangeBanner?.Relabel();
+            _settings?.OnLanguageChanged();
+            PushUpdateUi();   // the cached notice renders through its catalog key
+            Log("UI language: " + _uiLanguage.Web);
+        }
+
+        // The card language's snapshot is pulled only when the language is actually used — never on
+        // a settings flip. "Used" = the card search is opened (here) or a Battlegrounds match is on
+        // (OnUpdate). The service dedupes and backs off; this is a cheap hint.
+        private void NoteCardsNeeded()
+        {
+            if (_cardLanguage == null || _cardLanguage.DataApplied) return;
+            Task.Run(() => _cardLanguage.EnsureDataAsync());
+        }
+
+        private DateTime _lastDataNeedCheck = DateTime.MinValue;
+        private void EnsureCardDataWhenInMatch()
+        {
+            if (_cardLanguage == null || _cardLanguage.DataApplied) return;
+            var now = DateTime.UtcNow;
+            if ((now - _lastDataNeedCheck).TotalSeconds < 5) return;
+            _lastDataNeedCheck = now;
+            bool inBg = false;
+            try { var g = Hearthstone_Deck_Tracker.API.Core.Game; inBg = g != null && g.IsBattlegroundsMatch; } catch { }
+            if (inBg) Task.Run(() => _cardLanguage.EnsureDataAsync());
         }
 
         private void ApplySettings()
         {
             _config.Save();
+            _uiLanguage?.Refresh();     // no-ops unless the resolved language changed; a change
+            _cardLanguage?.Refresh();   // applies from cache and downloads nothing by itself
             RewireHotkeys();
             _overlayLarge?.RefreshPool();   // pick up a Show-Duos change live
             _floating?.OnSettingChanged();  // reconcile floating-card visibility (Hide-with-app toggle)
@@ -548,6 +632,7 @@ namespace HsbgCardLookup
                 // Only one variant open at a time — hide the others, then toggle this one.
                 foreach (var w in _overlays.Values)
                     if (!ReferenceEquals(w, target)) w.HideIfOpen();
+                NoteCardsNeeded();
                 target.Toggle();
             }));
         }
@@ -565,7 +650,7 @@ namespace HsbgCardLookup
             // Show(), not just Activate(): the window hides itself while a HUD is being arranged, and
             // Activate() alone would do nothing visible.
             if (_settings != null) { _settings.Show(); _settings.Activate(); return; }
-            _settings = new SettingsWindow(_config, _store, _hotkey, ApplySettings, SetArrangeMode,
+            _settings = new SettingsWindow(_config, _store, _cardLanguage, _uiLanguage, _hotkey, ApplySettings, SetArrangeMode,
             Version.ToString(), CheckForUpdatesInteractive,
             n => OpenDownloadPage(n?.Url), SkipVersion);
             _settings.RecapComparableCount = () => _recap?.ComparableCount ?? 0;
@@ -588,6 +673,9 @@ namespace HsbgCardLookup
             _recap?.Poll();      // opt-in match recap: tracks the match, shows the panel at its end
             _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
             PollBackgroundUpdateCheck(); // re-attempt every 20 min so a long session isn't frozen at launch-time state
+            _cardLanguage?.PollClient();   // following the game client: re-read its language once a minute
+            _uiLanguage?.PollHdt();        // following HDT's setting: likewise
+            EnsureCardDataWhenInMatch();   // a match is on and the card language's data isn't here yet → fetch it
         }
 
         private static readonly string LogDir = Path.Combine(

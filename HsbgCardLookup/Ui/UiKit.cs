@@ -96,6 +96,13 @@ namespace HsbgCardLookup.Ui
         /// Border and hands back the inner TextBox via <paramref name="box"/>.</summary>
         public static Border SearchField(string placeholder, out TextBox box, double fontSize = 18, UIElement trailing = null)
         {
+            TextBlock watermark;
+            return SearchField(placeholder, out box, out watermark, fontSize, trailing);
+        }
+
+        /// <summary>As above, also handing back the placeholder TextBlock (a language change re-sets its text).</summary>
+        public static Border SearchField(string placeholder, out TextBox box, out TextBlock watermark, double fontSize = 18, UIElement trailing = null)
+        {
             var glyph = new TextBlock
             {
                 Text = "🔍",
@@ -116,7 +123,7 @@ namespace HsbgCardLookup.Ui
                 MinWidth = 80
             };
 
-            var watermark = new TextBlock
+            watermark = new TextBlock
             {
                 Text = placeholder,
                 Foreground = TextMuted,
@@ -128,8 +135,9 @@ namespace HsbgCardLookup.Ui
                 Margin = new Thickness(4, 0, 0, 0)
             };
             var theBox = box;
+            var theWatermark = watermark;
             box.TextChanged += (s, e) =>
-                watermark.Visibility = string.IsNullOrEmpty(theBox.Text) ? Visibility.Visible : Visibility.Collapsed;
+                theWatermark.Visibility = string.IsNullOrEmpty(theBox.Text) ? Visibility.Visible : Visibility.Collapsed;
 
             var boxGrid = new Grid();
             boxGrid.Children.Add(watermark);

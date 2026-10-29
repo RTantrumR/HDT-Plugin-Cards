@@ -26,6 +26,8 @@ namespace HsbgCardLookup.Localization
         private static readonly Dictionary<string, Dictionary<string, string>> Catalogs =
             new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
 
+        private static bool _loaded;
+
         public static string Web { get; private set; } = Locales.English;
         public static string LoadInfo { get; private set; } = "(not loaded)";
 
@@ -42,6 +44,7 @@ namespace HsbgCardLookup.Localization
                 loaded.Add(web + ":" + cat.Count);
             }
             _en = Catalogs.TryGetValue(Locales.English, out var en) ? en : new Dictionary<string, string>(StringComparer.Ordinal);
+            _loaded = true;
             SetLocale(Web);
             LoadInfo = loaded.Count == 0 ? "no ui catalogs found (data\\ui\\*.json)" : string.Join(" ", loaded);
             return _en.Count > 0;
@@ -57,6 +60,9 @@ namespace HsbgCardLookup.Localization
         public static string T(string key)
         {
             if (string.IsNullOrEmpty(key)) return "";
+            // HDT reads the plugin's Description, ButtonText and menu before OnLoad has run
+            // UiLanguage.Initialize(): load the bundled catalogs on first use rather than show keys.
+            if (!_loaded) Load();
             string s;
             if (_active.TryGetValue(key, out s) && s != null) return s;
             if (_en.TryGetValue(key, out s) && s != null) return s;

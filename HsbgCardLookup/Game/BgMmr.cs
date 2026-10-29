@@ -149,6 +149,14 @@ namespace HsbgCardLookup.Game
             catch { /* OnUpdate must never throw */ }
         }
 
+        /// <summary>Either language changed: hero names come from the store, the panel's chip from
+        /// the catalog — relabel now, rebuild both surfaces on the next poll. UI thread.</summary>
+        public void OnLanguageChanged()
+        {
+            _lastSig = null;
+            try { _panel?.Relabel(); } catch { }
+        }
+
         public void OnSettingsChanged()
         {
             _lastSig = null;   // any toggle change → rebuild both surfaces on the next poll

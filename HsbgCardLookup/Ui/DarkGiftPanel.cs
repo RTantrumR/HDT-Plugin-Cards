@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -56,6 +57,7 @@ namespace HsbgCardLookup.Ui
 
         private readonly Border _root;             // the canvas child holding everything
         private readonly TextBlock _headerSub;
+        private TextBlock _title;   // "Dark Gifts" — set once, relabelled on a language change
         private readonly StackPanel _rows;
         private readonly ScrollViewer _scroll;
         private readonly StackPanel _giftColumn;   // header + gift list (collapsed in minions-only mode)
@@ -134,7 +136,7 @@ namespace HsbgCardLookup.Ui
             // top-right corner (it belongs to the panel, not to a column — the gift column is gone in
             // minions-only mode and the close affordance has to survive that).
             var header = new DockPanel { LastChildFill = true, Margin = new Thickness(2, 0, 22, 7) };
-            var title = new TextBlock
+            _title = new TextBlock
             {
                 Text = Strings.T("gifts.title"),
                 Foreground = UiKit.AccentBrush,
@@ -149,7 +151,7 @@ namespace HsbgCardLookup.Ui
                 VerticalAlignment = VerticalAlignment.Bottom,
                 TextWrapping = TextWrapping.Wrap
             };
-            header.Children.Add(title);
+            header.Children.Add(_title);
             header.Children.Add(_headerSub);
 
             _rows = new StackPanel();
@@ -396,7 +398,7 @@ namespace HsbgCardLookup.Ui
                     // WrapPanel gives every cell the row's full height, so the name centres in it.
                     var name = new TextBlock
                     {
-                        Text = m.Card?.Name ?? "", Foreground = UiKit.TextSecondary,
+                        Text = m.Card?.DisplayName ?? "", Foreground = UiKit.TextSecondary,
                         FontSize = Math.Max(11, cardW * 0.09), FontWeight = FontWeights.SemiBold,
                         TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
                         HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
@@ -526,10 +528,33 @@ namespace HsbgCardLookup.Ui
         }
 
         // Word-level color highlighting: stat gains in green, keyword-ish terms in gold, rest default.
-        private static readonly Regex Highlight = new Regex(
-            @"(?<stat>\+\d+(?:/\+\d+)?(?:\s+(?:Attack|Health))?)|" +
-            @"(?<kw>Divine Shield|Windfury|Stealth|Venomous|Reborn|Golden|Immune|Deathrattles?|Battlecr(?:y|ies)|Rally|Spellcrafts?|Start of Combat|Magnetize|Blood Gems|Taunt)",
-            RegexOptions.Compiled);
+        // The English keyword list always applies (the static fallback table is English); the card
+        // language's keyword words join it through SetKeywordHighlight.
+        private const string StatPattern = @"(?<stat>\+\d+(?:/\+\d+)?(?:\s+(?:Attack|Health))?)";
+        private const string EnglishKeywords =
+            @"Divine Shield|Windfury|Stealth|Venomous|Reborn|Golden|Immune|Deathrattles?|Battlecr(?:y|ies)|Rally|Spellcrafts?|Start of Combat|Magnetize|Blood Gems|Taunt";
+        private static volatile Regex Highlight = BuildHighlight(null);
+
+        /// <summary>Add a card language's keyword words to the gold highlighting (null/empty = English only).</summary>
+        public static void SetKeywordHighlight(IEnumerable<string> words) => Highlight = BuildHighlight(words);
+
+        private static Regex BuildHighlight(IEnumerable<string> words)
+        {
+            string kw = EnglishKeywords;
+            if (words != null)
+            {
+                var extra = words.Where(w => !string.IsNullOrWhiteSpace(w)).Select(w => w.Trim()).Distinct()
+                    .OrderByDescending(w => w.Length).Select(Regex.Escape).ToList();
+                if (extra.Count > 0) kw = string.Join("|", extra) + "|" + kw;
+            }
+            return new Regex(StatPattern + "|(?<kw>" + kw + ")", RegexOptions.Compiled);
+        }
+
+        /// <summary>Re-set the set-once title in the current plugin language.</summary>
+        public void Relabel()
+        {
+            if (_title != null) _title.Text = Strings.T("gifts.title");
+        }
 
         private static void AddColoredRuns(TextBlock tb, string text)
         {

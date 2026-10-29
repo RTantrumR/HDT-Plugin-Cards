@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Hotkey;
+using HsbgCardLookup.Localization;
 using HsbgCardLookup.Update;
 
 namespace HsbgCardLookup.Ui
@@ -27,9 +28,13 @@ namespace HsbgCardLookup.Ui
     {
         private static readonly string[] Kinds = { "browser", "golden", "focus" };
         private const string Unbound = "None";
+        private const string ArtSubfolder = "HsbgCardLookup-art";
 
         private readonly PluginConfig _config;
         private readonly Data.CardStore _store;   // the previews render real cards
+        private readonly CardLanguage _cardLanguage;   // game content: the "Card language" row and its status line
+        private readonly UiLanguage _uiLanguage;       // plugin content: the "Plugin language" row
+        private Action _currentPage;                   // the builder of the page on screen — re-run on a plugin-language change
         private readonly HotkeyManager _hotkey;
         private readonly Action _onChanged;
         private readonly Action<ArrangeTarget> _onArrange;   // enter/exit arrange for one feature
@@ -68,13 +73,15 @@ namespace HsbgCardLookup.Ui
         /// <summary>How many recap records take part in the averages right now (set by Plugin).</summary>
         internal Func<int> RecapComparableCount;
 
-        internal SettingsWindow(PluginConfig config, Data.CardStore store, HotkeyManager hotkey,
-            Action onChanged, Action<ArrangeTarget> onArrange,
+        internal SettingsWindow(PluginConfig config, Data.CardStore store, CardLanguage cardLanguage, UiLanguage uiLanguage,
+            HotkeyManager hotkey, Action onChanged, Action<ArrangeTarget> onArrange,
             string currentVersion, Action checkForUpdates, Action<UpdateNotice> openDownloadPage,
             Action<string> skipUpdate)
         {
             _config = config;
             _store = store;
+            _cardLanguage = cardLanguage;
+            _uiLanguage = uiLanguage;
             _hotkey = hotkey;
             _onChanged = onChanged;
             _onArrange = onArrange;
@@ -83,7 +90,7 @@ namespace HsbgCardLookup.Ui
             _openDownloadPage = openDownloadPage;
             _skipUpdate = skipUpdate;
 
-            Title = Plugin.DisplayName + " - Settings";
+            Title = Strings.F("settings.windowTitle", Plugin.DisplayName);
             WindowStyle = WindowStyle.SingleBorderWindow;
             ResizeMode = ResizeMode.NoResize;
             Width = 470;
@@ -128,6 +135,51 @@ namespace HsbgCardLookup.Ui
             };
         }
 
+        // ── Languages ─────────────────────────────────────────────────────────────────────────
+
+        /// <summary>The plugin language changed: retitle and rebuild the page on screen (every page
+        /// is built from the catalog by its builder). UI thread.</summary>
+        public void OnLanguageChanged()
+        {
+            try
+            {
+                Title = Strings.F("settings.windowTitle", Plugin.DisplayName);
+                _currentPage?.Invoke();
+            }
+            catch { }
+        }
+
+        /// <summary>The card language changed or its data arrived: repaint the rows that show it
+        /// (the status line, the "Automatic (…)" caption) without rebuilding the page.</summary>
+        public void OnCardLanguageChanged()
+        {
+            foreach (var r in _modeRefresh) { try { r(); } catch { } }
+        }
+
+        // "" = automatic, then English, then the languages themselves.
+        private static string[] LanguageValues(IReadOnlyList<Locale> locales) =>
+            new[] { "", Locales.English }.Concat(locales.Select(l => l.Web)).ToArray();
+
+        private static string[] LanguageCaptions(IReadOnlyList<Locale> locales, string autoWeb) =>
+            new[] { Strings.F("settings.language.auto", Locales.NativeName(autoWeb)), Strings.T("settings.language.english") }
+                .Concat(locales.Select(l => l.Native)).ToArray();
+
+        private static string[] LanguageHints(IReadOnlyList<Locale> locales, string autoHint, string englishHint, string perLanguageKey) =>
+            new[] { autoHint, englishHint }.Concat(locales.Select(l => Strings.F(perLanguageKey, l.Native))).ToArray();
+
+        // What the card language's data is doing: English, applied, waiting for its first use, or
+        // served English by the site (no translation yet).
+        private string CardLanguageStatus()
+        {
+            var cl = _cardLanguage;
+            if (cl == null) return "";
+            if (cl.Web == Locales.English) return Strings.T("settings.language.status.english");
+            string name = Locales.NativeName(cl.Web);
+            if (cl.DataEmpty) return Strings.F("settings.language.status.empty", name);
+            if (cl.DataApplied) return Strings.F("settings.language.status.ready", name, _store.LocaleCount, _store.LocalePatch);
+            return Strings.F("settings.language.status.pending", name);
+        }
+
         // ── Pages ─────────────────────────────────────────────────────────────────────────────
 
         private StackPanel NewPage(string title, bool sub) => NewPage(title, sub, null, null);
@@ -163,7 +215,7 @@ namespace HsbgCardLookup.Ui
             if (sub)
             {
                 var head = new DockPanel { LastChildFill = true };
-                var backLbl = new TextBlock { Text = "‹ Back", Foreground = UiKit.AccentBrush, FontSize = 14, FontWeight = FontWeights.SemiBold };
+                var backLbl = new TextBlock { Text = Strings.T("settings.common.back"), Foreground = UiKit.AccentBrush, FontSize = 14, FontWeight = FontWeights.SemiBold };
                 var back = new Border
                 {
                     Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
@@ -223,81 +275,82 @@ namespace HsbgCardLookup.Ui
 
         private void BuildMain()
         {
-            var stack = NewPage("Settings", sub: false);
+            _currentPage = BuildMain;
+            var stack = NewPage(Strings.T("settings.title"), sub: false);
 
-            stack.Children.Add(CategoryRow("Card search & floating cards",
-                "Hotkeys, Duos filter, drag-out cards, art folder.",
+            stack.Children.Add(CategoryRow(Strings.T("settings.cardSearch.title"),
+                Strings.T("settings.main.cardSearchHint"),
                 null, null, BuildCardSearch));
 
-            stack.Children.Add(CategoryRow("Trinket HUD",
-                "Your trinkets shown on the in-game overlay during a match.",
+            stack.Children.Add(CategoryRow(Strings.T("settings.trinkets.title"),
+                Strings.T("settings.main.trinketsHint"),
                 () => _config.ShowTrinkets, v =>
                 {
                     _config.ShowTrinkets = v;
-                    _status.Text = v ? "Trinket HUD on." : "Trinket HUD off.";
+                    _status.Text = v ? Strings.T("settings.trinkets.on") : Strings.T("settings.trinkets.off");
                     Changed();
                     UpdateArrangeRow();
                 }, BuildTrinkets));
 
-            stack.Children.Add(CategoryRow("Anomaly HUD",
-                "The lobby anomaly shown on the in-game overlay during a match.",
+            stack.Children.Add(CategoryRow(Strings.T("settings.anomaly.title"),
+                Strings.T("settings.main.anomalyHint"),
                 () => _config.ShowAnomaly, v =>
                 {
                     _config.ShowAnomaly = v;
-                    _status.Text = v ? "Anomaly HUD on." : "Anomaly HUD off.";
+                    _status.Text = v ? Strings.T("settings.anomaly.on") : Strings.T("settings.anomaly.off");
                     Changed();
                     UpdateArrangeRow();
                 }, BuildAnomaly));
 
-            stack.Children.Add(CategoryRow("Opponents' MMR",
-                "MMR, tiers, names — over the portraits and/or a movable panel.",
+            stack.Children.Add(CategoryRow(Strings.T("settings.mmr.title"),
+                Strings.T("settings.main.mmrHint"),
                 () => _config.ShowOpponentMmr, v =>
                 {
                     _config.ShowOpponentMmr = v;
                     _status.Text = v
-                        ? "Opponents' MMR on — open the sub-page to pick where and what to show."
-                        : "Opponent MMR off.";
+                        ? Strings.T("settings.main.mmrOn")
+                        : Strings.T("settings.main.mmrOff");
                     Changed();
                     UpdateArrangeRow();
                 }, BuildMmr));
 
-            stack.Children.Add(CategoryRow("Dark Gifts",
-                "A “?” by the Dark Discovery button opens the gift list.",
+            stack.Children.Add(CategoryRow(Strings.T("settings.darkGifts.title"),
+                Strings.T("settings.main.darkGiftsHint"),
                 () => _config.ShowDarkGifts, v =>
                 {
                     _config.ShowDarkGifts = v;
                     _status.Text = v
-                        ? "In a match, click the “?” above the Dark Discovery button to see which Dark Gifts are still obtainable."
-                        : "Dark Gift list off.";
+                        ? Strings.T("settings.main.darkGiftsOn")
+                        : Strings.T("settings.darkGifts.off");
                     Changed();
                 }, BuildDarkGifts));
 
-            stack.Children.Add(CategoryRow("Match recap",
-                "APM and damage dealt at match end, against your own recent games.",
+            stack.Children.Add(CategoryRow(Strings.T("settings.recap.title"),
+                Strings.T("settings.main.recapHint"),
                 () => _config.ShowMatchRecap, v =>
                 {
                     _config.ShowMatchRecap = v;
                     _status.Text = v
-                        ? "Match recap on — a small panel appears when a solo match ends."
-                        : "Match recap off.";
+                        ? Strings.T("settings.main.recapOn")
+                        : Strings.T("settings.recap.off");
                     Changed();
                 }, BuildRecap));
 
-            stack.Children.Add(CategoryRow("Updates", UpdatesHint(), null, null, BuildUpdates));
+            stack.Children.Add(CategoryRow(Strings.T("settings.updates.title"), UpdatesHint(), null, null, BuildUpdates));
 
             string exportDir = System.IO.Path.Combine(PluginConfig.DataDir, "match-exports");
-            stack.Children.Add(CategoryRow("Match export (CSV)",
-                "Record your board each round to a CSV in:\n" + exportDir,
+            stack.Children.Add(CategoryRow(Strings.T("settings.export.title"),
+                Strings.F("settings.export.hint", exportDir),
                 () => _config.ExportMatchBoards, v =>
                 {
                     _config.ExportMatchBoards = v;
                     _status.Text = v
-                        ? "Recording your board each round; CSVs land in " + exportDir
-                        : "Match board export off.";
+                        ? Strings.F("settings.export.on", exportDir)
+                        : Strings.T("settings.export.off");
                     Changed();
                 }, null));
 
-            var closeLabel = new TextBlock { Text = "Close", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            var closeLabel = new TextBlock { Text = Strings.T("settings.common.close"), Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
             var close = new Border
             {
                 Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
@@ -312,62 +365,93 @@ namespace HsbgCardLookup.Ui
 
         private void BuildCardSearch()
         {
-            var stack = NewPage("Card search & floating cards", sub: true);
+            _currentPage = BuildCardSearch;
+            var stack = NewPage(Strings.T("settings.cardSearch.title"), sub: true);
 
             stack.Children.Add(new TextBlock
             {
-                Text = "Click a binding, then press the key to assign. Esc cancels; Alt can't be bound. " +
-                       "Reusing a key moves it here and unbinds its previous owner.",
+                Text = Strings.T("settings.cardSearch.intro"),
                 Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 12),
                 TextWrapping = TextWrapping.Wrap
             });
 
-            stack.Children.Add(KeyRow("browser", "Open overlay"));
-            stack.Children.Add(KeyRow("golden", "Toggle golden"));
-            stack.Children.Add(KeyRow("focus", "Focus search"));
+            stack.Children.Add(KeyRow("browser", Strings.T("settings.cardSearch.keyOpenOverlay")));
+            stack.Children.Add(KeyRow("golden", Strings.T("settings.cardSearch.keyToggleGolden")));
+            stack.Children.Add(KeyRow("focus", Strings.T("settings.cardSearch.keyFocusSearch")));
 
             stack.Children.Add(Separator());
 
-            stack.Children.Add(ToggleRow("In-game search button (by the card list)", _config.ShowSearchButton, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.cardSearch.searchButton"), _config.ShowSearchButton, v =>
             {
                 _config.ShowSearchButton = v;
                 _status.Text = v
-                    ? "Magnifying glass next to the game's card-list book toggles the search."
-                    : "In-game search button off.";
+                    ? Strings.T("settings.cardSearch.searchButtonOn")
+                    : Strings.T("settings.cardSearch.searchButtonOff");
                 Changed();
             }));
 
-            stack.Children.Add(ToggleRow("Show Duos cards", _config.ShowDuos, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.cardSearch.showDuos"), _config.ShowDuos, v =>
             {
                 _config.ShowDuos = v;
-                _status.Text = v ? "Duos cards shown." : "Duos cards hidden.";
+                _status.Text = v ? Strings.T("settings.cardSearch.showDuosOn") : Strings.T("settings.cardSearch.showDuosOff");
                 Changed();
             }));
 
-            stack.Children.Add(ToggleRow("Drag cards from detail view", _config.DragFromDetail, v =>
+            stack.Children.Add(Separator());
+
+            // Two languages: what the game owns (cards, art, its own words) follows the client; what
+            // the plugin owns (menus, messages) follows HDT's setting. Both can be pinned. Flipping
+            // either downloads nothing — the card data is pulled when the language is first used.
+            string cardAuto = Locales.WebFromGame(_cardLanguage?.ClientCode);
+            stack.Children.Add(CycleRow(Strings.T("settings.language.card"),
+                LanguageValues(Locales.Cards), LanguageCaptions(Locales.Cards, cardAuto),
+                LanguageHints(Locales.Cards,
+                    Strings.F("settings.language.cardAutoHint", Locales.NativeName(cardAuto)),
+                    Strings.T("settings.language.cardEnglishHint"), "settings.language.cardHint"),
+                () => _config.Language ?? "", v => _config.Language = v));
+
+            string uiAuto = Locales.UiWebFromHdt(_uiLanguage?.HdtCode);
+            stack.Children.Add(CycleRow(Strings.T("settings.language.plugin"),
+                LanguageValues(Locales.Ui), LanguageCaptions(Locales.Ui, uiAuto),
+                LanguageHints(Locales.Ui,
+                    Strings.F("settings.language.pluginAutoHint", Locales.NativeName(uiAuto)),
+                    Strings.T("settings.language.pluginEnglishHint"), "settings.language.pluginHint"),
+                () => _config.UiLanguage ?? "", v => _config.UiLanguage = v));
+
+            var languageStatus = new TextBlock
+            {
+                Foreground = UiKit.TextMuted, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 8)
+            };
+            Action paintLanguage = () => languageStatus.Text = CardLanguageStatus();
+            paintLanguage();
+            _modeRefresh.Add(paintLanguage);
+            stack.Children.Add(languageStatus);
+
+            stack.Children.Add(ToggleRow(Strings.T("settings.cardSearch.dragFromDetail"), _config.DragFromDetail, v =>
             {
                 _config.DragFromDetail = v;
                 _status.Text = v
-                    ? "Drag the detail portrait to pull out a floating card."
-                    : "Detail portrait drag-out off.";
+                    ? Strings.T("settings.cardSearch.dragFromDetailOn")
+                    : Strings.T("settings.cardSearch.dragFromDetailOff");
                 Changed();
             }));
 
-            stack.Children.Add(ToggleRow("Drag cards from results grid", _config.DragFromGrid, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.cardSearch.dragFromGrid"), _config.DragFromGrid, v =>
             {
                 _config.DragFromGrid = v;
                 _status.Text = v
-                    ? "Drag a grid card to pull out a floating card."
-                    : "Grid drag-out off (a grid click just selects).";
+                    ? Strings.T("settings.cardSearch.dragFromGridOn")
+                    : Strings.T("settings.cardSearch.dragFromGridOff");
                 Changed();
             }));
 
-            stack.Children.Add(ToggleRow("Hide dragged cards with app", _config.HideDraggedWithApp, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.cardSearch.hideDraggedWithApp"), _config.HideDraggedWithApp, v =>
             {
                 _config.HideDraggedWithApp = v;
                 _status.Text = v
-                    ? "Dragged cards hide with the overlay."
-                    : "Dragged cards stay on screen when the overlay closes.";
+                    ? Strings.T("settings.cardSearch.hideDraggedWithAppOn")
+                    : Strings.T("settings.cardSearch.hideDraggedWithAppOff");
                 Changed();
             }));
 
@@ -379,30 +463,29 @@ namespace HsbgCardLookup.Ui
 
         private void BuildTrinkets()
         {
-            var stack = NewPage("Trinket HUD", sub: true, () => _config.ShowTrinkets, v =>
+            _currentPage = BuildTrinkets;
+            var stack = NewPage(Strings.T("settings.trinkets.title"), sub: true, () => _config.ShowTrinkets, v =>
             {
                 _config.ShowTrinkets = v;
-                _status.Text = v ? "Trinket HUD on." : "Trinket HUD off.";
+                _status.Text = v ? Strings.T("settings.trinkets.on") : Strings.T("settings.trinkets.off");
                 Changed();
                 UpdateArrangeRow();
             });
 
             stack.Children.Add(new TextBlock
             {
-                Text = "A box appears for each trinket you are actually holding. That is usually two, but "
-                     + "several lesser trinkets end up as a second greater one, and anomalies can hand out "
-                     + "more — so up to four boxes are available to position.",
+                Text = Strings.T("settings.trinkets.intro"),
                 Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
                 TextWrapping = TextWrapping.Wrap
             });
 
             stack.Children.Add(HudPreviewBlock(isAnomaly: false));
 
-            stack.Children.Add(ArrangeHudRow(ArrangeTarget.Trinkets, "Position the trinket boxes"));
+            stack.Children.Add(ArrangeHudRow(ArrangeTarget.Trinkets, Strings.T("settings.trinkets.arrangeTitle")));
 
             stack.Children.Add(new TextBlock
             {
-                Text = "In match: right-click a trinket card to close it until the match ends, or turn the HUD off.",
+                Text = Strings.T("settings.trinkets.footer"),
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -412,21 +495,22 @@ namespace HsbgCardLookup.Ui
 
         private void BuildAnomaly()
         {
-            var stack = NewPage("Anomaly HUD", sub: true, () => _config.ShowAnomaly, v =>
+            _currentPage = BuildAnomaly;
+            var stack = NewPage(Strings.T("settings.anomaly.title"), sub: true, () => _config.ShowAnomaly, v =>
             {
                 _config.ShowAnomaly = v;
-                _status.Text = v ? "Anomaly HUD on." : "Anomaly HUD off.";
+                _status.Text = v ? Strings.T("settings.anomaly.on") : Strings.T("settings.anomaly.off");
                 Changed();
                 UpdateArrangeRow();
             });
 
             stack.Children.Add(HudPreviewBlock(isAnomaly: true));
 
-            stack.Children.Add(ArrangeHudRow(ArrangeTarget.Anomaly, "Position the anomaly box"));
+            stack.Children.Add(ArrangeHudRow(ArrangeTarget.Anomaly, Strings.T("settings.anomaly.arrangeTitle")));
 
             stack.Children.Add(new TextBlock
             {
-                Text = "In match: right-click the anomaly card to close it until the match ends, or turn the HUD off.",
+                Text = Strings.T("settings.anomaly.footer"),
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -436,40 +520,40 @@ namespace HsbgCardLookup.Ui
 
         private void BuildMmr()
         {
-            var stack = NewPage("Opponents' MMR", sub: true, () => _config.ShowOpponentMmr, v =>
+            _currentPage = BuildMmr;
+            var stack = NewPage(Strings.T("settings.mmr.title"), sub: true, () => _config.ShowOpponentMmr, v =>
             {
                 _config.ShowOpponentMmr = v;
-                _status.Text = v ? "Opponents' MMR on." : "Opponents' MMR off.";
+                _status.Text = v ? Strings.T("settings.mmr.on") : Strings.T("settings.mmr.off");
                 Changed();
                 UpdateArrangeRow();
             });
 
             stack.Children.Add(new TextBlock
             {
-                Text = "Pick where it shows, then what it shows. Any combination works.",
+                Text = Strings.T("settings.mmr.intro"),
                 Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 4),
                 TextWrapping = TextWrapping.Wrap
             });
 
             // ── Where ──────────────────────────────────────────────────────────────────────────
-            stack.Children.Add(GroupHeader("Where it shows", first: true));
+            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.whereHeader"), first: true));
 
-            stack.Children.Add(ToggleRow("On the leaderboard portraits", _config.ShowMmrLabels, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.portraits"), _config.ShowMmrLabels, v =>
             {
                 _config.ShowMmrLabels = v;
                 _status.Text = v
-                    ? "Rating/name labels on the leaderboard portraits."
-                    : "No labels on the portraits. Tavern tiers and the ⚔ marker are separate settings — "
-                      + "they can stay by the portraits on their own.";
+                    ? Strings.T("settings.mmr.portraitsOn")
+                    : Strings.T("settings.mmr.portraitsOff");
                 Changed();
             }));
 
-            stack.Children.Add(ToggleRow("Side panel", _config.ShowMmrPanel, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.panel"), _config.ShowMmrPanel, v =>
             {
                 _config.ShowMmrPanel = v;
                 _status.Text = v
-                    ? "Standings panel on — drag it anywhere over the game; drag its top-right corner to resize."
-                    : "Standings panel off.";
+                    ? Strings.T("settings.mmr.panelOn")
+                    : Strings.T("settings.mmr.panelOff");
                 NormalizeLocationModes();   // panel off → panel-involving tier/type modes snap to their fallback
                 Changed();
                 UpdateArrangeRow();
@@ -477,66 +561,66 @@ namespace HsbgCardLookup.Ui
             }, get: () => _config.ShowMmrPanel));
 
             // ── What ───────────────────────────────────────────────────────────────────────────
-            stack.Children.Add(GroupHeader("What it shows"));
+            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.whatHeader")));
 
-            stack.Children.Add(CycleRow("Names",
+            stack.Children.Add(CycleRow(Strings.T("settings.mmr.names"),
                 new[] { "Players", "Heroes", "Off" },
-                new[] { "Players", "Heroes", "None" },
-                new[] { "Player names (battletags) in the panel.",
-                        "Hero names instead of battletags — nothing identifies the player.",
-                        "No name column at all; just place, rating and tier." },
+                new[] { Strings.T("settings.mmr.namesPlayers"), Strings.T("settings.mmr.namesHeroes"), Strings.T("settings.mmr.namesNone") },
+                new[] { Strings.T("settings.mmr.namesPlayersHint"),
+                        Strings.T("settings.mmr.namesHeroesHint"),
+                        Strings.T("settings.mmr.namesNoneHint") },
                 () => _config.OpponentNameMode, v => _config.OpponentNameMode = v));
 
-            stack.Children.Add(ToggleRow("MMR rating", _config.ShowMmrRating, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.rating"), _config.ShowMmrRating, v =>
             {
                 _config.ShowMmrRating = v;
-                _status.Text = v ? "Ratings shown (8000↓ below the leaderboard cutoff)." : "Ratings hidden.";
+                _status.Text = v ? Strings.T("settings.mmr.ratingOn") : Strings.T("settings.mmr.ratingOff");
                 Changed();
             }));
 
-            stack.Children.Add(ToggleRow("Today's rating change (▲/▼)", _config.ShowMmrDeltas, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.deltas"), _config.ShowMmrDeltas, v =>
             {
                 _config.ShowMmrDeltas = v;
-                _status.Text = v ? "Daily ▲/▼ deltas shown next to the rating." : "Daily deltas hidden.";
+                _status.Text = v ? Strings.T("settings.mmr.deltasOn") : Strings.T("settings.mmr.deltasOff");
                 Changed();
             }));
 
             NormalizeLocationModes();   // e.g. a fresh config: panel off + mode "Both" → show as "Portraits"
-            stack.Children.Add(CycleRow("Tavern tiers",
+            stack.Children.Add(CycleRow(Strings.T("settings.mmr.tiers"),
                 new[] { "Both", "Portraits", "Panel", "Off" },
-                new[] { "Both", "Portraits", "Panel", "Off" },
-                new[] { "Tier icons by the portraits and in the panel.",
-                        "Tier icons right of each leaderboard portrait only.",
-                        "Tier icons inside the side panel only.",
-                        "No tavern-tier icons anywhere." },
+                LocationCaptions(),
+                new[] { Strings.T("settings.mmr.tiersBothHint"),
+                        Strings.T("settings.mmr.tiersPortraitsHint"),
+                        Strings.T("settings.mmr.tiersPanelHint"),
+                        Strings.T("settings.mmr.tiersOffHint") },
                 () => _config.TavernTierMode, v => _config.TavernTierMode = v,
                 // The two panel-involving locations simply aren't offered while the panel is off,
                 // rather than being shown greyed out.
                 PanelLocationSelectable));
 
-            stack.Children.Add(CycleRow("Minion types",
+            stack.Children.Add(CycleRow(Strings.T("settings.mmr.types"),
                 new[] { "Both", "Portraits", "Panel", "Off" },
-                new[] { "Both", "Portraits", "Panel", "Off" },
-                new[] { "Each player's most common minion type — under the tier icon by the portrait, and in the panel.",
-                        "Type icon under each leaderboard portrait's tier icon only.",
-                        "Type icon inside the side panel only.",
-                        "No minion-type icons anywhere." },
+                LocationCaptions(),
+                new[] { Strings.T("settings.mmr.typesBothHint"),
+                        Strings.T("settings.mmr.typesPortraitsHint"),
+                        Strings.T("settings.mmr.typesPanelHint"),
+                        Strings.T("settings.mmr.typesOffHint") },
                 () => _config.OpponentTribeMode, v => _config.OpponentTribeMode = v,
                 PanelLocationSelectable));
 
-            stack.Children.Add(ToggleRow("Mark last fought opponent (⚔)", _config.ShowLastOpponent, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.lastOpponent"), _config.ShowLastOpponent, v =>
             {
                 _config.ShowLastOpponent = v;
                 _status.Text = v
-                    ? "The previous combat's opponent gets a ⚔ marker by their portrait."
-                    : "⚔ marker off.";
+                    ? Strings.T("settings.mmr.lastOpponentOn")
+                    : Strings.T("settings.mmr.lastOpponentOff");
                 Changed();
             }));
 
-            stack.Children.Add(ToggleRow("Dim dead players", _config.DimDeadPlayers, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.dimDead"), _config.DimDeadPlayers, v =>
             {
                 _config.DimDeadPlayers = v;
-                _status.Text = v ? "Knocked-out players gray out." : "Dead players keep full color.";
+                _status.Text = v ? Strings.T("settings.mmr.dimDeadOn") : Strings.T("settings.mmr.dimDeadOff");
                 Changed();
             }));
 
@@ -545,12 +629,12 @@ namespace HsbgCardLookup.Ui
             // A real panel, at the size it renders in game, over a live frame of the game when it is
             // running. Sized to the page width so the crop stays 16:9.
             _mmrPreview = new MmrPanelPreview(_config, 394, 222);
-            stack.Children.Add(TabSwitch(new[] { "Solo", "Duos" }, 0, i => _mmrPreview?.SetDuos(i == 1)));
+            stack.Children.Add(TabSwitch(new[] { Strings.T("settings.mmr.previewSolo"), Strings.T("settings.mmr.previewDuos") }, 0, i => _mmrPreview?.SetDuos(i == 1)));
             stack.Children.Add(PreviewBlock(_mmrPreview.Root, () => _mmrPreview?.Refresh(),
                 () => _config.ShowMmrPanel,
-                () => { _config.ShowMmrPanel = true; AfterEnable("Standings panel on."); }));
+                () => { _config.ShowMmrPanel = true; AfterEnable(Strings.T("settings.mmr.panelOnShort")); }));
 
-            stack.Children.Add(ArrangeHudRow(ArrangeTarget.MmrPanel, "Position the side panel"));
+            stack.Children.Add(ArrangeHudRow(ArrangeTarget.MmrPanel, Strings.T("settings.mmr.arrangeTitle")));
 
             ShowPage();
         }
@@ -590,38 +674,45 @@ namespace HsbgCardLookup.Ui
             || (!string.Equals(v, "Both", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(v, "Panel", StringComparison.OrdinalIgnoreCase));
 
+        // Captions for a Both/Portraits/Panel/Off location axis — same order as its value array.
+        private static string[] LocationCaptions() => new[]
+        {
+            Strings.T("settings.mmr.locBoth"), Strings.T("settings.mmr.locPortraits"),
+            Strings.T("settings.mmr.locPanel"), Strings.T("settings.mmr.locOff")
+        };
+
         private void BuildDarkGifts()
         {
-            var stack = NewPage("Dark Gifts", sub: true, () => _config.ShowDarkGifts, v =>
+            _currentPage = BuildDarkGifts;
+            var stack = NewPage(Strings.T("settings.darkGifts.title"), sub: true, () => _config.ShowDarkGifts, v =>
             {
                 _config.ShowDarkGifts = v;
-                _status.Text = v ? "Dark Gift list on." : "Dark Gift list off.";
+                _status.Text = v ? Strings.T("settings.darkGifts.on") : Strings.T("settings.darkGifts.off");
                 Changed();
                 UpdateArrangeRow();
             });
 
             stack.Children.Add(new TextBlock
             {
-                Text = "What the panel shows. Right-clicking the panel in game cycles these too.",
+                Text = Strings.T("settings.darkGifts.intro"),
                 Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
                 TextWrapping = TextWrapping.Wrap
             });
 
-            stack.Children.Add(ModeRow("Both", "Gift list + minion pool",
-                "The full panel — gifts, plus the guaranteed-type minions when they apply."));
-            stack.Children.Add(ModeRow("Gifts", "Gift list only",
-                "Never show the minion-art column."));
-            stack.Children.Add(ModeRow("Minions", "Minion pool only",
-                "Only the guaranteed-type minion arts; the panel stays hidden when no pool applies."));
+            stack.Children.Add(ModeRow("Both", Strings.T("settings.darkGifts.modeBoth"),
+                Strings.T("settings.darkGifts.modeBothDesc")));
+            stack.Children.Add(ModeRow("Gifts", Strings.T("settings.darkGifts.modeGifts"),
+                Strings.T("settings.darkGifts.modeGiftsDesc")));
+            stack.Children.Add(ModeRow("Minions", Strings.T("settings.darkGifts.modeMinions"),
+                Strings.T("settings.darkGifts.modeMinionsDesc")));
 
-            stack.Children.Add(SliderRow("Max amount of minions to show", PluginConfig.MaxDarkGiftPool,
+            stack.Children.Add(SliderRow(Strings.T("settings.darkGifts.poolCount"), PluginConfig.MaxDarkGiftPool,
                 () => _config.DarkGiftPoolCount,
                 v => _config.DarkGiftPoolCount = v,
-                v => v == 0 ? "Tribe only" : v.ToString(),
+                v => v == 0 ? Strings.T("settings.darkGifts.poolTribeOnly") : v.ToString(),
                 v => v == 0
-                    ? "The guaranteed tribe is named; none of its minions are drawn."
-                    : $"At most {v} of the guaranteed tribe's minions, sole gift-enablers first. "
-                      + "Fewer when its pool is smaller.",
+                    ? Strings.T("settings.darkGifts.poolZeroHint")
+                    : Strings.F("settings.darkGifts.poolHint", v),
                 // The gift list on its own never draws the pool, so there is nothing for this to size.
                 () => !string.Equals(_config.DarkGiftMode, "Gifts", StringComparison.OrdinalIgnoreCase)));
 
@@ -635,9 +726,7 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(new TextBlock
             {
-                Text = "In match: a “?” sits above the Dark Discovery button — click it and the panel opens "
-                     + "in the top-right corner. Close it with the ✕ or a click anywhere else. "
-                     + "Scroll it with the wheel; right-click it to cycle these modes.",
+                Text = Strings.T("settings.darkGifts.footer"),
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
@@ -648,26 +737,25 @@ namespace HsbgCardLookup.Ui
         // ── Match recap ───────────────────────────────────────────────────────────────────────
         private void BuildRecap()
         {
-            var stack = NewPage("Match recap", sub: true, () => _config.ShowMatchRecap, v =>
+            _currentPage = BuildRecap;
+            var stack = NewPage(Strings.T("settings.recap.title"), sub: true, () => _config.ShowMatchRecap, v =>
             {
                 _config.ShowMatchRecap = v;
-                _status.Text = v ? "Match recap on." : "Match recap off.";
+                _status.Text = v ? Strings.T("settings.recap.on") : Strings.T("settings.recap.off");
                 Changed();
             });
 
             stack.Children.Add(new TextBlock
             {
-                Text = "When a solo Battlegrounds match ends, a small panel in the top-left shows this game's "
-                     + "APM and damage dealt next to your averages, once at least "
-                     + Game.Recap.RecapText.MinHistory + " matches are recorded. Drag it to move it.",
+                Text = Strings.F("settings.recap.intro", Game.Recap.RecapText.MinHistory),
                 Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
                 TextWrapping = TextWrapping.Wrap
             });
 
-            stack.Children.Add(ToggleRow("Hide it 10 s into the next match", _config.RecapAutoDismiss, v =>
+            stack.Children.Add(ToggleRow(Strings.T("settings.recap.autoDismiss"), _config.RecapAutoDismiss, v =>
             {
                 _config.RecapAutoDismiss = v;
-                _status.Text = v ? "The recap closes on its own 10 s after the next match starts." : "The recap stays until you close it.";
+                _status.Text = v ? Strings.T("settings.recap.autoDismissOn") : Strings.T("settings.recap.autoDismissOff");
                 Changed();
             }, () => _config.RecapAutoDismiss));
 
@@ -678,21 +766,21 @@ namespace HsbgCardLookup.Ui
             {
                 int n = 0;
                 try { n = RecapComparableCount?.Invoke() ?? 0; } catch { }
-                string season = string.IsNullOrEmpty(_config.RecapSeason) ? "unknown season" : _config.RecapSeason;
-                historyLine.Text = $"{n} match{(n == 1 ? "" : "es")} in the averages ({season}).";
+                string season = string.IsNullOrEmpty(_config.RecapSeason) ? Strings.T("settings.recap.unknownSeason") : _config.RecapSeason;
+                historyLine.Text = Strings.F(n == 1 ? "settings.recap.historyOne" : "settings.recap.historyMany", n, season);
             };
             paintHistory();
             stack.Children.Add(historyLine);
 
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(SmallButton("Reset history", () =>
+            actions.Children.Add(SmallButton(Strings.T("settings.recap.resetHistory"), () =>
             {
                 _config.RecapResetAt = DateTime.Now;
                 Changed();
                 paintHistory();
-                _status.Text = "History reset — the averages start over from your next match. The records stay on disk.";
+                _status.Text = Strings.T("settings.recap.historyReset");
             }));
-            actions.Children.Add(SmallButton("Open folder", () =>
+            actions.Children.Add(SmallButton(Strings.T("settings.recap.openFolder"), () =>
             {
                 try
                 {
@@ -714,18 +802,19 @@ namespace HsbgCardLookup.Ui
         private string UpdatesHint()
         {
             if (_updateNotice != null && _updateNotice.AvailableForDownload)
-                return $"Update v{_updateNotice.AvailableVersion} available.";
-            return $"You're on v{_currentVersion}.";
+                return Strings.F("settings.updates.availableHint", _updateNotice.AvailableVersion);
+            return Strings.F("settings.updates.currentHint", _currentVersion);
         }
 
         private void BuildUpdates()
         {
-            var stack = NewPage("Updates", sub: true);
+            _currentPage = BuildUpdates;
+            var stack = NewPage(Strings.T("settings.updates.title"), sub: true);
             _onUpdatesPage = true;
 
             stack.Children.Add(new TextBlock
             {
-                Text = $"Installed version: v{_currentVersion}",
+                Text = Strings.F("settings.updates.installed", _currentVersion),
                 Foreground = UiKit.TextPrimary, FontSize = 15, Margin = new Thickness(0, 0, 0, 12)
             });
 
@@ -756,28 +845,27 @@ namespace HsbgCardLookup.Ui
             {
                 _updateActionsHost.Children.Add(new TextBlock
                 {
-                    Text = $"Update v{_updateNotice.AvailableVersion} is available. The download and the "
-                        + "release notes are on the release page; run install.bat from the zip to update.",
+                    Text = Strings.F("settings.updates.availableText", _updateNotice.AvailableVersion),
                     Foreground = UiKit.AccentBrush, FontSize = 14, Margin = new Thickness(0, 0, 0, 8),
                     TextWrapping = TextWrapping.Wrap
                 });
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
                 var notice = _updateNotice;
-                row.Children.Add(SmallButton("Open download page", () => _openDownloadPage(notice)));
-                row.Children.Add(SmallButton("Skip this version", () => _skipUpdate(notice.AvailableVersion)));
+                row.Children.Add(SmallButton(Strings.T("settings.updates.openDownload"), () => _openDownloadPage(notice)));
+                row.Children.Add(SmallButton(Strings.T("settings.updates.skipVersion"), () => _skipUpdate(notice.AvailableVersion)));
                 _updateActionsHost.Children.Add(row);
                 return;
             }
 
-            string msg = _updateNotice?.Message ?? "Not checked yet this session.";
+            string msg = _updateNotice?.Message ?? Strings.T("settings.updates.notChecked");
             _updateActionsHost.Children.Add(new TextBlock
             {
                 Text = msg, Foreground = (_updateNotice?.IsError ?? false) ? Brushes.IndianRed : UiKit.TextMuted,
                 FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8)
             });
-            _updateActionsHost.Children.Add(SmallButton("Check for updates", () =>
+            _updateActionsHost.Children.Add(SmallButton(Strings.T("settings.updates.check"), () =>
             {
-                _status.Text = "Checking for updates…";
+                _status.Text = Strings.T("settings.updates.checking");
                 _checkForUpdates();
             }));
         }
@@ -1268,7 +1356,7 @@ namespace HsbgCardLookup.Ui
                 pill.Background = state ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
                 pill.BorderBrush = state ? UiKit.AccentBrush : UiKit.StrokeBrush;
                 lbl.Foreground = state ? UiKit.AccentBrush : UiKit.TextPrimary;
-                lbl.Text = state ? "On" : "Off";
+                lbl.Text = state ? Strings.T("settings.common.on") : Strings.T("settings.common.off");
             };
             apply();
             if (get != null) _modeRefresh.Add(apply);
@@ -1325,12 +1413,12 @@ namespace HsbgCardLookup.Ui
         // Dark-Gift panel display mode — radio-style row; the selected one gets the accent treatment.
         private UIElement ModeRow(string value, string title, string desc) =>
             SelectRow(() => _config.DarkGiftMode, v => _config.DarkGiftMode = v,
-                "Dark Gift panel: ", value, title, desc, null);
+                "settings.darkGifts.modeStatus", value, title, desc, null);
 
         // Radio-style single-select row (one per option; the group shares a config string value).
         // `enabled` (optional) grays the row out and ignores clicks while false — repainted with the
         // rest of the group, so e.g. a "panel only" option can follow the panel toggle live.
-        private UIElement SelectRow(Func<string> get, Action<string> set, string statusPrefix,
+        private UIElement SelectRow(Func<string> get, Action<string> set, string statusFormatKey,
             string value, string title, string desc, Func<bool> enabled)
         {
             var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -1365,7 +1453,7 @@ namespace HsbgCardLookup.Ui
                 if (!(enabled?.Invoke() ?? true)) return;
                 set(value);
                 foreach (var r in _modeRefresh) r();
-                _status.Text = statusPrefix + title.ToLowerInvariant() + ".";
+                _status.Text = Strings.F(statusFormatKey, title.ToLowerInvariant());
                 Changed();
             };
             return row;
@@ -1381,7 +1469,7 @@ namespace HsbgCardLookup.Ui
             _arrangeTargetOnPage = target;
             var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 2, 0, 4) };
 
-            _arrangeBtnLabel = new TextBlock { Text = "Arrange…", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            _arrangeBtnLabel = new TextBlock { Text = Strings.T("settings.common.arrange"), Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
             _arrangeBtn = new Border
             {
                 Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
@@ -1396,8 +1484,7 @@ namespace HsbgCardLookup.Ui
             left.Children.Add(new TextBlock { Text = title, Foreground = UiKit.TextPrimary, FontSize = 15 });
             left.Children.Add(new TextBlock
             {
-                Text = "Brings Hearthstone to the front and shows just this, on its own. Drag it to move; "
-                     + "drag its top-right corner to resize. Click Done here when it's where you want it.",
+                Text = Strings.T("settings.common.arrangeHint"),
                 Foreground = UiKit.TextMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap
             });
             dock.Children.Add(left);
@@ -1424,12 +1511,10 @@ namespace HsbgCardLookup.Ui
             // so there is no overlay to lose.
             if (target != ArrangeTarget.None && !HearthstoneIsRunning())
             {
-                _status.Text = "Hearthstone isn't running.";
+                _status.Text = Strings.T("settings.common.hsNotRunning");
                 MessageBox.Show(this,
-                    "Hearthstone isn't running.\n\n"
-                    + "This draws on top of the game, so there is nothing to position yet. "
-                    + "Start Hearthstone, then click Arrange again.",
-                    Plugin.DisplayName + " — Arrange",
+                    Strings.T("settings.common.hsNotRunningDetail"),
+                    Strings.F("settings.common.arrangeCaption", Plugin.DisplayName),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -1445,8 +1530,8 @@ namespace HsbgCardLookup.Ui
 
             try { _onArrange?.Invoke(target); } catch { }
             _status.Text = target != ArrangeTarget.None
-                ? "Arranging — drag it to move, drag its top-right corner to resize. Click Done when finished."
-                : "Position saved.";
+                ? Strings.T("settings.common.arranging")
+                : Strings.T("settings.common.positionSaved");
             UpdateArrangeRow();
         }
 
@@ -1491,7 +1576,7 @@ namespace HsbgCardLookup.Ui
             _arrangeBtn.IsEnabled = enabled;
             _arrangeBtn.Opacity = enabled ? 1.0 : 0.5;
             _arrangeBtn.Cursor = enabled ? Cursors.Hand : Cursors.Arrow;
-            _arrangeBtnLabel.Text = on ? "Done" : "Arrange…";
+            _arrangeBtnLabel.Text = on ? Strings.T("settings.common.done") : Strings.T("settings.common.arrange");
             _arrangeBtnLabel.Foreground = on ? UiKit.AccentBrush : UiKit.TextPrimary;
             _arrangeBtn.BorderBrush = on ? UiKit.AccentBrush : UiKit.StrokeBrush;
         }
@@ -1502,7 +1587,7 @@ namespace HsbgCardLookup.Ui
         {
             var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
 
-            var btnLabel = new TextBlock { Text = "Change…", Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
+            var btnLabel = new TextBlock { Text = Strings.T("settings.cardSearch.artFolderChange"), Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
             _artChangeBtn = new Border
             {
                 Background = UiKit.Br(UiKit.RowBg), BorderBrush = UiKit.StrokeBrush, BorderThickness = new Thickness(1),
@@ -1514,7 +1599,7 @@ namespace HsbgCardLookup.Ui
             dock.Children.Add(_artChangeBtn);
 
             var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-            left.Children.Add(new TextBlock { Text = "Card art folder", Foreground = UiKit.TextPrimary, FontSize = 15 });
+            left.Children.Add(new TextBlock { Text = Strings.T("settings.cardSearch.artFolder"), Foreground = UiKit.TextPrimary, FontSize = 15 });
             _artFolderLabel = new TextBlock
             {
                 Foreground = UiKit.TextMuted, FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 300
@@ -1538,19 +1623,19 @@ namespace HsbgCardLookup.Ui
             string picked;
             using (var dlg = new System.Windows.Forms.FolderBrowserDialog())
             {
-                dlg.Description = "Choose a folder for the card-art cache (~200 MB). A 'HsbgCardLookup-art' subfolder is created there.";
+                dlg.Description = Strings.F("settings.cardSearch.artFolderDialog", ArtSubfolder);
                 dlg.ShowNewFolderButton = true;
                 if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK || string.IsNullOrEmpty(dlg.SelectedPath)) return;
                 picked = dlg.SelectedPath;
             }
 
             string oldDir = CardArt.CacheDir;
-            string newDir = Path.Combine(picked, "HsbgCardLookup-art");
-            if (PathsEqual(oldDir, newDir)) { _status.Text = "Card art is already there."; return; }
+            string newDir = Path.Combine(picked, ArtSubfolder);
+            if (PathsEqual(oldDir, newDir)) { _status.Text = Strings.T("settings.cardSearch.artFolderSame"); return; }
 
             _artChangeBtn.IsEnabled = false;
             _artChangeBtn.Opacity = 0.5;
-            _status.Text = "Moving card art… (may take a moment across drives)";
+            _status.Text = Strings.T("settings.cardSearch.artFolderMoving");
 
             Task.Run(() =>
             {
@@ -1564,19 +1649,20 @@ namespace HsbgCardLookup.Ui
                         _config.ArtCacheDir = newDir;
                         _config.Save();
                         UpdateArtFolderLabel();
-                        _status.Text = "Card art folder changed.";
+                        _status.Text = Strings.T("settings.cardSearch.artFolderChanged");
                     }
                     else
                     {
-                        _status.Text = "Couldn't move card art: " + err + " — kept current folder.";
+                        _status.Text = Strings.F("settings.cardSearch.artFolderFailed", err);
                     }
                 }));
             });
         }
 
-        // Move the flat art-cache files (webp + any stray zip) into the new folder. Same-drive moves are
-        // instant; cross-drive File.Move copies then deletes. Best-effort: a failure leaves the old
-        // folder intact so nothing is lost (the caller then keeps the current folder).
+        // Move the art cache into the new folder: the flat English files (webp + any stray zip) and the
+        // locales\<web>\ subtrees of the card languages' renders. Same-drive moves are instant;
+        // cross-drive moves copy then delete. Best-effort: a failure leaves the old folder intact so
+        // nothing is lost (the caller then keeps the current folder).
         private static bool MoveArt(string oldDir, string newDir, out string err)
         {
             err = null;
@@ -1591,11 +1677,34 @@ namespace HsbgCardLookup.Ui
                         if (File.Exists(dest)) File.Delete(dest);
                         File.Move(f, dest);
                     }
+                    foreach (var dir in Directory.GetDirectories(oldDir))
+                        MoveTree(dir, Path.Combine(newDir, Path.GetFileName(dir)));
                     try { if (!Directory.EnumerateFileSystemEntries(oldDir).Any()) Directory.Delete(oldDir); } catch { }
                 }
                 return true;
             }
             catch (Exception ex) { err = ex.Message; return false; }
+        }
+
+        // A whole subtree. Directory.Move cannot cross drives (nor land on an existing folder), so
+        // fall back to moving file by file.
+        private static void MoveTree(string src, string dest)
+        {
+            if (!Directory.Exists(dest))
+            {
+                try { Directory.Move(src, dest); return; }
+                catch (IOException) { }
+            }
+            Directory.CreateDirectory(dest);
+            foreach (var f in Directory.GetFiles(src))
+            {
+                var d = Path.Combine(dest, Path.GetFileName(f));
+                if (File.Exists(d)) File.Delete(d);
+                File.Move(f, d);
+            }
+            foreach (var sub in Directory.GetDirectories(src))
+                MoveTree(sub, Path.Combine(dest, Path.GetFileName(sub)));
+            try { if (!Directory.EnumerateFileSystemEntries(src).Any()) Directory.Delete(src); } catch { }
         }
 
         private static bool PathsEqual(string a, string b)
@@ -1616,8 +1725,8 @@ namespace HsbgCardLookup.Ui
         {
             _capturing = kind;
             _hotkey.BeginCapture();   // swallow everything until a key lands or the user cancels
-            _labels[kind].Text = "Press a key...";
-            _status.Text = "Listening for a key... (Esc to cancel)";
+            _labels[kind].Text = Strings.T("settings.cardSearch.pressKey");
+            _status.Text = Strings.T("settings.cardSearch.listening");
         }
 
         /// <summary>Leave rebind listening, whether it completed, was cancelled, or focus moved away.</summary>
@@ -1654,14 +1763,14 @@ namespace HsbgCardLookup.Ui
             if (key == Key.Escape)
             {
                 EndKeyCapture();
-                _status.Text = "Cancelled.";
+                _status.Text = Strings.T("settings.cardSearch.cancelled");
                 return;
             }
             if (IsModifier(key))
             {
                 _status.Text = (key == Key.LeftAlt || key == Key.RightAlt || key == Key.System)
-                    ? "Alt can't be bound - press another key."
-                    : "Press a non-modifier key.";
+                    ? Strings.T("settings.cardSearch.altNotBindable")
+                    : Strings.T("settings.cardSearch.pressNonModifier");
                 return;
             }
 
@@ -1689,8 +1798,8 @@ namespace HsbgCardLookup.Ui
                 if (_labels.TryGetValue(k, out var l)) l.Text = Display(GetKey(k));
 
             _status.Text = stolen.Count == 0
-                ? $"Saved. \"{Label(bound)}\" bound to {ks}."
-                : $"Saved. \"{Label(bound)}\" bound to {ks}; unbound: {string.Join(", ", stolen)}.";
+                ? Strings.F("settings.cardSearch.savedBound", Label(bound), ks)
+                : Strings.F("settings.cardSearch.savedBoundStolen", Label(bound), ks, string.Join(", ", stolen));
 
             Changed();
         }
@@ -1729,9 +1838,9 @@ namespace HsbgCardLookup.Ui
         {
             switch (kind)
             {
-                case "browser": return "Open overlay";
-                case "golden": return "Toggle golden";
-                case "focus": return "Focus search";
+                case "browser": return Strings.T("settings.cardSearch.keyOpenOverlay");
+                case "golden": return Strings.T("settings.cardSearch.keyToggleGolden");
+                case "focus": return Strings.T("settings.cardSearch.keyFocusSearch");
                 default: return kind;
             }
         }
