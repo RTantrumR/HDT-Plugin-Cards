@@ -83,7 +83,7 @@ Opponent ratings come from the hsbg.cards leaderboard. Players who are not on it
 
 ## Languages
 
-One setting, **Card search & floating cards → Language**, follows the Hearthstone client by default:
+One setting, **Settings → Language** (its own row, under the globe), follows the Hearthstone client by default:
 card names, text and art, the words the search understands (tribes, keywords, card types) and the
 plugin's own menus and messages all come in that language — German, Spanish (EU and Latin America),
 French, Italian, Japanese, Korean, Polish, Portuguese, Thai, Simplified and Traditional Chinese. The

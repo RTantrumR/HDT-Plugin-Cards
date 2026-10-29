@@ -8,12 +8,15 @@ namespace HsbgCardLookup.Localization
     {
         public readonly string Web;     // the site's URL / API code ("de", "zh-tw")
         public readonly string Game;    // the Hearthstone client's locale code ("deDE"); null when the game has no client in it
-        public readonly string Native;  // the language's own name, as the settings rows show it
+        public readonly string Native;  // the language's own name, as the language page shows it ("Português (Brasil)")
+        public readonly string English; // its English name, the line under it ("Portuguese (Brazil)")
+        public readonly string Tag;     // the IETF tag beside that ("pt-BR")
 
         /// <summary>The site serves card data (and renders) in this language.</summary>
         public bool HasCards => Game != null;
 
-        public Locale(string web, string game, string native) { Web = web; Game = game; Native = native; }
+        public Locale(string web, string game, string native, string english, string tag)
+        { Web = web; Game = game; Native = native; English = english; Tag = tag; }
     }
 
     /// <summary>
@@ -30,18 +33,18 @@ namespace HsbgCardLookup.Localization
         /// <summary>The languages the site serves CARD data in (the game's locales minus Russian).</summary>
         public static readonly IReadOnlyList<Locale> Cards = new[]
         {
-            new Locale("de",    "deDE", "Deutsch"),
-            new Locale("es",    "esES", "Español (EU)"),
-            new Locale("es-mx", "esMX", "Español (AL)"),
-            new Locale("fr",    "frFR", "Français"),
-            new Locale("it",    "itIT", "Italiano"),
-            new Locale("ja",    "jaJP", "日本語"),
-            new Locale("ko",    "koKR", "한국어"),
-            new Locale("pl",    "plPL", "Polski"),
-            new Locale("pt",    "ptBR", "Português"),
-            new Locale("th",    "thTH", "ไทย"),
-            new Locale("zh-cn", "zhCN", "简体中文"),
-            new Locale("zh-tw", "zhTW", "繁體中文"),
+            new Locale("de",    "deDE", "Deutsch",                 "German",                "de-DE"),
+            new Locale("es",    "esES", "Español (España)",        "Spanish (Spain)",       "es-ES"),
+            new Locale("es-mx", "esMX", "Español (Latinoamérica)", "Spanish (Latin America)", "es-MX"),
+            new Locale("fr",    "frFR", "Français",                "French",                "fr-FR"),
+            new Locale("it",    "itIT", "Italiano",                "Italian",               "it-IT"),
+            new Locale("ja",    "jaJP", "日本語",                   "Japanese",              "ja-JP"),
+            new Locale("ko",    "koKR", "한국어",                   "Korean",                "ko-KR"),
+            new Locale("pl",    "plPL", "Polski",                  "Polish",                "pl-PL"),
+            new Locale("pt",    "ptBR", "Português (Brasil)",      "Portuguese (Brazil)",   "pt-BR"),
+            new Locale("th",    "thTH", "ไทย",                     "Thai",                  "th-TH"),
+            new Locale("zh-cn", "zhCN", "简体中文",                 "Chinese (Simplified)",  "zh-CN"),
+            new Locale("zh-tw", "zhTW", "繁體中文",                 "Chinese (Traditional)", "zh-TW"),
         };
 
         private static readonly Dictionary<string, Locale> ByWebMap = new Dictionary<string, Locale>(StringComparer.OrdinalIgnoreCase);

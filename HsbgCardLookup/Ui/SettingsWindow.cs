@@ -154,16 +154,85 @@ namespace HsbgCardLookup.Ui
             catch { }
         }
 
-        // "" = automatic, then English, then the languages themselves.
-        private static string[] LanguageValues(IReadOnlyList<Locale> locales) =>
-            new[] { "", Locales.English }.Concat(locales.Select(l => l.Web)).ToArray();
+        // The main row's one-liner: the language in use, and whether it was pinned or followed.
+        private string CurrentLanguageCaption()
+        {
+            string name = Locales.NativeName(_cardLanguage?.Web);
+            return string.IsNullOrEmpty(_config.Language) ? Strings.F("settings.language.autoCaption", name) : name;
+        }
 
-        private static string[] LanguageCaptions(IReadOnlyList<Locale> locales, string autoWeb) =>
-            new[] { Strings.F("settings.language.auto", Locales.NativeName(autoWeb)), Strings.T("settings.language.english") }
-                .Concat(locales.Select(l => l.Native)).ToArray();
+        /// <summary>The language page: one row per choice — Automatic under the globe, then English
+        /// and the twelve site languages, each with its flag, its own name and its English name and
+        /// tag. A click applies at once; the page then rebuilds in that language.</summary>
+        private void BuildLanguage()
+        {
+            _currentPage = BuildLanguage;
+            var stack = NewPage(Strings.T("settings.language"), sub: true);
 
-        private static string[] LanguageHints(IReadOnlyList<Locale> locales, string autoHint, string englishHint, string perLanguageKey) =>
-            new[] { autoHint, englishHint }.Concat(locales.Select(l => Strings.F(perLanguageKey, l.Native))).ToArray();
+            stack.Children.Add(new TextBlock
+            {
+                Text = Strings.T("settings.language.intro"),
+                Foreground = UiKit.TextMuted, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 12)
+            });
+
+            string auto = Locales.WebFromGame(_cardLanguage?.ClientCode);
+            stack.Children.Add(LanguageRow("", Flags.Globe(26, UiKit.TextPrimary), Strings.T("settings.language.autoRow"),
+                Strings.F("settings.language.autoRowHint", Locales.NativeName(auto))));
+            stack.Children.Add(LanguageRow(Locales.English, Flags.Flag(Locales.English, 34), "English", "en-US"));
+            foreach (var l in Locales.Cards)
+                stack.Children.Add(LanguageRow(l.Web, Flags.Flag(l.Web, 34), l.Native, l.English + "  ·  " + l.Tag));
+
+            _status.Text = CardLanguageStatus();
+            _modeRefresh.Add(() => _status.Text = CardLanguageStatus());
+            ShowPage();
+        }
+
+        // One pick on the language page: mark, name, the line under it; the chosen one is ringed gold
+        // with a check at its right. Changed() repaints every row, so the ring moves on a click.
+        private UIElement LanguageRow(string value, UIElement mark, string name, string sub)
+        {
+            var dock = new DockPanel { LastChildFill = true };
+            var check = new TextBlock
+            {
+                Text = "✓", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = UiKit.AccentBrush,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 2, 0)
+            };
+            DockPanel.SetDock(check, Dock.Right);
+            dock.Children.Add(check);
+
+            if (mark is FrameworkElement fe) { fe.Margin = new Thickness(0, 0, 12, 0); fe.VerticalAlignment = VerticalAlignment.Center; }
+            DockPanel.SetDock(mark, Dock.Left);
+            dock.Children.Add(mark);
+
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = name, Foreground = UiKit.TextPrimary, FontSize = 15 });
+            if (!string.IsNullOrEmpty(sub))
+                text.Children.Add(new TextBlock { Text = sub, Foreground = UiKit.TextMuted, FontSize = 11.5, TextWrapping = TextWrapping.Wrap });
+            dock.Children.Add(text);
+
+            var row = new Border
+            {
+                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 7, 10, 7), Margin = new Thickness(0, 0, 0, 6),
+                Child = dock, Cursor = Cursors.Hand
+            };
+            Action repaint = () =>
+            {
+                bool on = string.Equals((_config.Language ?? "").Trim(), value, StringComparison.OrdinalIgnoreCase);
+                row.BorderBrush = on ? UiKit.AccentBrush : UiKit.StrokeBrush;
+                row.Background = on ? UiKit.Br(UiKit.PanelActive) : UiKit.Br(UiKit.RowBg);
+                check.Visibility = on ? Visibility.Visible : Visibility.Hidden;
+            };
+            repaint();
+            _modeRefresh.Add(repaint);
+            row.MouseLeftButtonUp += (s, e) =>
+            {
+                _config.Language = value;
+                Changed();   // applies now; a catalog change rebuilds this page in the new language
+            };
+            return row;
+        }
 
         // What the card language's data is doing: English, applied, waiting for its first use, or
         // served English by the site (no translation yet).
@@ -348,6 +417,12 @@ namespace HsbgCardLookup.Ui
                     Changed();
                 }, null));
 
+            // Language is its own row, last and under the globe, so it is found at a glance rather than
+            // buried in the card-search page: it governs every surface, not one feature.
+            stack.Children.Add(CategoryRow(Strings.T("settings.language"),
+                Strings.F("settings.language.mainHint", CurrentLanguageCaption()),
+                null, null, BuildLanguage, Flags.Globe(18, UiKit.AccentBrush)));
+
             var closeLabel = new TextBlock { Text = Strings.T("settings.common.close"), Foreground = UiKit.TextPrimary, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center };
             var close = new Border
             {
@@ -394,29 +469,6 @@ namespace HsbgCardLookup.Ui
                 _status.Text = v ? Strings.T("settings.cardSearch.showDuosOn") : Strings.T("settings.cardSearch.showDuosOff");
                 Changed();
             }));
-
-            stack.Children.Add(Separator());
-
-            // One language for everything — cards, art, the game's words and the plugin's own texts —
-            // following the client by default; any language can be pinned. Flipping it downloads
-            // nothing: the card data is pulled when the language is first used.
-            string auto = Locales.WebFromGame(_cardLanguage?.ClientCode);
-            stack.Children.Add(CycleRow(Strings.T("settings.language"),
-                LanguageValues(Locales.Cards), LanguageCaptions(Locales.Cards, auto),
-                LanguageHints(Locales.Cards,
-                    Strings.F("settings.language.autoHint", Locales.NativeName(auto)),
-                    Strings.T("settings.language.englishHint"), "settings.language.hint"),
-                () => _config.Language ?? "", v => _config.Language = v));
-
-            var languageStatus = new TextBlock
-            {
-                Foreground = UiKit.TextMuted, FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 2, 0, 8)
-            };
-            Action paintLanguage = () => languageStatus.Text = CardLanguageStatus();
-            paintLanguage();
-            _modeRefresh.Add(paintLanguage);
-            stack.Children.Add(languageStatus);
 
             stack.Children.Add(ToggleRow(Strings.T("settings.cardSearch.dragFromDetail"), _config.DragFromDetail, v =>
             {
@@ -1103,7 +1155,7 @@ namespace HsbgCardLookup.Ui
 
         // A main-page category: title + hint on the left; optional master On/Off pill; a chevron and
         // click-to-open when the category has a sub-page.
-        private UIElement CategoryRow(string title, string hint, Func<bool> get, Action<bool> set, Action open)
+        private UIElement CategoryRow(string title, string hint, Func<bool> get, Action<bool> set, Action open, UIElement icon = null)
         {
             var dock = new DockPanel { LastChildFill = true };
 
@@ -1126,7 +1178,17 @@ namespace HsbgCardLookup.Ui
             }
 
             var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-            left.Children.Add(new TextBlock { Text = title, Foreground = UiKit.TextPrimary, FontSize = 15 });
+            var titleText = new TextBlock { Text = title, Foreground = UiKit.TextPrimary, FontSize = 15, VerticalAlignment = VerticalAlignment.Center };
+            if (icon == null) left.Children.Add(titleText);
+            else
+            {
+                // The icon says what the row IS (the language row wears the globe), left of the name.
+                if (icon is FrameworkElement fe) { fe.Margin = new Thickness(0, 0, 8, 0); fe.VerticalAlignment = VerticalAlignment.Center; }
+                var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
+                titleRow.Children.Add(icon);
+                titleRow.Children.Add(titleText);
+                left.Children.Add(titleRow);
+            }
             if (!string.IsNullOrEmpty(hint))
                 left.Children.Add(new TextBlock
                 {

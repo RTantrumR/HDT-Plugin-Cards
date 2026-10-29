@@ -120,6 +120,7 @@
     <Compile Include="Localization\LocaleSync.cs" />
     <Compile Include="Localization\CardLanguage.cs" />
     <Compile Include="Localization\Strings.cs" />
+    <Compile Include="Ui\Flags.cs" />
     <Compile Include="Data\TribeTally.cs" />
     <Compile Include="Game\LeaderboardRaceScry.cs" />
     <Compile Include="Ui\TribeIcons.cs" />
