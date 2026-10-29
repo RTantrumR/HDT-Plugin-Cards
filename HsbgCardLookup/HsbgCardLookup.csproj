@@ -114,7 +114,7 @@
     <Compile Include="Data\CardStore.cs" />
     <Compile Include="Localization\Locales.cs" />
     <Compile Include="Localization\HdtProbe.cs" />
-    <Compile Include="Localization\ClientLanguage.cs" />
+    <Compile Include="Localization\HdtLanguage.cs" />
     <Compile Include="Localization\LocaleVocab.cs" />
     <Compile Include="Localization\LocaleTerms.cs" />
     <Compile Include="Localization\LocaleSync.cs" />

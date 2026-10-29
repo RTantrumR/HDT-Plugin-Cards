@@ -658,7 +658,7 @@ namespace HsbgCardLookup
             _recap?.Poll();      // opt-in match recap: tracks the match, shows the panel at its end
             _searchButton?.Poll(); // in-game 🔍 button by the card-list book (shows during a BG match)
             PollBackgroundUpdateCheck(); // re-attempt every 20 min so a long session isn't frozen at launch-time state
-            _cardLanguage?.PollClient();   // following the game client: re-read its language once a minute
+            _cardLanguage?.PollHdt();      // following HDT's language setting: re-read it once a minute
             EnsureCardDataWhenInMatch();   // a match is on and the card language's data isn't here yet → fetch it
         }
 

@@ -21,7 +21,7 @@ namespace HsbgCardLookup.Config
         public bool ShowDuos { get; set; } = true;
         // The plugin's language — card names, text, art and the game's own words (tribes, keywords,
         // card types) in the search and the filters, AND the plugin's own menus, tooltips and
-        // messages. "" = follow the Hearthstone client, "en" = English whatever the client runs in,
+        // messages. "" = follow HDT's own language setting, "en" = English whatever HDT runs in,
         // or one of the site's card-language codes (Localization.Locales.Cards: de, es, es-mx, fr,
         // it, ja, ko, pl, pt, th, zh-cn, zh-tw). The card data is the site's /api/cards?locale=
         // snapshot, fetched when the language is used; the plugin's texts are bundled catalogs

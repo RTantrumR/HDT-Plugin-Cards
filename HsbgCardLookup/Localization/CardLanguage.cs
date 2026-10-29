@@ -11,8 +11,8 @@ namespace HsbgCardLookup.Localization
     /// The plugin's language: the one card names, text, renders, the game's own words (tribes,
     /// keywords, card types…) AND the plugin's own menus and messages (<see cref="Strings"/>) appear
     /// in. One instance, owned by Plugin, and the only place
-    /// that decides it: the setting (<see cref="PluginConfig.Language"/>), else the Hearthstone
-    /// client's language, else English. Applying it switches the string catalog, the store's overlay,
+    /// that decides it: the setting (<see cref="PluginConfig.Language"/>), else HDT's own language
+    /// setting, else English. Applying it switches the string catalog, the store's overlay,
     /// the search alias table, the name sort and the art cache's memory, then raises <see cref="Changed"/> once — the
     /// seam every language-aware surface hangs on. UI thread, except the download bodies.
     ///
@@ -30,7 +30,7 @@ namespace HsbgCardLookup.Localization
 
         private string _appliedWeb;              // what Apply() last switched to (null = never)
         private string _appliedTerms;            // LocaleTerms.Generated at that time
-        private DateTime _lastClientPoll = DateTime.MinValue;
+        private DateTime _lastHdtPoll = DateTime.MinValue;
         private DateTime _lastFetchFailure = DateTime.MinValue;
         private volatile bool _fetching;
         private bool _termsChecked;
@@ -40,10 +40,10 @@ namespace HsbgCardLookup.Localization
             _store = store; _config = config; _ui = ui; _log = log;
         }
 
-        /// <summary>The setting: "" = follow the game client, "en", or a card-language web code.</summary>
+        /// <summary>The setting: "" = follow HDT's language, "en", or a card-language web code.</summary>
         public string Preference => _config.Language ?? "";
-        /// <summary>The client locale code last detected ("deDE"), or null.</summary>
-        public string ClientCode { get; private set; }
+        /// <summary>HDT's language setting as last read ("deDE", "ptPT"), or null.</summary>
+        public string HdtCode { get; private set; }
         /// <summary>The language in use: "en" or a card-language web code.</summary>
         public string Web { get; private set; } = Locales.English;
         /// <summary>The game's words in <see cref="Web"/>; the empty vocabulary for English.</summary>
@@ -60,16 +60,16 @@ namespace HsbgCardLookup.Localization
         /// switched — once per real change.</summary>
         public event Action Changed;
 
-        /// <summary>OnLoad, before the UI is built: load the vocabulary table, detect the client, apply
-        /// from cache. No network.</summary>
+        /// <summary>OnLoad, before the UI is built: load the catalogs and the vocabulary table, read
+        /// HDT's language, apply from cache. No network.</summary>
         public void Initialize()
         {
             Strings.Load();
             _log?.Invoke("Strings: " + Strings.LoadInfo);
             LocaleTerms.Load();
             _log?.Invoke("LocaleTerms: " + LocaleTerms.LoadInfo);
-            ClientCode = ClientLanguage.Detect();
-            Apply(Resolve(Preference, ClientCode), force: true);
+            HdtCode = HdtLanguage.Detect();
+            Apply(Resolve(Preference, HdtCode), force: true);
             _log?.Invoke("Card language: " + Describe());
         }
 
@@ -77,22 +77,22 @@ namespace HsbgCardLookup.Localization
         /// From cache only; a missing snapshot waits for <see cref="EnsureDataAsync"/>.</summary>
         public void Refresh()
         {
-            if (string.IsNullOrEmpty(Preference)) ClientCode = ClientLanguage.Detect();
-            Apply(Resolve(Preference, ClientCode), force: false);
+            if (string.IsNullOrEmpty(Preference)) HdtCode = HdtLanguage.Detect();
+            Apply(Resolve(Preference, HdtCode), force: false);
         }
 
-        /// <summary>From Plugin.OnUpdate: while following the client, re-read its language once a
-        /// minute (a change needs a game restart anyway). Any thread.</summary>
-        public void PollClient()
+        /// <summary>From Plugin.OnUpdate: while following HDT, re-read its language setting once a
+        /// minute so a change in HDT's options is picked up without a restart. Any thread.</summary>
+        public void PollHdt()
         {
             if (!string.IsNullOrEmpty(Preference)) return;
             var now = DateTime.UtcNow;
-            if ((now - _lastClientPoll).TotalSeconds < 60) return;
-            _lastClientPoll = now;
-            string code = ClientLanguage.Detect();
-            if (string.Equals(code, ClientCode, StringComparison.Ordinal)) return;
-            ClientCode = code;
-            _ui.BeginInvoke(new Action(() => Apply(Resolve(Preference, ClientCode), force: false)));
+            if ((now - _lastHdtPoll).TotalSeconds < 60) return;
+            _lastHdtPoll = now;
+            string code = HdtLanguage.Detect();
+            if (string.Equals(code, HdtCode, StringComparison.Ordinal)) return;
+            HdtCode = code;
+            _ui.BeginInvoke(new Action(() => Apply(Resolve(Preference, HdtCode), force: false)));
         }
 
         /// <summary>The store reloaded the English snapshot (and re-laid the overlay): tell the
@@ -144,11 +144,11 @@ namespace HsbgCardLookup.Localization
             catch (Exception ex) { _log?.Invoke("CardLanguage.EnsureDataAsync error: " + ex.Message); }
         }
 
-        /// <summary>Pure: the effective language for a setting and a client code.</summary>
-        public static string Resolve(string preference, string clientCode)
+        /// <summary>Pure: the effective language for a setting and HDT's language code.</summary>
+        public static string Resolve(string preference, string hdtCode)
         {
             string pick = (preference ?? "").Trim();
-            if (pick.Length == 0) return Locales.WebFromGame(clientCode);
+            if (pick.Length == 0) return Locales.WebFromHdt(hdtCode);
             if (string.Equals(pick, Locales.English, StringComparison.OrdinalIgnoreCase)) return Locales.English;
             var l = Locales.ByWeb(pick);
             return l != null && l.HasCards ? l.Web : Locales.English;
@@ -157,7 +157,7 @@ namespace HsbgCardLookup.Localization
         /// <summary>One line for the log.</summary>
         public string Describe()
         {
-            string source = !string.IsNullOrEmpty(Preference) ? "setting" : ClientCode != null ? "client " + ClientCode : "default";
+            string source = !string.IsNullOrEmpty(Preference) ? "setting" : HdtCode != null ? "HDT " + HdtCode : "default";
             string data = Web == Locales.English ? "English data"
                 : DataApplied ? $"{_store.LocaleCount} cards translated (patch {_store.LocalePatch})"
                 : "snapshot not downloaded yet";

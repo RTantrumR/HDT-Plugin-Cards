@@ -23,14 +23,13 @@ namespace HsbgCardLookup.Localization
     /// The locale registry — a port of the site's lib/locales.ts. English is the unprefixed base
     /// ("en" / enUS). <see cref="Cards"/> are the twelve languages hsbg.cards serves card data in,
     /// at /&lt;web&gt; and through /api/cards?locale=&lt;web&gt;; the plugin's own texts exist in the
-    /// same twelve. Russian (ruRU) is deliberately absent on the site and here: a
-    /// Russian client or HDT gets English, like any code the registry does not know.
+    /// same twelve. Any code the registry does not know resolves to English.
     /// </summary>
     public static class Locales
     {
         public const string English = "en";
 
-        /// <summary>The languages the site serves CARD data in (the game's locales minus Russian).</summary>
+        /// <summary>The languages the site serves CARD data in.</summary>
         public static readonly IReadOnlyList<Locale> Cards = new[]
         {
             new Locale("de",    "deDE", "Deutsch",                 "German",                "de-DE"),
@@ -65,10 +64,19 @@ namespace HsbgCardLookup.Localization
         public static Locale ByWeb(string web) =>
             !string.IsNullOrEmpty(web) && ByWebMap.TryGetValue(web, out var l) ? l : null;
 
-        /// <summary>The card language for a client locale code ("deDE" → "de"); "en" for enUS/enGB,
-        /// ruRU and anything unknown or null.</summary>
+        /// <summary>The card language for a game locale code ("deDE" → "de"); "en" for enUS/enGB
+        /// and anything unknown or null.</summary>
         public static string WebFromGame(string game) =>
             !string.IsNullOrEmpty(game) && ByGameMap.TryGetValue(game, out var l) ? l.Web : English;
+
+        /// <summary>The language for HDT's own language setting (its Language enum name): the game
+        /// codes as above, plus ptPT → Portuguese; anything else → English.</summary>
+        public static string WebFromHdt(string code)
+        {
+            if (string.IsNullOrEmpty(code)) return English;
+            if (string.Equals(code, "ptPT", StringComparison.OrdinalIgnoreCase)) return "pt";
+            return WebFromGame(code);
+        }
 
         public static string NativeName(string web)
         {

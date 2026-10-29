@@ -176,7 +176,7 @@ namespace HsbgCardLookup.Ui
                 Margin = new Thickness(0, 0, 0, 12)
             });
 
-            string auto = Locales.WebFromGame(_cardLanguage?.ClientCode);
+            string auto = Locales.WebFromHdt(_cardLanguage?.HdtCode);
             stack.Children.Add(LanguageRow("", Flags.Globe(26, UiKit.TextPrimary), Strings.T("settings.language.autoRow"),
                 Strings.F("settings.language.autoRowHint", Locales.NativeName(auto))));
             stack.Children.Add(LanguageRow(Locales.English, Flags.Flag(Locales.English, 34), "English", "en-US"));

@@ -5,7 +5,7 @@ namespace HsbgCardLookup.Localization
 {
     /// <summary>
     /// Reads HDT's own settings object without a compile-time reference: the member the language
-    /// code wants (<c>Config.Instance.LastSeenHearthstoneLang</c>) postdates the
+    /// code wants (<c>Config.Instance.Localization</c>) postdates the
     /// HDT build this plugin compiles against, and a plugin must load on every HDT. A member that is
     /// missing or renamed reads as null — never a load failure, never a write.
     /// </summary>
