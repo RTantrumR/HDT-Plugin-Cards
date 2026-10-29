@@ -91,7 +91,7 @@ The plugin speaks the game's languages. Two settings, both under **Card search &
   Simplified and Traditional Chinese. The search also keeps understanding English, so `taunt` and
   `Spott` both work on a German client. A Russian client gets English.
 - **Plugin language** follows HDT's language setting by default: the plugin's own menus, tooltips and
-  messages, in the same languages plus Ukrainian. These texts are machine-translated and unreviewed;
+  messages, in the same languages. These texts are machine-translated and unreviewed;
   corrections are welcome as edits to `HsbgCardLookup/data/ui/<language>.json`.
 
 Switching either setting downloads nothing by itself. A card language's data (about 1 MB) is fetched

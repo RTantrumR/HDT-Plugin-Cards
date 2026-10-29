@@ -6,7 +6,7 @@ v0.8.0: The plugin in your language
 - **Your choice**: Settings → Card search & floating cards → **Card language**. "Automatic" follows the client; any language can be forced, English included.
 
 ### The plugin in your language
-- Menus, tooltips, hints and messages in the same languages plus Ukrainian, following HDT's language setting by default; **Plugin language** on the same settings page overrides it.
+- Menus, tooltips, hints and messages in the same languages, following HDT's language setting by default; **Plugin language** on the same settings page overrides it.
 - These texts are machine-translated and not reviewed by native speakers yet. Tell us what reads wrong, or fix it directly in the plugin's `data\ui\<language>.json`.
 
 ### Good to know

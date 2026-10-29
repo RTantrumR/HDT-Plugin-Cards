@@ -26,7 +26,7 @@ namespace HsbgCardLookup.Config
         // data is the site's /api/cards?locale= snapshot, fetched when the language is used.
         public string Language { get; set; } = "";
         // PLUGIN-CONTENT language — the plugin's own menus, tooltips and messages. "" = follow HDT's
-        // language setting, "en", or a UI-language code (the card languages plus "ua"). Bundled
+        // language setting, "en", or one of the card-language codes. Bundled
         // catalogs (data\ui\<web>.json); switching downloads nothing.
         public string UiLanguage { get; set; } = "";
         // Magnifying-glass button on the in-game overlay (left of the game's card-list book,
