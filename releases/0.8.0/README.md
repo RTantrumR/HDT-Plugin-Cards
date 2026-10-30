@@ -4,7 +4,7 @@ v0.8.0: The plugin in your language
 - **What's new**: card names, text and art in the F3 search, the Dark Gift list, the trinket and anomaly HUD and the standings panel's hero names follow HDT's language setting - German, Spanish (EU and Latin America), French, Italian, Japanese, Korean, Polish, Portuguese, Thai, Simplified and Traditional Chinese. The plugin's own menus, tooltips, hints and messages follow along. English setups see no change.
 - **Search both ways**: the smart search understands your language's words for tribes, keywords, card types, spell schools and trinket tiers, and still understands English - `Spott t2` and `taunt t2` are the same search. Accents do not matter: `damon` finds Dämon.
 - **Your choice**: Settings → **Language**, its own row under the globe, with every language's flag and name. "Automatic" follows HDT's language; any language can be pinned, English included.
-- The plugin's own texts are machine-translated and not reviewed by native speakers yet. Tell us what reads wrong by opening and issue in the repository.
+- The plugin's own texts are partially machine-translated and not reviewed by native speakers yet, but we really appreciate if you would tell us what reads wrong by opening and issue in the repository.
 
 ### Good to know
 - **Browse order** matches the website: the F3 search now opens on tavern minions and tavern spells tier by tier, then Dark Gifts, heroes, hero powers, trinkets, anomalies, quests and rewards; buddies, tokens, hero-power minions, Timewarped and Darkmoon cards come after all of that, as they do on hsbg.cards. Before, buddies sat among the tavern minions at the top.
