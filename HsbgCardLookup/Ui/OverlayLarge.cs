@@ -1109,13 +1109,13 @@ namespace HsbgCardLookup.Ui
             bool fuzzy = false;
             List<BgCard> cards;
             if (q.Length == 0)
-                // Default/browse order: regular minions, then token/hero-power minions; regular
-                // spells, then spellcraft/other spells; then heroes, hero powers, quests, rewards,
-                // trinkets, anomalies. Within a group: tier then ENGLISH name, in every language —
-                // the owner's call (2026-10-30): the grid shows the same cards top to bottom
+                // Default/browse order: the website's grid sections (CardStore.BrowseRank) — tavern
+                // minions and spells tier by tier, Dark Gifts, heroes, hero powers, trinkets, anomalies,
+                // quests, rewards, and only then every other minion and spell (buddies, tokens,
+                // hero-power minions, Timewarped…). Within a section: the ENGLISH name, in every
+                // language — the owner's call (2026-10-30): the grid shows the same cards top to bottom
                 // whatever the language, rather than re-alphabetising per language.
                 cards = pool.OrderBy(CardStore.BrowseRank)
-                            .ThenBy(c => c.Tier ?? 99)
                             .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
             else
             {

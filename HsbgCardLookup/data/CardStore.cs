@@ -45,43 +45,44 @@ namespace HsbgCardLookup.Data
         // Join from an HDT entity's CardId string to our card (see BgCard.ExternalId).
         public Dictionary<string, BgCard> ByExternalId { get; private set; } = new Dictionary<string, BgCard>();
 
-        // Display order, matching the website: minions, spells, heroes, hero powers, quests,
-        // rewards, trinkets, then anomalies (out of pool) last. Anything else falls to the end.
-        private static readonly string[] TypeOrder =
-            { "minion", "spell", "hero", "hero_power", "quest", "reward", "trinket", "anomaly" };
-
-        /// <summary>Card-type sort rank (lower = earlier); unlisted types sort last.</summary>
-        public static int TypeRank(string cardType)
-        {
-            int i = Array.IndexOf(TypeOrder, cardType);
-            return i < 0 ? int.MaxValue : i;
-        }
+        // ── Browse order: a port of the website's grid sections (lib/grid-sections.ts) ──
+        // Tavern minions and tavern spells lead, tier by tier; then Dark Gifts by the turn they
+        // unlock; heroes, hero powers, trinkets, anomalies, quests, rewards; and only then every
+        // other minion and spell (buddies, tokens, hero-power minions, Timewarped, Darkmoon prizes,
+        // Spellcraft, Battlecruiser…), again tier by tier, the tierless ones closing each group.
+        // A card with no categories at all is a wiki-backfilled legacy tavern card: absence is tavern.
+        private static bool IsTavern(BgCard c) =>
+            c.Categories == null || c.Categories.Count == 0 || c.Categories.Contains("tavern");
 
         /// <summary>
-        /// Default browse grouping (lower = earlier). Like <see cref="TypeRank"/> but pulls the
-        /// "derived" cards of a type after the regular ones: regular minions, then token / hero-power
-        /// minions; regular (tiered) spells, then spell tokens / spellcraft (tierless); then heroes,
-        /// hero powers, quests, rewards, trinkets, anomalies. Within a group, sort by tier then name.
+        /// Default browse rank (lower = earlier): the website's section order with each section's own
+        /// sub-order (the tier, or a Dark Gift's unlock turn) folded in. Sort by this, then by the
+        /// English name, and the grid reads top to bottom like the site's.
         /// </summary>
         public static int BrowseRank(BgCard c)
         {
+            const int Group = 100, Tierless = 99;
+            int tier = c.Tier > 0 ? c.Tier.Value : Tierless;
             switch (c.CardType)
             {
                 case "minion":
-                    bool derived = (c.Categories ?? new List<string>())
-                        .Any(x => x == "token" || x == "heroPower");
-                    return derived ? 1 : 0;
+                    return (IsTavern(c) && tier != Tierless ? 0 : 9) * Group + tier;
                 case "spell":
-                    return c.Tier.HasValue ? 2 : 3;   // tierless spells (token/spellcraft/other) last
-                case "hero": return 4;
-                case "hero_power": return 5;
-                case "quest": return 6;
-                case "reward": return 7;
-                case "trinket": return 8;
-                case "anomaly": return 9;
-                default: return 10;
+                    if (c.Categories != null && c.Categories.Contains("darkgift"))
+                        return 2 * Group + (c.DarkGiftMinTurn > 0 ? c.DarkGiftMinTurn.Value : Tierless);
+                    return (IsTavern(c) && tier != Tierless ? 1 : 10) * Group + tier;
+                case "hero": return 3 * Group;
+                case "hero_power": return 4 * Group;
+                case "trinket": return 5 * Group;
+                case "anomaly": return 6 * Group;
+                case "quest": return 7 * Group;
+                case "reward": return 8 * Group;
+                default: return 11 * Group;
             }
         }
+        // The card-type filter dropdown's order (the browse order is BrowseRank's, below).
+        private static readonly string[] TypeOrder =
+            { "minion", "spell", "hero", "hero_power", "quest", "reward", "trinket", "anomaly" };
         private static readonly string[] TribeOrder =
             { "Aberration", "Beast", "Demon", "Dragon", "Elemental", "Mech", "Murloc", "Naga", "Pirate", "Quilboar", "Undead", "All" };
 

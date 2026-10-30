@@ -7,6 +7,7 @@ v0.8.0: The plugin in your language
 - The plugin's own texts are machine-translated and not reviewed by native speakers yet. Tell us what reads wrong, or fix it directly in the plugin's `data\ui\<language>.json`.
 
 ### Good to know
+- **Browse order** matches the website: the F3 grid opens on tavern minions and tavern spells tier by tier, then Dark Gifts, heroes, hero powers, trinkets, anomalies, quests and rewards; buddies, tokens, hero-power minions, Timewarped and Darkmoon cards come after all of that, as they do on hsbg.cards. Before, buddies sat among the tavern minions at the top.
 - Switching the language downloads nothing by itself. A language's card data (about 1 MB) is fetched the first time it is actually used — the search opens, a match starts — and its card art card by card, as you look at it. The English art pack is downloaded once, as before, and never again because of a language switch.
 - Cards Blizzard did not translate stay English, as on hsbg.cards.
 - Dark Gift requirement checks, match export CSVs and the plugin's log stay English: they describe game rules and data, not the interface.
