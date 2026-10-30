@@ -405,18 +405,6 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(CategoryRow(Strings.T("settings.updates.title"), UpdatesHint(), null, null, BuildUpdates));
 
-            string exportDir = System.IO.Path.Combine(PluginConfig.DataDir, "match-exports");
-            stack.Children.Add(CategoryRow(Strings.T("settings.export.title"),
-                Strings.F("settings.export.hint", exportDir),
-                () => _config.ExportMatchBoards, v =>
-                {
-                    _config.ExportMatchBoards = v;
-                    _status.Text = v
-                        ? Strings.F("settings.export.on", exportDir)
-                        : Strings.T("settings.export.off");
-                    Changed();
-                }, null));
-
             // Language is its own row, last and under the globe, so it is found at a glance rather than
             // buried in the card-search page: it governs every surface, not one feature.
             stack.Children.Add(CategoryRow(Strings.T("settings.language"),

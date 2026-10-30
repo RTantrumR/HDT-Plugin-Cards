@@ -122,10 +122,6 @@ namespace HsbgCardLookup.Config
         }
         public HudPlacement DarkGiftHud { get; set; } = new HudPlacement();
 
-        // Opt-in match recorder: capture the player's board + context at each combat boundary and write a
-        // CSV per match (no screenshots). Off by default. Output: DataDir\match-exports\.
-        public bool ExportMatchBoards { get; set; } = false;
-
         // Match recap: APM + damage dealt at match end, compared with this season's solo history.
         // On by default, for updating users too (new in 0.7.0, so no saved config has an opinion on it).
         // Records: DataDir\recaps\.

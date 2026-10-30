@@ -33,7 +33,6 @@ namespace HsbgCardLookup
         private OverlayLarge _overlayLarge;
         private FloatingCardManager _floating;
         private Game.BgHud _bgHud;                               // always-on trinkets/anomaly HUD
-        private Game.MatchRecorder _recorder;                    // opt-in per-match board CSV export
         private Game.BgMmr _bgMmr;                                // opt-in in-match opponent-MMR reader
         private Game.DarkGiftWatcher _darkGifts;                  // opt-in Dark Gift list (“?” marker by the button)
         private Game.Recap.RecapFeature _recap;                   // opt-in match recap (APM + damage dealt vs history)
@@ -151,7 +150,6 @@ namespace HsbgCardLookup
             _floating = new FloatingCardManager(_config);
             _overlayLarge = new OverlayLarge(_store, _config, _cardLanguage, _hotkey, _floating, OpenSettings, CheckForUpdatesInteractive, Version.ToString());
             _bgHud = new Game.BgHud(_store, _config, _ui);
-            _recorder = new Game.MatchRecorder(_store, _config, Log);
             _bgMmr = new Game.BgMmr(_config, _ui, Log, HeroDisplayName);
             _darkGifts = new Game.DarkGiftWatcher(_store, _config, _ui, Log);
             _recap = new Game.Recap.RecapFeature(_config, _ui, Log);
@@ -672,7 +670,6 @@ namespace HsbgCardLookup
             _giftProbe?.Poll();
 #endif
             _bgHud?.Poll();      // throttled read of trinkets/anomaly → always-on HUD
-            _recorder?.Poll();   // opt-in per-match board snapshots → CSV at match end
             _bgMmr?.Poll();      // opt-in in-match opponent-MMR reader
             _darkGifts?.Poll();  // opt-in Dark Gift list (“?” marker above the Dark Discovery button)
             _recap?.Poll();      // opt-in match recap: tracks the match, shows the panel at its end

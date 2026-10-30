@@ -27,10 +27,11 @@ things you would otherwise hover, alt-tab or memorise on screen while you play.
   (`t3`, `5/5`, `trinket mech`). Golden versions, tokens, buddies and hero powers included.
 - **Floating cards**: drag a card out of the search and leave it on screen at any size, for yourself
   or for your viewers.
-- **Match export**: your board after every round, saved to a CSV file. (Work in progress for full visualized board snapshots and match analysis)
 
-Standard setup includes opponents' Tavern Tier and Tribes by their portraits, a movable floating panel with their Names/MMR, Dark Gifts and the match recap; trinkets, anomaly and match export are off until you switch them on in the plugin's settings.
+Standard setup includes opponents' Tavern Tier and Tribes by their portraits, a movable floating panel with their Names/MMR, Dark Gifts and the match recap; trinkets and the anomaly HUD are off until you switch them on in the plugin's settings.
 Card data and art come from [hsbg.cards](https://hsbg.cards).
+
+**Match export is discontinued** as of v0.8.0: the per-round CSV writer is gone. For your match history use [ReplayWatcher](https://hsbg.cards/plugin/replay-watcher) instead.
 
 <br clear="right" />
 
