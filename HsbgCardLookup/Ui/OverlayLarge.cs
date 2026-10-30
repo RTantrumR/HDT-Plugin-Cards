@@ -1111,10 +1111,12 @@ namespace HsbgCardLookup.Ui
             if (q.Length == 0)
                 // Default/browse order: regular minions, then token/hero-power minions; regular
                 // spells, then spellcraft/other spells; then heroes, hero powers, quests, rewards,
-                // trinkets, anomalies. Within a group: tier then name. (See CardStore.BrowseRank.)
+                // trinkets, anomalies. Within a group: tier then ENGLISH name, in every language —
+                // the owner's call (2026-10-30): the grid shows the same cards top to bottom
+                // whatever the language, rather than re-alphabetising per language.
                 cards = pool.OrderBy(CardStore.BrowseRank)
                             .ThenBy(c => c.Tier ?? 99)
-                            .ThenBy(c => c.DisplayName, SearchEngine.NameComparer).ToList();
+                            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
             else
             {
                 var r = _smart ? SearchEngine.Smart(pool, q) : SearchEngine.Simple(pool, q);
