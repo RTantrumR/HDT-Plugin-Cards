@@ -527,12 +527,16 @@ namespace HsbgCardLookup
             _arrangeBanner?.Relabel();
             _settings?.OnLanguageChanged();
             PushUpdateUi();   // the cached notice renders through its catalog key
+            // The search is open while the language switched: that is the language being USED, so
+            // pull its snapshot now — otherwise the open grid read English until the next open.
+            if (_overlayLarge?.IsVisible == true) NoteCardsNeeded();
             Log("Language applied: " + _cardLanguage.Describe());
         }
 
         // The card language's snapshot is pulled only when the language is actually used — never on
-        // a settings flip. "Used" = the card search is opened (here) or a Battlegrounds match is on
-        // (OnUpdate). The service dedupes and backs off; this is a cheap hint.
+        // a settings flip. "Used" = the card search is opened or already open while the language
+        // changes, or a Battlegrounds match is on (OnUpdate). The service dedupes and backs off;
+        // this is a cheap hint.
         private void NoteCardsNeeded()
         {
             if (_cardLanguage == null || _cardLanguage.DataApplied) return;
