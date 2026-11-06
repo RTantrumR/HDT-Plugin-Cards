@@ -938,9 +938,9 @@ namespace HsbgCardLookup.Ui
             return t;
         }
 
-        /// <summary>Show the "update available" banner: the version + a "Download page ↗" link (the
-        /// release page in the browser — the zip and the notes live together there; since v0.4.0 the
-        /// plugin never downloads the update itself) + Skip, all on one row. No separate dismiss "✕":
+        /// <summary>Show the "update available" banner: the version + a "Download the installer ↗" link
+        /// (the release's Setup wizard in the browser, or the release page when a release ships none;
+        /// since v0.4.0 the plugin never downloads the update itself) + Skip, all on one row. No separate dismiss "✕":
         /// Skip already declines, and the offer deliberately survives opening the page — the decision
         /// is only settled by skipping or actually installing (the version bump clears it).</summary>
         public void SetUpdateOfferNotice(string version, string releaseUrl, Action onOpenDownloadPage, Action onSkip)

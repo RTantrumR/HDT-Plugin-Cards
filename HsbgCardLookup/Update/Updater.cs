@@ -31,7 +31,8 @@ namespace HsbgCardLookup.Update
             set { _linkLabel = value; LinkLabelKey = null; }
         }
         public bool IsError;
-        public string Url;                 // release page — where the download and the notes live
+        public string Url;                 // release page — where the notes live
+        public string DownloadUrl;         // what "Download" opens: the release's Setup.exe when it ships one, else Url
         public bool AvailableForDownload;  // true => a newer version was found
         public string AvailableVersion;    // set when AvailableForDownload
         public UpdateNotice(string message, bool isError = false, string url = null)
@@ -43,8 +44,9 @@ namespace HsbgCardLookup.Update
     /// <summary>
     /// Update NOTIFICATION via GitHub Releases — check-and-link only. This class never downloads,
     /// writes, copies or executes anything: finding a newer version returns an
-    /// <see cref="UpdateNotice"/> whose Url is the release page, and installing is the user's own
-    /// browser + install.bat (the same flow as first install). The in-plugin download/stage/apply
+    /// <see cref="UpdateNotice"/> whose DownloadUrl is the release's Setup wizard (its Url the release
+    /// page), and installing is the user's own browser + that wizard (the same flow as first
+    /// install). The in-plugin download/stage/apply
     /// pipeline that existed through v0.3.4.1 was removed deliberately: its freshly-written staged
     /// DLL — an unsigned, zero-reputation PE written to disk by a non-browser process — is exactly
     /// the artifact Defender's cloud ML flagged in two independent false-positive waves (Sabsik.TE.A!ml
@@ -112,11 +114,13 @@ namespace HsbgCardLookup.Update
                     if (skipped != null && v <= skipped) return null;
                 }
 
+                var page = string.IsNullOrEmpty(rel.HtmlUrl) ? ReleasesUrl : rel.HtmlUrl;
                 return new UpdateNotice("updates.versionAvailable", new object[] { v }, false, null)
                 {
                     AvailableForDownload = true,
                     AvailableVersion = v.ToString(),
-                    Url = string.IsNullOrEmpty(rel.HtmlUrl) ? ReleasesUrl : rel.HtmlUrl,
+                    Url = page,
+                    DownloadUrl = SetupAssetUrl(rel) ?? page,
                 };
             }
             catch { return null; }
@@ -150,6 +154,22 @@ namespace HsbgCardLookup.Update
             catch { }
         }
 
+        /// <summary>The browser_download_url of the release's Setup wizard (an asset named
+        /// "…Setup….exe", built by installer\build.ps1), or null when the release ships none —
+        /// then "Download" falls back to the release page.</summary>
+        private static string SetupAssetUrl(GhRelease rel)
+        {
+            if (rel.Assets == null) return null;
+            foreach (var a in rel.Assets)
+            {
+                if (a?.Name == null || string.IsNullOrEmpty(a.BrowserDownloadUrl)) continue;
+                if (a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                    && a.Name.IndexOf("Setup", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return a.BrowserDownloadUrl;
+            }
+            return null;
+        }
+
         private static Version ParseVersion(string tag)
         {
             if (string.IsNullOrWhiteSpace(tag)) return null;
@@ -161,6 +181,13 @@ namespace HsbgCardLookup.Update
         {
             [JsonProperty("tag_name")] public string TagName { get; set; }
             [JsonProperty("html_url")] public string HtmlUrl { get; set; }
+            [JsonProperty("assets")] public GhAsset[] Assets { get; set; }
+        }
+
+        private sealed class GhAsset
+        {
+            [JsonProperty("name")] public string Name { get; set; }
+            [JsonProperty("browser_download_url")] public string BrowserDownloadUrl { get; set; }
         }
     }
 }

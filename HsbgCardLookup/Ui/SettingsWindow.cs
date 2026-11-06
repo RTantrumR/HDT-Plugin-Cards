@@ -65,7 +65,7 @@ namespace HsbgCardLookup.Ui
 
         private readonly string _currentVersion;
         private readonly Action _checkForUpdates;
-        private readonly Action<UpdateNotice> _openDownloadPage;   // release page in the browser (notify-only updater)
+        private readonly Action<UpdateNotice> _openDownloadPage;   // the installer download in the browser (notify-only updater)
         private readonly Action<string> _skipUpdate;
         private UpdateNotice _updateNotice;     // most recently pushed state (see RefreshUpdateStatus)
         private bool _onUpdatesPage;

@@ -287,7 +287,7 @@ namespace HsbgCardLookup
         // ── Update state: one source of truth, pushed to every surface that can show it ──────────
         // (the F3 banner, the Settings "Updates" page, and the in-game badge by the search button —
         // see PushUpdateUi). Since v0.4.0 the updater only ever NOTIFIES — installing is the user's
-        // own browser + install.bat (see Update.Updater's class comment for why the in-plugin
+        // own browser + the Setup wizard (see Update.Updater's class comment for why the in-plugin
         // download/stage/apply pipeline was removed). A background check never pops a dialog; the
         // only MessageBox left is HandleManualNotice's plugins-menu fallback.
         private Update.UpdateNotice _lastUpdateNotice;
@@ -334,7 +334,7 @@ namespace HsbgCardLookup
 
             if (notice != null && notice.AvailableForDownload)
                 _overlayLarge?.SetUpdateOfferNotice(notice.AvailableVersion, notice.Url,
-                    () => OpenDownloadPage(notice.Url), () => SkipVersion(notice.AvailableVersion));
+                    () => OpenDownloadPage(notice.DownloadUrl), () => SkipVersion(notice.AvailableVersion));
             else if (notice != null)
                 _overlayLarge?.SetUpdateNotice(notice.Message, notice.IsError, notice.Url, notice.LinkLabel);
             else
@@ -344,10 +344,11 @@ namespace HsbgCardLookup
             _searchButton?.SetUpdateState(notice);
         }
 
-        // The user's whole "get the update" action: open the release page in the browser — the zip
-        // and the release notes live there, and the browser (with its own MotW/SmartScreen handling)
-        // is the delivery channel. Deliberately does NOT clear the offer: it stays until the user
-        // skips it or actually installs (the version bump clears it on the next launch).
+        // The user's whole "get the update" action: open the release's Setup wizard download in the
+        // browser (the release page when a release ships none) — the browser (with its own
+        // MotW/SmartScreen handling) is the delivery channel. Deliberately does NOT clear the offer:
+        // it stays until the user skips it or actually installs (the version bump clears it on the
+        // next launch).
         private void OpenDownloadPage(string url)
         {
             try
@@ -655,7 +656,7 @@ namespace HsbgCardLookup
             if (_settings != null) { _settings.Show(); _settings.Activate(); return; }
             _settings = new SettingsWindow(_config, _store, _cardLanguage, _hotkey, ApplySettings, SetArrangeMode,
             Version.ToString(), CheckForUpdatesInteractive,
-            n => OpenDownloadPage(n?.Url), SkipVersion);
+            n => OpenDownloadPage(n?.DownloadUrl), SkipVersion);
             _settings.RecapComparableCount = () => _recap?.ComparableCount ?? 0;
             _settings.Closed += (s, e) => _settings = null;
             _settings.Show();
