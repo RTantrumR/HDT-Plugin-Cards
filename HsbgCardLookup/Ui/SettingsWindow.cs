@@ -302,7 +302,8 @@ namespace HsbgCardLookup.Ui
                 head.Children.Add(new TextBlock
                 {
                     Text = title, Foreground = UiKit.TextPrimary, FontSize = 20, FontWeight = FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0)
+                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0),
+                    TextWrapping = TextWrapping.Wrap
                 });
                 stack.Children.Add(head);
             }
@@ -566,77 +567,48 @@ namespace HsbgCardLookup.Ui
                 TextWrapping = TextWrapping.Wrap
             });
 
-            // ── Where ──────────────────────────────────────────────────────────────────────────
-            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.whereHeader"), first: true));
+            // ── What goes where ──────────────────────────────────────────────────────────────
+            // No surface switches: each part names its place, and a surface draws when something is
+            // assigned to it. The arrange button follows, so the setters have to tell it.
+            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.placementHeader"), first: true));
 
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.portraits"), _config.ShowMmrLabels, v =>
-            {
-                _config.ShowMmrLabels = v;
-                _status.Text = v
-                    ? Strings.T("settings.mmr.portraitsOn")
-                    : Strings.T("settings.mmr.portraitsOff");
-                Changed();
-            }));
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.rating"), "mmr",
+                () => _config.OpponentMmrMode, v => _config.OpponentMmrMode = v));
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.tiers"), "tiers",
+                () => _config.TavernTierMode, v => _config.TavernTierMode = v));
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.types"), "types",
+                () => _config.OpponentTribeMode, v => _config.OpponentTribeMode = v));
 
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.panel"), _config.ShowMmrPanel, v =>
-            {
-                _config.ShowMmrPanel = v;
-                _status.Text = v
-                    ? Strings.T("settings.mmr.panelOn")
-                    : Strings.T("settings.mmr.panelOff");
-                NormalizeLocationModes();   // panel off → panel-involving tier/type modes snap to their fallback
-                Changed();
-                UpdateArrangeRow();
-                foreach (var r in _modeRefresh) r();   // the tier/type cyclers skip panel options while it is off
-            }, get: () => _config.ShowMmrPanel));
-
-            // ── What ───────────────────────────────────────────────────────────────────────────
-            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.whatHeader")));
+            // ── Details ───────────────────────────────────────────────────────────────────────
+            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.detailsHeader")));
 
             stack.Children.Add(CycleRow(Strings.T("settings.mmr.names"),
-                new[] { "Players", "Heroes", "Off" },
-                new[] { Strings.T("settings.mmr.namesPlayers"), Strings.T("settings.mmr.namesHeroes"), Strings.T("settings.mmr.namesNone") },
+                new[] { "Players", "Heroes", "Portraits", "Off" },
+                new[] { Strings.T("settings.mmr.namesPlayers"), Strings.T("settings.mmr.namesHeroes"),
+                        Strings.T("settings.mmr.locPortraits"), Strings.T("settings.mmr.namesNone") },
                 new[] { Strings.T("settings.mmr.namesPlayersHint"),
                         Strings.T("settings.mmr.namesHeroesHint"),
+                        Strings.T("settings.mmr.namesPortraitsHint"),
                         Strings.T("settings.mmr.namesNoneHint") },
-                () => _config.OpponentNameMode, v => _config.OpponentNameMode = v));
+                () => _config.OpponentNameMode, v => { _config.OpponentNameMode = v; UpdateArrangeRow(); }));
 
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.rating"), _config.ShowMmrRating, v =>
-            {
-                _config.ShowMmrRating = v;
-                _status.Text = v ? Strings.T("settings.mmr.ratingOn") : Strings.T("settings.mmr.ratingOff");
-                Changed();
-            }));
-
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.deltas"), _config.ShowMmrDeltas, v =>
+            // The delta sits next to the rating, so with the rating nowhere it has nowhere to go.
+            var deltas = ToggleRow(Strings.T("settings.mmr.deltas"), _config.ShowMmrDeltas, v =>
             {
                 _config.ShowMmrDeltas = v;
                 _status.Text = v ? Strings.T("settings.mmr.deltasOn") : Strings.T("settings.mmr.deltasOff");
                 Changed();
-            }));
-
-            NormalizeLocationModes();   // e.g. a fresh config: panel off + mode "Both" → show as "Portraits"
-            stack.Children.Add(CycleRow(Strings.T("settings.mmr.tiers"),
-                new[] { "Both", "Portraits", "Panel", "Off" },
-                LocationCaptions(),
-                new[] { Strings.T("settings.mmr.tiersBothHint"),
-                        Strings.T("settings.mmr.tiersPortraitsHint"),
-                        Strings.T("settings.mmr.tiersPanelHint"),
-                        Strings.T("settings.mmr.tiersOffHint") },
-                () => _config.TavernTierMode, v => _config.TavernTierMode = v,
-                // The two panel-involving locations simply aren't offered while the panel is off,
-                // rather than being shown greyed out.
-                PanelLocationSelectable));
-
-            stack.Children.Add(CycleRow(Strings.T("settings.mmr.types"),
-                new[] { "Both", "Portraits", "Panel", "Off" },
-                LocationCaptions(),
-                new[] { Strings.T("settings.mmr.typesBothHint"),
-                        Strings.T("settings.mmr.typesPortraitsHint"),
-                        Strings.T("settings.mmr.typesPanelHint"),
-                        Strings.T("settings.mmr.typesOffHint") },
-                () => _config.OpponentTribeMode, v => _config.OpponentTribeMode = v,
-                PanelLocationSelectable));
+            });
+            Action paintDeltas = () =>
+            {
+                bool live = _config.MmrOnPortraits || _config.MmrInPanel;
+                deltas.IsEnabled = live;
+                deltas.IsHitTestVisible = live;
+                deltas.Opacity = live ? 1.0 : 0.42;
+            };
+            paintDeltas();
+            _modeRefresh.Add(paintDeltas);
+            stack.Children.Add(deltas);
 
             stack.Children.Add(ToggleRow(Strings.T("settings.mmr.lastOpponent"), _config.ShowLastOpponent, v =>
             {
@@ -661,8 +633,12 @@ namespace HsbgCardLookup.Ui
             _mmrPreview = new MmrPanelPreview(_config, 394, 222);
             stack.Children.Add(TabSwitch(new[] { Strings.T("settings.mmr.previewSolo"), Strings.T("settings.mmr.previewDuos") }, 0, i => _mmrPreview?.SetDuos(i == 1)));
             stack.Children.Add(PreviewBlock(_mmrPreview.Root, () => _mmrPreview?.Refresh(),
-                () => _config.ShowMmrPanel,
-                () => { _config.ShowMmrPanel = true; AfterEnable(Strings.T("settings.mmr.panelOnShort")); }));
+                () => _config.PanelInUse,
+                () =>
+                {
+                    _config.OpponentMmrMode = _config.MmrOnPortraits ? "Both" : "Panel";
+                    AfterEnable(Strings.T("settings.mmr.panelOnShort"));
+                }));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.MmrPanel, Strings.T("settings.mmr.arrangeTitle")));
 
@@ -679,37 +655,23 @@ namespace HsbgCardLookup.Ui
             return _hudPreview.Root;
         }
 
-        // With the panel surface off, the panel-involving locations make no sense — snap them to the
-        // equivalent panel-less choice ("Both"→"Portraits", "Panel"→"Off") so the selection always
-        // sits on an option that's actually selectable. Applies to every Off/Portraits/Panel/Both axis
-        // (tavern tiers, minion types).
-        private void NormalizeLocationModes()
-        {
-            if (_config.ShowMmrPanel) return;
-            _config.TavernTierMode = PanelLessMode(_config.TavernTierMode);
-            _config.OpponentTribeMode = PanelLessMode(_config.OpponentTribeMode);
-        }
-
-        private static string PanelLessMode(string m)
-        {
-            if (string.IsNullOrEmpty(m) || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)) return "Portraits";
-            if (string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase)) return "Off";
-            return m;
-        }
-
-        // CycleRow gate for a location axis: the panel-involving choices are offered only while the
-        // panel surface is on.
-        private bool PanelLocationSelectable(string v) =>
-            _config.ShowMmrPanel
-            || (!string.Equals(v, "Both", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(v, "Panel", StringComparison.OrdinalIgnoreCase));
-
-        // Captions for a Both/Portraits/Panel/Off location axis — same order as its value array.
-        private static string[] LocationCaptions() => new[]
-        {
-            Strings.T("settings.mmr.locBoth"), Strings.T("settings.mmr.locPortraits"),
-            Strings.T("settings.mmr.locPanel"), Strings.T("settings.mmr.locOff")
-        };
+        // One Portraits/Sidebar/Both/Off row. Its hints live under settings.mmr.<hintPrefix>*Hint.
+        private UIElement LocationRow(string label, string hintPrefix, Func<string> get, Action<string> set) =>
+            CycleRow(label,
+                new[] { "Portraits", "Panel", "Both", "Off" },
+                new[]
+                {
+                    Strings.T("settings.mmr.locPortraits"), Strings.T("settings.mmr.locPanel"),
+                    Strings.T("settings.mmr.locBoth"), Strings.T("settings.mmr.locOff")
+                },
+                new[]
+                {
+                    Strings.T("settings.mmr." + hintPrefix + "PortraitsHint"),
+                    Strings.T("settings.mmr." + hintPrefix + "PanelHint"),
+                    Strings.T("settings.mmr." + hintPrefix + "BothHint"),
+                    Strings.T("settings.mmr." + hintPrefix + "OffHint")
+                },
+                get, v => { set(v); UpdateArrangeRow(); });
 
         private void BuildDarkGifts()
         {
@@ -995,14 +957,12 @@ namespace HsbgCardLookup.Ui
         /// <summary>
         /// A compact one-line selector: label on the left, "&#x25c4; value &#x25ba;" on the right, in a box the same
         /// width as the key-binding buttons so every right edge on the page lines up. Replaces stacking
-        /// one bordered radio-card per option, which cost ~60px each for a single choice.
-        /// <paramref name="selectable"/> filters which values can be stepped to (an unavailable value is
-        /// skipped rather than shown greyed), and the caption always re-reads through
-        /// <paramref name="get"/> so it can't go stale the way <see cref="TogglePill"/>'s cached state can.
+        /// one bordered radio-card per option, which cost ~60px each for a single choice. The caption
+        /// always re-reads through <paramref name="get"/> so it can't go stale the way
+        /// <see cref="TogglePill"/>'s cached state can.
         /// </summary>
         private UIElement CycleRow(string label, string[] values, string[] captions, string[] hints,
-                                   Func<string> get, Action<string> set,
-                                   Func<string, bool> selectable = null)
+                                   Func<string> get, Action<string> set)
         {
             var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
 
@@ -1052,14 +1012,7 @@ namespace HsbgCardLookup.Ui
 
             Action<int> step = dir =>
             {
-                int i = IndexOf(get());
-                // Walk in the requested direction until a selectable value turns up. The bound stops the
-                // walk if every other option is unavailable, leaving the current value untouched.
-                for (int n = 0; n < values.Length; n++)
-                {
-                    i = (i + dir + values.Length) % values.Length;
-                    if (selectable == null || selectable(values[i])) break;
-                }
+                int i = (IndexOf(get()) + dir + values.Length) % values.Length;
                 set(values[i]);
                 foreach (var r in _modeRefresh) r();
                 // The caption has to stay short to fit the shared control width, so the explanation
@@ -1597,7 +1550,7 @@ namespace HsbgCardLookup.Ui
             {
                 case ArrangeTarget.Trinkets: return _config.ShowTrinkets;
                 case ArrangeTarget.Anomaly: return _config.ShowAnomaly;
-                case ArrangeTarget.MmrPanel: return _config.ShowOpponentMmr && _config.ShowMmrPanel;
+                case ArrangeTarget.MmrPanel: return _config.ShowOpponentMmr && _config.PanelInUse;
                 default: return false;
             }
         }
