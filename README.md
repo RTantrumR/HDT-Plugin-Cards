@@ -18,8 +18,6 @@ things you would otherwise hover, alt-tab or memorise on screen while you play.
   what it does and which minions can carry it, with the ones available this turn highlighted. From
   turn 6 it also shows the minion pool of your guaranteed type.
 - **Trinkets and anomaly**: your trinkets and the lobby anomaly stay visible for the whole match.
-- **Match recap**: when a solo match ends, a small panel shows your APM, best turn and damage dealt,
-  next to your own averages for the season.
 
 **One key away**
 
@@ -28,7 +26,7 @@ things you would otherwise hover, alt-tab or memorise on screen while you play.
 - **Floating cards**: drag a card out of the search and leave it on screen at any size, for yourself
   or for your viewers.
 
-Standard setup includes opponents' Tavern Tier and Tribes by their portraits, a movable floating panel with their Names/MMR, Dark Gifts and the match recap; trinkets and the anomaly HUD are off until you switch them on in the plugin's settings.
+Standard setup includes opponents' Tavern Tier and Tribes by their portraits, a movable floating panel with their Names/MMR and Dark Gifts; trinkets and the anomaly HUD are off until you switch them on in the plugin's settings.
 Card data and art come from [hsbg.cards](https://hsbg.cards).
 
 **Match export is discontinued** as of v0.8.0: the per-round CSV writer is gone. For your match history use [ReplayWatcher](https://hsbg.cards/plugin/replay-watcher) instead.

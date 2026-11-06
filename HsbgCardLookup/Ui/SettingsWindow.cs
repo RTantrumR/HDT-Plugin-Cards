@@ -71,8 +71,6 @@ namespace HsbgCardLookup.Ui
         private UpdateNotice _updateNotice;     // most recently pushed state (see RefreshUpdateStatus)
         private bool _onUpdatesPage;
         private StackPanel _updateActionsHost;  // repainted in place, no full page rebuild needed
-        /// <summary>How many recap records take part in the averages right now (set by Plugin).</summary>
-        internal Func<int> RecapComparableCount;
 
         internal SettingsWindow(PluginConfig config, Data.CardStore store, CardLanguage cardLanguage,
             HotkeyManager hotkey, Action onChanged, Action<ArrangeTarget> onArrange,
@@ -402,17 +400,6 @@ namespace HsbgCardLookup.Ui
                     UpdateArrangeRow();
                 }, BuildAnomaly));
 
-            stack.Children.Add(CategoryRow(Strings.T("settings.recap.title"),
-                Strings.T("settings.main.recapHint"),
-                () => _config.ShowMatchRecap, v =>
-                {
-                    _config.ShowMatchRecap = v;
-                    _status.Text = v
-                        ? Strings.T("settings.main.recapOn")
-                        : Strings.T("settings.recap.off");
-                    Changed();
-                }, BuildRecap));
-
             stack.Children.Add(CategoryRow(Strings.T("settings.updates.title"), UpdatesHint(), null, null, BuildUpdates));
 
             // Language is its own row, last and under the globe, so it is found at a glance rather than
@@ -739,67 +726,6 @@ namespace HsbgCardLookup.Ui
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
-
-            ShowPage();
-        }
-
-        // ── Match recap ───────────────────────────────────────────────────────────────────────
-        private void BuildRecap()
-        {
-            _currentPage = BuildRecap;
-            var stack = NewPage(Strings.T("settings.recap.title"), sub: true, () => _config.ShowMatchRecap, v =>
-            {
-                _config.ShowMatchRecap = v;
-                _status.Text = v ? Strings.T("settings.recap.on") : Strings.T("settings.recap.off");
-                Changed();
-            });
-
-            stack.Children.Add(new TextBlock
-            {
-                Text = Strings.F("settings.recap.intro", Game.Recap.RecapText.MinHistory),
-                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
-                TextWrapping = TextWrapping.Wrap
-            });
-
-            stack.Children.Add(ToggleRow(Strings.T("settings.recap.autoDismiss"), _config.RecapAutoDismiss, v =>
-            {
-                _config.RecapAutoDismiss = v;
-                _status.Text = v ? Strings.T("settings.recap.autoDismissOn") : Strings.T("settings.recap.autoDismissOff");
-                Changed();
-            }, () => _config.RecapAutoDismiss));
-
-            stack.Children.Add(Separator());
-
-            var historyLine = new TextBlock { Foreground = UiKit.TextSecondary, FontSize = 13, Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap };
-            Action paintHistory = () =>
-            {
-                int n = 0;
-                try { n = RecapComparableCount?.Invoke() ?? 0; } catch { }
-                string season = string.IsNullOrEmpty(_config.RecapSeason) ? Strings.T("settings.recap.unknownSeason") : _config.RecapSeason;
-                historyLine.Text = Strings.F(n == 1 ? "settings.recap.historyOne" : "settings.recap.historyMany", n, season);
-            };
-            paintHistory();
-            stack.Children.Add(historyLine);
-
-            var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(SmallButton(Strings.T("settings.recap.resetHistory"), () =>
-            {
-                _config.RecapResetAt = DateTime.Now;
-                Changed();
-                paintHistory();
-                _status.Text = Strings.T("settings.recap.historyReset");
-            }));
-            actions.Children.Add(SmallButton(Strings.T("settings.recap.openFolder"), () =>
-            {
-                try
-                {
-                    string dir = System.IO.Path.Combine(PluginConfig.DataDir, "recaps");
-                    System.IO.Directory.CreateDirectory(dir);
-                    System.Diagnostics.Process.Start("explorer.exe", dir);
-                }
-                catch { }
-            }));
-            stack.Children.Add(actions);
 
             ShowPage();
         }

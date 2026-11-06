@@ -157,18 +157,9 @@ namespace HsbgCardLookup.Config
         }
         public HudPlacement DarkGiftHud { get; set; } = new HudPlacement();
 
-        // Match recap: APM + damage dealt at match end, compared with this season's solo history.
-        // On by default, for updating users too (new in 0.7.0, so no saved config has an opinion on it).
-        // Records: DataDir\recaps\.
-        public bool ShowMatchRecap { get; set; } = true;
-        // On: the panel disappears 10 s after the next match starts. Off: only its ✕ closes it.
-        public bool RecapAutoDismiss { get; set; } = true;
-        public HudPlacement RecapHud { get; set; } = new HudPlacement();
-        // The site's season label ("Season 14") at the last data refresh; records carry it, and only
-        // records with the current label take part in the averages.
-        public string RecapSeason { get; set; } = "";
-        // "Reset history": records started before this are left out of the averages (files stay).
-        public DateTime RecapResetAt { get; set; } = DateTime.MinValue;
+        // The match recap (0.7.0–0.8.1) is gone: a saved <ShowMatchRecap>, <RecapAutoDismiss>,
+        // <RecapHud>, <RecapSeason> or <RecapResetAt> in an older config.xml is ignored, and its
+        // records in DataDir\recaps\ are left where they are.
 
         [XmlIgnore] public Key BrowserKeyParsed => Enum.TryParse(BrowserKey, out Key k) ? k : Key.F3;
         [XmlIgnore] public Key GoldenKeyParsed => Enum.TryParse(GoldenKey, out Key k) ? k : Key.G;
