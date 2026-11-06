@@ -76,13 +76,16 @@ namespace HsbgCardLookup.Config
         // rolling the DLL back still reads a sensible value. Do not read them directly.
         public bool ShowMmrLabels { get; set; } = true;
         public bool ShowMmrPanel { get; set; } = false;
-        // Content: the names — "Players" (battletags in the sidebar, and on the portrait labels when the
-        // MMR is there too), "Heroes" (the hero's card name in the sidebar), "Portraits" (battletags on
-        // the portrait labels only, no sidebar on their account) or "Off". Anything but Portraits/Off
-        // counts as using the sidebar. Defaults to Heroes: streamers usually don't want
-        // opponent battletags on screen, and a hero name is strictly more useful than a blank column.
-        // Empty means "an old config that predates this setting" — resolved in Load().
+        // Where the opponents' names show: "Off", "Portraits", "Panel", "Both" — the same location axis
+        // as OpponentMmrMode. Up to 0.8.0 this element was a CONTENT axis ("Players" = battletags,
+        // "Heroes" = hero names, "Off"), with the place implied; Migrate() turns those two values into a
+        // location here plus OpponentNameType. Empty means "a config that predates the setting".
         public string OpponentNameMode { get; set; } = "";
+        // What a name is: "Battletags" or "Heroes" (the hero's card name — nothing identifies the
+        // player). Only read where OpponentNameMode puts a name. Empty means "a config that predates
+        // the setting", resolved in Migrate(): Heroes where no name showed, as before (streamers
+        // usually don't want opponent battletags on screen), else what the old value meant.
+        public string OpponentNameType { get; set; } = "";
         // LEGACY element (pre-0.5): the bool this replaced. Kept only so an existing config.xml still
         // parses and migrates; Load() folds it into OpponentNameMode. Save() keeps it in sync so that
         // rolling the DLL back to an older build still reads a sensible value. Do not read it directly.
@@ -122,15 +125,15 @@ namespace HsbgCardLookup.Config
 
         [XmlIgnore] public bool MmrOnPortraits => OnPortraits(OpponentMmrMode);
         [XmlIgnore] public bool MmrInPanel => InPanel(OpponentMmrMode);
-        /// <summary>Battletags on the portrait labels. "Players" only follows the MMR there; a first
-        /// run has it with the MMR in the sidebar and wants the portraits free of labels.</summary>
-        [XmlIgnore] public bool NamesOnPortraits => NameModeIs("Portraits") || (NameModeIs("Players") && MmrOnPortraits);
-        /// <summary>What fills the sidebar's name column.</summary>
-        [XmlIgnore] public string PanelNameMode => NameModeIs("Portraits") ? "Off" : OpponentNameMode;
+        [XmlIgnore] public bool NamesOnPortraits => OnPortraits(OpponentNameMode);
+        [XmlIgnore] public bool NamesInPanel => InPanel(OpponentNameMode);
+        /// <summary>Hero names rather than battletags, wherever a name shows.</summary>
+        [XmlIgnore] public bool HeroNames => string.Equals(OpponentNameType, "Heroes", StringComparison.OrdinalIgnoreCase);
+        /// <summary>What fills the sidebar's name column: "Battletags", "Heroes" or "Off".</summary>
+        [XmlIgnore] public string PanelNameMode => NamesInPanel ? (HeroNames ? "Heroes" : "Battletags") : "Off";
         /// <summary>The sidebar is drawn exactly when something is assigned to it.</summary>
         [XmlIgnore] public bool PanelInUse =>
-            MmrInPanel || InPanel(TavernTierMode) || InPanel(OpponentTribeMode)
-            || !string.Equals(PanelNameMode, "Off", StringComparison.OrdinalIgnoreCase);
+            MmrInPanel || InPanel(TavernTierMode) || InPanel(OpponentTribeMode) || NamesInPanel;
 
         // Opt-in: the Dark Gift list panel, shown while hovering the in-game Dark Discovery button
         // (hover detected via HearthMirror's big-card/tooltip state — no screen geometry). Gifts
@@ -226,7 +229,8 @@ namespace HsbgCardLookup.Config
             {
                 ShowOpponentMmr = true,
                 OpponentMmrMode = "Panel",
-                OpponentNameMode = "Players",
+                OpponentNameMode = "Panel",
+                OpponentNameType = "Battletags",
                 TavernTierMode = "Portraits",
                 OpponentTribeMode = "Portraits",
                 ShowDarkGifts = true,
@@ -242,19 +246,42 @@ namespace HsbgCardLookup.Config
         /// mentions the sidebar would draw it. So when the old panel switch was off, nothing may be left
         /// assigned to the sidebar: "Both" and an unset axis become "Portraits", "Panel" becomes "Off",
         /// and the name setting — which only the panel ever showed, bar battletags on the portrait
-        /// labels — becomes "Portraits" or "Off". The display stays exactly what it was.</summary>
+        /// labels — becomes "Portraits" or "Off". The display stays exactly what it was.
+        ///
+        /// Last, the name CONTENT values of ≤0.8.0 become a location plus OpponentNameType: "Players"
+        /// put battletags in the sidebar, and by the portraits only when the MMR was there too; "Heroes"
+        /// put hero names in the sidebar. A location value ("Portraits"/"Off" from a 0.8.1 build, or
+        /// anything already migrated) is left alone, type included, so this runs once.</summary>
         private void Migrate()
         {
             if (string.IsNullOrEmpty(OpponentNameMode))
                 OpponentNameMode = ShowOpponentNames ? "Players" : "Heroes";
-            if (!string.IsNullOrEmpty(OpponentMmrMode)) return;
-
-            bool portraits = ShowMmrLabels && ShowMmrRating, panel = ShowMmrPanel && ShowMmrRating;
-            OpponentMmrMode = portraits ? (panel ? "Both" : "Portraits") : (panel ? "Panel" : "Off");
-            if (ShowMmrPanel) return;
-            TavernTierMode = PanelLessMode(TavernTierMode);
-            OpponentTribeMode = PanelLessMode(OpponentTribeMode);
-            OpponentNameMode = ShowMmrLabels && NameModeIs("Players") ? "Portraits" : "Off";
+            if (string.IsNullOrEmpty(OpponentMmrMode))
+            {
+                bool portraits = ShowMmrLabels && ShowMmrRating, panel = ShowMmrPanel && ShowMmrRating;
+                OpponentMmrMode = portraits ? (panel ? "Both" : "Portraits") : (panel ? "Panel" : "Off");
+                if (!ShowMmrPanel)
+                {
+                    TavernTierMode = PanelLessMode(TavernTierMode);
+                    OpponentTribeMode = PanelLessMode(OpponentTribeMode);
+                    // The type keeps what was chosen even where nothing is left to show it.
+                    OpponentNameType = NameModeIs("Players") ? "Battletags" : "Heroes";
+                    OpponentNameMode = ShowMmrLabels && NameModeIs("Players") ? "Portraits" : "Off";
+                }
+            }
+            if (NameModeIs("Players"))
+            {
+                OpponentNameType = "Battletags";
+                OpponentNameMode = MmrOnPortraits ? "Both" : "Panel";
+            }
+            else if (NameModeIs("Heroes"))
+            {
+                OpponentNameType = "Heroes";
+                OpponentNameMode = "Panel";
+            }
+            // A location saved before the type existed (the 0.8.1 builds before it) meant battletags.
+            if (string.IsNullOrEmpty(OpponentNameType))
+                OpponentNameType = NameModeIs("Off") ? "Heroes" : "Battletags";
         }
 
         private static string PanelLessMode(string m)
@@ -270,8 +297,10 @@ namespace HsbgCardLookup.Config
             {
                 Directory.CreateDirectory(Dir);
                 // Keep the retired bools consistent so an older build reading this file still behaves.
-                ShowOpponentNames = NameModeIs("Players") || NameModeIs("Portraits");
-                ShowMmrLabels = MmrOnPortraits || NameModeIs("Portraits");
+                // (A rolled-back build reads OpponentNameMode as its content axis: "Panel"/"Both"/
+                // "Portraits" all mean battletags to it, so hero names come back as battletags there.)
+                ShowOpponentNames = !HeroNames && (NamesOnPortraits || NamesInPanel);
+                ShowMmrLabels = MmrOnPortraits || NamesOnPortraits;
                 ShowMmrPanel = PanelInUse;
                 ShowMmrRating = MmrOnPortraits || MmrInPanel;
                 using (var fs = File.Create(FilePath))

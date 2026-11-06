@@ -128,7 +128,7 @@ namespace HsbgCardLookup.Game
                 // Every per-part toggle folds into the signature so a settings change re-renders
                 // ("D" = duos layout, "~" = blob still pending — rows render "…" until it loads).
                 string flags = (isDuos ? "D" : "") + (_players == null ? "~" : "")
-                    + "m" + _config.OpponentMmrMode + "n" + _config.OpponentNameMode
+                    + "m" + _config.OpponentMmrMode + "n" + _config.OpponentNameMode + _config.OpponentNameType
                     + (_config.ShowMmrDeltas ? "a" : "") + "t" + _config.TavernTierMode
                     + (_config.ShowLastOpponent ? "o" : "") + (_config.DimDeadPlayers ? "d" : "")
                     + "T" + _config.OpponentTribeMode;
@@ -552,6 +552,7 @@ namespace HsbgCardLookup.Game
                 if (any && PortraitsInUse)
                 {
                     _overlay.ShowNames = _config.NamesOnPortraits;
+                    _overlay.HeroNames = _config.HeroNames;
                     _overlay.ShowRating = _config.MmrOnPortraits;
                     _overlay.ShowDeltas = _config.MmrOnPortraits && _config.ShowMmrDeltas;
                     _overlay.ShowTiers = TiersOnPortraits;

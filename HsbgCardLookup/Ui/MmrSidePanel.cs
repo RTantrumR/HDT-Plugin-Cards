@@ -33,8 +33,8 @@ namespace HsbgCardLookup.Ui
         private const double DefaultXF = 0.005, DefaultYF = 0.30;
         private const double MaxNameW = 108;      // reference px; longer names ellipsize
 
-        /// <summary>What fills the name column: "Players", "Heroes" or "Off". See
-        /// <see cref="PluginConfig.OpponentNameMode"/>.</summary>
+        /// <summary>What fills the name column: "Battletags", "Heroes" or "Off". See
+        /// <see cref="PluginConfig.PanelNameMode"/>.</summary>
         public string NameMode { get; set; } = "Heroes";
         public bool ShowRating { get; set; } = true;
         public bool ShowDeltas { get; set; } = true;

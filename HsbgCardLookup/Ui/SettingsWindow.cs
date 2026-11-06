@@ -51,6 +51,7 @@ namespace HsbgCardLookup.Ui
         // Every right-hand control on a settings row (key binding, On/Off pill, cycler, action button)
         // uses this, so their left AND right edges line up down the page.
         private const double ControlW = 106;
+        private const double StatusH = 35;   // two lines of the 13px status strip (17.3 each)
 
         private StackPanel _pageRoot;        // page-local: what ShowPage renders (header + status + body)
         private Func<bool> _pageMaster;      // page-local: the master switch gating this page, if any
@@ -99,11 +100,17 @@ namespace HsbgCardLookup.Ui
             ShowInTaskbar = false;
             Background = new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E));
 
-            // Notice line lives at the top of every page so feedback is immediately visible.
+            // Notice line lives at the top of every page so feedback is immediately visible. Its
+            // height is FIXED at two lines: the window sizes to content, so a strip that grew and
+            // shrank with each hint moved every row under it on every click (owner, 2026-11-06).
+            // Every string that lands here fits two lines at this width in all 13 catalogs (measured
+            // with WPF's own layout, 2026-11-06; the "*Hint", "*On", "*Off" keys are the ones that do).
+            // A third line would be clipped, not pushed down — keep new hints short.
             _status = new TextBlock
             {
-                Foreground = UiKit.AccentBrush, FontSize = 13, MinHeight = 18,
-                Margin = new Thickness(0, 6, 0, 12), TextWrapping = TextWrapping.Wrap
+                Foreground = UiKit.AccentBrush, FontSize = 13, Height = StatusH,
+                Margin = new Thickness(0, 6, 0, 12), TextWrapping = TextWrapping.Wrap,
+                ClipToBounds = true
             };
 
             BuildMain();
@@ -535,6 +542,13 @@ namespace HsbgCardLookup.Ui
                 UpdateArrangeRow();
             });
 
+            stack.Children.Add(new TextBlock
+            {
+                Text = Strings.T("settings.anomaly.intro"),
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
             stack.Children.Add(HudPreviewBlock(isAnomaly: true));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.Anomaly, Strings.T("settings.anomaly.arrangeTitle")));
@@ -560,13 +574,6 @@ namespace HsbgCardLookup.Ui
                 UpdateArrangeRow();
             });
 
-            stack.Children.Add(new TextBlock
-            {
-                Text = Strings.T("settings.mmr.intro"),
-                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 4),
-                TextWrapping = TextWrapping.Wrap
-            });
-
             // ── What goes where ──────────────────────────────────────────────────────────────
             // No surface switches: each part names its place, and a surface draws when something is
             // assigned to it. The arrange button follows, so the setters have to tell it.
@@ -578,36 +585,29 @@ namespace HsbgCardLookup.Ui
                 () => _config.TavernTierMode, v => _config.TavernTierMode = v));
             stack.Children.Add(LocationRow(Strings.T("settings.mmr.types"), "types",
                 () => _config.OpponentTribeMode, v => _config.OpponentTribeMode = v));
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.names"), "names",
+                () => _config.OpponentNameMode, v => _config.OpponentNameMode = v));
 
             // ── Details ───────────────────────────────────────────────────────────────────────
+            // Each detail belongs to one of the parts above and locks when that part is nowhere: the
+            // name type to the names, today's delta to the rating.
             stack.Children.Add(GroupHeader(Strings.T("settings.mmr.detailsHeader")));
 
-            stack.Children.Add(CycleRow(Strings.T("settings.mmr.names"),
-                new[] { "Players", "Heroes", "Portraits", "Off" },
-                new[] { Strings.T("settings.mmr.namesPlayers"), Strings.T("settings.mmr.namesHeroes"),
-                        Strings.T("settings.mmr.locPortraits"), Strings.T("settings.mmr.namesNone") },
-                new[] { Strings.T("settings.mmr.namesPlayersHint"),
-                        Strings.T("settings.mmr.namesHeroesHint"),
-                        Strings.T("settings.mmr.namesPortraitsHint"),
-                        Strings.T("settings.mmr.namesNoneHint") },
-                () => _config.OpponentNameMode, v => { _config.OpponentNameMode = v; UpdateArrangeRow(); }));
+            var nameType = CycleRow(Strings.T("settings.mmr.nameType"),
+                new[] { "Battletags", "Heroes" },
+                new[] { Strings.T("settings.mmr.nameTypeBattletags"), Strings.T("settings.mmr.nameTypeHeroes") },
+                new[] { Strings.T("settings.mmr.nameTypeBattletagsHint"), Strings.T("settings.mmr.nameTypeHeroesHint") },
+                () => _config.OpponentNameType, v => _config.OpponentNameType = v);
+            FollowPart(nameType, () => _config.NamesOnPortraits || _config.NamesInPanel);
+            stack.Children.Add(nameType);
 
-            // The delta sits next to the rating, so with the rating nowhere it has nowhere to go.
             var deltas = ToggleRow(Strings.T("settings.mmr.deltas"), _config.ShowMmrDeltas, v =>
             {
                 _config.ShowMmrDeltas = v;
                 _status.Text = v ? Strings.T("settings.mmr.deltasOn") : Strings.T("settings.mmr.deltasOff");
                 Changed();
             });
-            Action paintDeltas = () =>
-            {
-                bool live = _config.MmrOnPortraits || _config.MmrInPanel;
-                deltas.IsEnabled = live;
-                deltas.IsHitTestVisible = live;
-                deltas.Opacity = live ? 1.0 : 0.42;
-            };
-            paintDeltas();
-            _modeRefresh.Add(paintDeltas);
+            FollowPart(deltas, () => _config.MmrOnPortraits || _config.MmrInPanel);
             stack.Children.Add(deltas);
 
             stack.Children.Add(ToggleRow(Strings.T("settings.mmr.lastOpponent"), _config.ShowLastOpponent, v =>
@@ -653,6 +653,21 @@ namespace HsbgCardLookup.Ui
             _hudPreview = new HudPreview(_config, _store, isAnomaly, 394);
             _pageRefresh = () => _hudPreview?.Refresh();
             return _hudPreview.Root;
+        }
+
+        // A detail row that is greyed and locked while the part it belongs to shows nowhere; repainted
+        // with every carousel step, like the master ring.
+        private void FollowPart(UIElement row, Func<bool> live)
+        {
+            Action paint = () =>
+            {
+                bool on = live();
+                row.IsEnabled = on;
+                row.IsHitTestVisible = on;
+                row.Opacity = on ? 1.0 : 0.42;
+            };
+            paint();
+            _modeRefresh.Add(paint);
         }
 
         // One Portraits/Sidebar/Both/Off row. Its hints live under settings.mmr.<hintPrefix>*Hint.
