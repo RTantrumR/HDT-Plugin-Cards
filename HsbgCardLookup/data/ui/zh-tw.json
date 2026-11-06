@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "無法讀取最新版本的資訊。",
   "updates.upToDate": "你已是最新版本（v{0}）。",
   "updates.versionAvailable": "有新版本 {0} 可用。",
-  "plugin.description": "遊戲畫面上的戰場工具：對手 MMR、旅店等級與手下類型、黑暗贈禮、飾品與異象 HUD、對戰回顧、卡牌搜尋。",
+  "plugin.description": "遊戲畫面上的戰場工具：對手 MMR、旅店等級與手下類型、黑暗贈禮、飾品與異象 HUD、卡牌搜尋。",
   "plugin.settings": "設定",
   "plugin.menu.openOverlay": "開啟搜尋視窗",
   "plugin.menu.checkForUpdates": "檢查更新",

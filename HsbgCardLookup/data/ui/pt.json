@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "Não foi possível ler as informações da versão mais recente.",
   "updates.upToDate": "Você está na versão mais recente (v{0}).",
   "updates.versionAvailable": "A versão {0} está disponível.",
-  "plugin.description": "Ferramentas de Campos de Batalha na sobreposição do jogo: MMR dos oponentes, níveis e tipos de lacaio, Dádivas Sinistras, HUD de berloques e anomalia, resumo da partida, busca de cartas.",
+  "plugin.description": "Ferramentas de Campos de Batalha na sobreposição do jogo: MMR dos oponentes, níveis e tipos de lacaio, Dádivas Sinistras, HUD de berloques e anomalia, busca de cartas.",
   "plugin.settings": "Configurações",
   "plugin.menu.openOverlay": "Abrir sobreposição",
   "plugin.menu.checkForUpdates": "Verificar atualizações",

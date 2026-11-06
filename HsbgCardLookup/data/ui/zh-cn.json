@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "无法读取最新版本信息。",
   "updates.upToDate": "你已是最新版本（v{0}）。",
   "updates.versionAvailable": "版本{0}已可用。",
-  "plugin.description": "游戏内覆盖层上的酒馆战棋工具：对手MMR、酒馆等级与随从类型、黑暗之赐、饰品与畸变HUD、对局回顾、卡牌搜索。",
+  "plugin.description": "游戏内覆盖层上的酒馆战棋工具：对手MMR、酒馆等级与随从类型、黑暗之赐、饰品与畸变HUD、卡牌搜索。",
   "plugin.settings": "设置",
   "plugin.menu.openOverlay": "打开悬浮窗",
   "plugin.menu.checkForUpdates": "检查更新",

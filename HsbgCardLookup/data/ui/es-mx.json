@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "No se pudo leer la información de la última versión.",
   "updates.upToDate": "Tienes la versión más reciente (v{0}).",
   "updates.versionAvailable": "La versión {0} está disponible.",
-  "plugin.description": "Herramientas de Campos de batalla sobre el juego: MMR de los adversarios, niveles y tipos de esbirro, Regalos oscuros, HUD de abalorios y anomalía, resumen de la partida, búsqueda de cartas.",
+  "plugin.description": "Herramientas de Campos de batalla sobre el juego: MMR de los adversarios, niveles y tipos de esbirro, Regalos oscuros, HUD de abalorios y anomalía, búsqueda de cartas.",
   "plugin.settings": "Configuración",
   "plugin.menu.openOverlay": "Abrir el buscador",
   "plugin.menu.checkForUpdates": "Buscar actualizaciones",

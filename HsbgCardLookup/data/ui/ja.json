@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "最新リリースの情報を読み取れませんでした。",
   "updates.upToDate": "最新バージョン（v{0}）です。",
   "updates.versionAvailable": "バージョン {0} が利用可能です。",
-  "plugin.description": "ゲーム内オーバーレイのバトルグラウンド用ツール：対戦相手のMMR、ティアと種族、悪夢の恵み、装飾品・異常HUD、試合の振り返り、カード検索。",
+  "plugin.description": "ゲーム内オーバーレイのバトルグラウンド用ツール：対戦相手のMMR、ティアと種族、悪夢の恵み、装飾品・異常HUD、カード検索。",
   "plugin.settings": "設定",
   "plugin.menu.openOverlay": "オーバーレイを開く",
   "plugin.menu.checkForUpdates": "アップデートを確認",

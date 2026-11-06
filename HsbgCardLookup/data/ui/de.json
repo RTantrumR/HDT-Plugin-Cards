@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "Die Infos zum neuesten Release konnten nicht gelesen werden.",
   "updates.upToDate": "Ihr habt die neueste Version (v{0}).",
   "updates.versionAvailable": "Version {0} ist verfügbar.",
-  "plugin.description": "Schlachtfeld-Tools im Spiel-Overlay: Gegner-MMR, Stufen und Dienertypen, Dunkle Gaben, Schmuckstück- und Anomalie-HUD, Partierückblick, Kartensuche.",
+  "plugin.description": "Schlachtfeld-Tools im Spiel-Overlay: Gegner-MMR, Stufen und Dienertypen, Dunkle Gaben, Schmuckstück- und Anomalie-HUD, Kartensuche.",
   "plugin.settings": "Einstellungen",
   "plugin.menu.openOverlay": "Overlay öffnen",
   "plugin.menu.checkForUpdates": "Nach Updates suchen",

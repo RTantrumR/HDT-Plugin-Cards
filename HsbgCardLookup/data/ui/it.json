@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "Impossibile leggere le informazioni sull'ultima versione.",
   "updates.upToDate": "Hai già l'ultima versione (v{0}).",
   "updates.versionAvailable": "È disponibile la versione {0}.",
-  "plugin.description": "Strumenti per la Battaglia sull'overlay di gioco: MMR degli avversari, livelli e tipi di servitori, Doni Oscuri, HUD monili e anomalia, riepilogo partita, ricerca carte.",
+  "plugin.description": "Strumenti per la Battaglia sull'overlay di gioco: MMR degli avversari, livelli e tipi di servitori, Doni Oscuri, HUD monili e anomalia, ricerca carte.",
   "plugin.settings": "Impostazioni",
   "plugin.menu.openOverlay": "Apri overlay",
   "plugin.menu.checkForUpdates": "Controlla aggiornamenti",

@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "Impossible de lire les informations de la dernière version.",
   "updates.upToDate": "Vous avez la dernière version (v{0}).",
   "updates.versionAvailable": "La version {0} est disponible.",
-  "plugin.description": "Outils Champs de bataille sur l’overlay en jeu : MMR des adversaires, niveaux et types de serviteurs, Sombres dons, HUD bibelots et anomalie, bilan de partie, recherche de cartes.",
+  "plugin.description": "Outils Champs de bataille sur l’overlay en jeu : MMR des adversaires, niveaux et types de serviteurs, Sombres dons, HUD bibelots et anomalie, recherche de cartes.",
   "plugin.settings": "Paramètres",
   "plugin.menu.openOverlay": "Ouvrir l’overlay",
   "plugin.menu.checkForUpdates": "Rechercher des mises à jour",

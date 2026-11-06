@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "No se ha podido leer la información de la última versión.",
   "updates.upToDate": "Tienes la última versión (v{0}).",
   "updates.versionAvailable": "La versión {0} está disponible.",
-  "plugin.description": "Herramientas de Campos de batalla sobre la pantalla del juego: MMR de los rivales, niveles y tipos de esbirro, Dones siniestros, HUD de abalorios y anomalía, resumen de la partida, búsqueda de cartas.",
+  "plugin.description": "Herramientas de Campos de batalla sobre la pantalla del juego: MMR de los rivales, niveles y tipos de esbirro, Dones siniestros, HUD de abalorios y anomalía, búsqueda de cartas.",
   "plugin.settings": "Ajustes",
   "plugin.menu.openOverlay": "Abrir la ventana",
   "plugin.menu.checkForUpdates": "Buscar actualizaciones",

@@ -108,7 +108,7 @@
   "updates.couldNotReadRelease": "Nie udało się odczytać informacji o najnowszym wydaniu.",
   "updates.upToDate": "Masz najnowszą wersję (v{0}).",
   "updates.versionAvailable": "Dostępna jest wersja {0}.",
-  "plugin.description": "Narzędzia do Ustawki na nakładce w grze: MMR przeciwników, poziomy i rodzaje stronników, Mroczne dary, HUD ozdób i anomalii, podsumowanie meczu, wyszukiwanie kart.",
+  "plugin.description": "Narzędzia do Ustawki na nakładce w grze: MMR przeciwników, poziomy i rodzaje stronników, Mroczne dary, HUD ozdób i anomalii, wyszukiwanie kart.",
   "plugin.settings": "Ustawienia",
   "plugin.menu.openOverlay": "Otwórz nakładkę",
   "plugin.menu.checkForUpdates": "Sprawdź aktualizacje",
