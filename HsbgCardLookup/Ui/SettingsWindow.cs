@@ -353,6 +353,31 @@ namespace HsbgCardLookup.Ui
             _currentPage = BuildMain;
             var stack = NewPage(Strings.T("settings.title"), sub: false);
 
+            // Order is the owner's (2026-11-06): the two in-match overlays players come for first,
+            // then the search, the two streamer HUDs, updates, language.
+            stack.Children.Add(CategoryRow(Strings.T("settings.mmr.title"),
+                Strings.T("settings.main.mmrHint"),
+                () => _config.ShowOpponentMmr, v =>
+                {
+                    _config.ShowOpponentMmr = v;
+                    _status.Text = v
+                        ? Strings.T("settings.main.mmrOn")
+                        : Strings.T("settings.main.mmrOff");
+                    Changed();
+                    UpdateArrangeRow();
+                }, BuildMmr));
+
+            stack.Children.Add(CategoryRow(Strings.T("settings.darkGifts.title"),
+                Strings.T("settings.main.darkGiftsHint"),
+                () => _config.ShowDarkGifts, v =>
+                {
+                    _config.ShowDarkGifts = v;
+                    _status.Text = v
+                        ? Strings.T("settings.main.darkGiftsOn")
+                        : Strings.T("settings.darkGifts.off");
+                    Changed();
+                }, BuildDarkGifts));
+
             stack.Children.Add(CategoryRow(Strings.T("settings.cardSearch.title"),
                 Strings.T("settings.main.cardSearchHint"),
                 null, null, BuildCardSearch));
@@ -376,29 +401,6 @@ namespace HsbgCardLookup.Ui
                     Changed();
                     UpdateArrangeRow();
                 }, BuildAnomaly));
-
-            stack.Children.Add(CategoryRow(Strings.T("settings.mmr.title"),
-                Strings.T("settings.main.mmrHint"),
-                () => _config.ShowOpponentMmr, v =>
-                {
-                    _config.ShowOpponentMmr = v;
-                    _status.Text = v
-                        ? Strings.T("settings.main.mmrOn")
-                        : Strings.T("settings.main.mmrOff");
-                    Changed();
-                    UpdateArrangeRow();
-                }, BuildMmr));
-
-            stack.Children.Add(CategoryRow(Strings.T("settings.darkGifts.title"),
-                Strings.T("settings.main.darkGiftsHint"),
-                () => _config.ShowDarkGifts, v =>
-                {
-                    _config.ShowDarkGifts = v;
-                    _status.Text = v
-                        ? Strings.T("settings.main.darkGiftsOn")
-                        : Strings.T("settings.darkGifts.off");
-                    Changed();
-                }, BuildDarkGifts));
 
             stack.Children.Add(CategoryRow(Strings.T("settings.recap.title"),
                 Strings.T("settings.main.recapHint"),
