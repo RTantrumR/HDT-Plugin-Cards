@@ -1,16 +1,19 @@
 <#
 .SYNOPSIS
-  Build Release and package a drop-in distribution zip for Tantrum's Battlegrounds Toolkit.
+  Build Release and package the Setup wizard + the drop-in zip for Tantrum's Battlegrounds Toolkit.
 
 .DESCRIPTION
-  Produces dist\HsbgCardLookup-v<Version>.zip. The zip root contains:
+  Produces dist\TantrumsBattlegroundsToolkit-Setup-<Version>.exe (the Inno Setup wizard from
+  installer\HsbgCardLookup.iss, built by installer\build.ps1 — the download the plugin's update
+  notice points at) and dist\HsbgCardLookup-v<Version>.zip. The zip root contains:
     HsbgCardLookup\   (the DLL + bundled WebP-decoder deps + data\ — the plugin itself)
     install.bat       (one-click: closes HDT, copies the folder into the Plugins dir)
     README.txt        (EN install/usage)
     UA_Readme.txt     (UA install/usage)
-  Users extract and double-click install.bat (or drag the HsbgCardLookup folder into
-  %APPDATA%\HearthstoneDeckTracker\Plugins\ manually). Release excludes the dev-only
-  GameStateProbe (it's #if DEBUG).
+  The zip stays attached for one more release so the Updates page's old text ("run install.bat
+  from the zip") stays true for users still on it; users extract and double-click install.bat
+  (or drag the HsbgCardLookup folder into %APPDATA%\HearthstoneDeckTracker\Plugins\ manually).
+  Release excludes the dev-only GameStateProbe (it's #if DEBUG).
 #>
 param([string]$Version)
 
@@ -77,3 +80,8 @@ $size = "{0:N1} MB" -f ((Get-Item $zip).Length / 1MB)
 Write-Host "Packaged: $zip ($size)" -ForegroundColor Green
 Write-Host "Zip contents:" -ForegroundColor Cyan
 Get-ChildItem $pkg -Recurse -File | ForEach-Object { "  " + $_.FullName.Substring($pkg.Length + 1) }
+
+# The Setup wizard, from the same Release build (installer\build.ps1 stages bin\Release itself).
+$setup = & "$root\installer\build.ps1" -Version $Version -SkipBuild
+Copy-Item $setup.FullName $dist -Force
+Write-Host "Packaged: $dist\$($setup.Name)" -ForegroundColor Green
