@@ -58,10 +58,12 @@
 
 1. **Встановіть Hearthstone Deck Tracker.** Завантажте [HDT](https://hsdecktracker.net/) і запустіть
    його один раз.
-2. **Завантажте останній реліз.** Візьміть `HsbgCardLookup-vX.Y.Z.zip` зі сторінки
-   [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/latest) і розпакуйте будь-куди.
-3. **Запустіть `install.bat`.** Він закриє HDT і скопіює плагін куди треба.
-   *Вручну*: перемістіть теку `HsbgCardLookup` до `%APPDATA%\HearthstoneDeckTracker\Plugins\`.
+2. **Завантажте інсталятор.** Візьміть `TantrumsBattlegroundsToolkit-Setup-X.Y.Z.exe` зі сторінки
+   [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/latest).
+3. **Запустіть його.** Майстер закриє HDT, скопіює плагін куди треба й може знову запустити HDT. Якщо
+   Windows SmartScreen попереджає про невідомого видавця, натисніть *More info → Run anyway*.
+   *Вручну*: zip на тій самій сторінці містить теку `HsbgCardLookup`; перемістіть її до
+   `%APPDATA%\HearthstoneDeckTracker\Plugins\` із закритим HDT або запустіть `install.bat` із zip.
 4. **Запустіть HDT.** Під час першого встановлення інсталятор сам вмикає плагін, і він з'являється в
    меню **Plugins** у HDT. Якщо його там немає, увімкніть «Tantrum's Battlegrounds Toolkit» в
    **Options → Tracker → Plugins**; HDT тримає новий плагін вимкненим, доки його не ввімкнуть, і не
@@ -107,9 +109,9 @@ HDT: назви, текст і зображення карт, слова, які
 
 ## Оновлення
 
-Плагін повідомляє, коли виходить новий реліз, і дає посилання на нього. Сам він нічого не завантажує
-і не встановлює: оновлення — це той самий `install.bat`, що й перше встановлення. Дані карт і арт
-оновлюються автоматично.
+Плагін повідомляє, коли виходить новий реліз, і дає посилання на його інсталятор. Сам він нічого не
+завантажує і не встановлює: оновлення — це той самий інсталятор, що й перше встановлення, запущений
+із завантажень браузера. Дані карт і арт оновлюються автоматично.
 
 ### Що нового у v0.7.1
 - **Підсумок матчу переживає реконект**: після розриву з'єднання й повернення в матч підсумок раніше рахував лише ходи після повернення. Тепер він зберігає весь матч.
@@ -124,8 +126,9 @@ HDT: назви, текст і зображення карт, слова, які
 
 ## Видалення
 
-Видаліть `%APPDATA%\HearthstoneDeckTracker\Plugins\HsbgCardLookup\`. Ваші налаштування та кеш арту
-лежать у `%APPDATA%\HearthstoneDeckTracker\HsbgCardLookup\`; видаліть і цю теку, щоб прибрати все.
+Видаліть «Tantrum's Battlegrounds Toolkit» у Windows **Settings → Apps** або видаліть теку
+`%APPDATA%\HearthstoneDeckTracker\Plugins\HsbgCardLookup\` із закритим HDT. Ваші налаштування та кеш
+арту лежать у `%APPDATA%\HearthstoneDeckTracker\HsbgCardLookup\`; видаліть і цю теку, щоб прибрати все.
 
 ## Збірка з вихідного коду
 

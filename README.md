@@ -51,10 +51,12 @@ Card data and art come from [hsbg.cards](https://hsbg.cards).
 Windows only. Hearthstone must run in **Borderless** or **Windowed** mode, as for HDT's own overlay.
 
 1. **Get Hearthstone Deck Tracker.** Install [HDT](https://hsdecktracker.net/) and launch it once.
-2. **Download the latest release.** Grab `HsbgCardLookup-vX.Y.Z.zip` from
-   [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/latest) and extract it anywhere.
-3. **Run `install.bat`.** It closes HDT and copies the plugin into place.
-   *Manual install*: drop the `HsbgCardLookup` folder into `%APPDATA%\HearthstoneDeckTracker\Plugins\`.
+2. **Download the installer.** Grab `TantrumsBattlegroundsToolkit-Setup-X.Y.Z.exe` from
+   [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/latest).
+3. **Run it.** The wizard closes HDT, copies the plugin into place and can start HDT again. If Windows
+   SmartScreen warns about an unknown publisher, click *More info → Run anyway*.
+   *Manual install*: the zip on the same page holds the `HsbgCardLookup` folder; drop it into
+   `%APPDATA%\HearthstoneDeckTracker\Plugins\` with HDT closed, or run the zip's `install.bat`.
 4. **Start HDT.** On a first install the installer switches the plugin on for you, and it appears in
    HDT's **Plugins** menu. If it is not there, enable "Tantrum's Battlegrounds Toolkit" under
    **Options → Tracker → Plugins**; HDT keeps a new plugin off until it is enabled and does not ask.
@@ -99,9 +101,9 @@ English art pack is downloaded once, as before.
 
 ## Updates
 
-The plugin tells you when a new release is out and links to it. It never downloads or installs
-anything by itself: updating is the same `install.bat` as the first install. Card data and art refresh
-automatically.
+The plugin tells you when a new release is out and links to its installer. It never downloads or
+installs anything by itself: updating is the same installer as the first install, run from your
+browser's download. Card data and art refresh automatically.
 
 ### What's New in v0.7.1
 - **Match recap survives a reconnect**: after a disconnect and rejoin mid-match, the recap used to count only the turns after the rejoin. It now keeps the whole match.
@@ -116,9 +118,10 @@ automatically.
 
 ## Uninstall
 
-Delete `%APPDATA%\HearthstoneDeckTracker\Plugins\HsbgCardLookup\`. Your settings and the card-art
-cache live in `%APPDATA%\HearthstoneDeckTracker\HsbgCardLookup\`; delete that folder too to remove
-everything.
+Remove "Tantrum's Battlegrounds Toolkit" under Windows **Settings → Apps**, or delete
+`%APPDATA%\HearthstoneDeckTracker\Plugins\HsbgCardLookup\` with HDT closed. Your settings and the
+card-art cache live in `%APPDATA%\HearthstoneDeckTracker\HsbgCardLookup\`; delete that folder too to
+remove everything.
 
 ## Building from source
 
