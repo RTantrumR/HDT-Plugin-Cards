@@ -19,6 +19,8 @@ libs/Newtonsoft.Json.dll
 
 # Plugin bundle staging
 dist/
+installer/stage/
+installer/out/
 
 # Local-only documentation (internal notes / rationale / research, not published).
 docs/
