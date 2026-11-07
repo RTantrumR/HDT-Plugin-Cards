@@ -14,7 +14,7 @@ v0.8.1: Clearer opponent settings
 - Reordered: Portrait/Sidebar overlay and Dark Gifts first, then Card search, the two HUDs, Updates and Language.
 
 ### Match recap removed
-- The end-of-match recap (APM, damage dealt against your averages) is gone for now; most players use Nomi's Kitchen for this. It may return later with other features. Your recorded matches stay in the plugin's data folder under `recaps`.
+- The end-of-match recap (APM, damage dealt against your averages) is gone for now. It may return later with other features. Your recorded matches stay in the plugin's data folder under `recaps`.
 
 ### Install and update with a wizard
 - Releases now ship **TantrumsBattlegroundsToolkit-Setup-0.8.1.exe**: run it, and it closes HDT, installs the plugin, switches it on when it is new on this PC and offers to start HDT again. Updating is the same file over the old install.
