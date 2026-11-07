@@ -16,5 +16,10 @@ v0.8.1: Clearer opponent settings
 ### Match recap removed
 - The end-of-match recap (APM, damage dealt against your averages) is gone for now; most players use Nomi's Kitchen for this. It may return later with other features. Your recorded matches stay in the plugin's data folder under `recaps`.
 
+### Install and update with a wizard
+- Releases now ship **TantrumsBattlegroundsToolkit-Setup-0.8.1.exe**: run it, and it closes HDT, installs the plugin, switches it on when it is new on this PC and offers to start HDT again. Updating is the same file over the old install.
+- The in-plugin update notice now links straight to that Setup.exe.
+- The zip with `install.bat` is still attached to this release for anyone who prefers it.
+
 ### Good to know
 - Your layout is kept when you update. The exception is a setup that had the MMR rating switched off: today's rating change now needs the rating to be shown, and battletags on both the portraits and the sidebar stay in the sidebar only.
