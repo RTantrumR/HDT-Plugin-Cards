@@ -20,7 +20,7 @@ namespace HsbgCardLookup.Ui
         public sealed class Row
         {
             public string Name;
-            public string HeroName;     // hero card name — the panel shows it when player names are hidden
+            public string HeroName;     // hero card name — shown in place of Name under OpponentNameType "Heroes"
             public int Place;           // leaderboard place; in duos both teammates share one
             public int Rating;          // 0 = below the leaderboard cutoff (shown as 8000↓)
             public bool RatingPending;  // leaderboard blob not loaded yet → show "…" instead of 8000↓
@@ -105,6 +105,8 @@ namespace HsbgCardLookup.Ui
         /// deltas are all off — e.g. the "tavern tiers only" setup); a single-line label shrinks to
         /// <see cref="RefLabelH1"/> and lifts <see cref="RefNoNameLift"/>.</summary>
         public bool ShowNames { get; set; }
+        /// <summary>The name line carries the hero's name instead of the battletag.</summary>
+        public bool HeroNames { get; set; }
         public bool ShowRating { get; set; } = true;
         public bool ShowDeltas { get; set; } = true;
         public bool ShowTiers { get; set; } = true;
@@ -241,7 +243,7 @@ namespace HsbgCardLookup.Ui
                 _shifted[i] = r.IsCurrentOpponent;
 
                 bool dim = DimDead && r.IsDead;
-                _names[i].Text = r.Name;
+                _names[i].Text = HeroNames ? (r.HeroName ?? "") : (r.Name ?? "");
                 _names[i].Foreground = dim ? Dead : Brushes.White;
                 _names[i].Visibility = ShowNames ? Visibility.Visible : Visibility.Collapsed;
                 _ratings[i].Text = r.RatingPending ? "…" : (r.Rating > 0 ? r.Rating.ToString() : "8000↓");

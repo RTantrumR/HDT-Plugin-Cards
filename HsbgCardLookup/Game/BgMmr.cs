@@ -128,8 +128,7 @@ namespace HsbgCardLookup.Game
                 // Every per-part toggle folds into the signature so a settings change re-renders
                 // ("D" = duos layout, "~" = blob still pending — rows render "…" until it loads).
                 string flags = (isDuos ? "D" : "") + (_players == null ? "~" : "")
-                    + (_config.ShowMmrLabels ? "L" : "") + (_config.ShowMmrPanel ? "P" : "")
-                    + "n" + _config.OpponentNameMode + (_config.ShowMmrRating ? "r" : "")
+                    + "m" + _config.OpponentMmrMode + "n" + _config.OpponentNameMode + _config.OpponentNameType
                     + (_config.ShowMmrDeltas ? "a" : "") + "t" + _config.TavernTierMode
                     + (_config.ShowLastOpponent ? "o" : "") + (_config.DimDeadPlayers ? "d" : "")
                     + "T" + _config.OpponentTribeMode;
@@ -161,8 +160,8 @@ namespace HsbgCardLookup.Game
         {
             _lastSig = null;   // any toggle change → rebuild both surfaces on the next poll
             bool master = _config.ShowOpponentMmr;
-            bool portraitAny = master && (_config.ShowMmrLabels || TiersOnPortraits || TribesOnPortraits || _config.ShowLastOpponent);
-            bool panel = master && _config.ShowMmrPanel;
+            bool portraitAny = master && PortraitsInUse;
+            bool panel = master && _config.PanelInUse;
             Marshal(() =>
             {
                 if (!portraitAny) _overlay?.HideAll();
@@ -546,18 +545,16 @@ namespace HsbgCardLookup.Game
                     return;   // when the panel IS the target, _editing owns what it shows
                 }
 
-                // Surface 1: the portrait-anchored parts — the MMR/name label box (gated by
-                // ShowMmrLabels), the tavern-tier icons (their own location axis: TavernTierMode
-                // Portraits/Panel/Both/Off) and the ⚔ marker are all INDEPENDENT, so e.g. tiers can
-                // sit by the portraits with the label box entirely off ("tiers only") — or live only
-                // in the panel with nothing at the portraits at all.
-                bool portraitAny = _config.ShowMmrLabels || TiersOnPortraits || TribesOnPortraits || _config.ShowLastOpponent;
-                if (any && portraitAny)
+                // Surface 1: the portrait-anchored parts — the MMR/name label box, the tavern-tier and
+                // minion-type icons (each on its own location axis) and the ⚔ marker are all
+                // INDEPENDENT, so e.g. tiers can sit by the portraits with no label box at all
+                // ("tiers only") — or live only in the sidebar with nothing at the portraits.
+                if (any && PortraitsInUse)
                 {
-                    _overlay.ShowNames = _config.ShowMmrLabels
-                        && string.Equals(_config.OpponentNameMode, "Players", StringComparison.OrdinalIgnoreCase);
-                    _overlay.ShowRating = _config.ShowMmrLabels && _config.ShowMmrRating;
-                    _overlay.ShowDeltas = _config.ShowMmrLabels && _config.ShowMmrDeltas;
+                    _overlay.ShowNames = _config.NamesOnPortraits;
+                    _overlay.HeroNames = _config.HeroNames;
+                    _overlay.ShowRating = _config.MmrOnPortraits;
+                    _overlay.ShowDeltas = _config.MmrOnPortraits && _config.ShowMmrDeltas;
                     _overlay.ShowTiers = TiersOnPortraits;
                     _overlay.ShowTribes = TribesOnPortraits;
                     _overlay.ShowLastOpp = _config.ShowLastOpponent;
@@ -566,9 +563,9 @@ namespace HsbgCardLookup.Game
                 }
                 else _overlay.HideAll();
 
-                // Surface 2: the separate draggable standings panel (skipped while arrange mode owns it).
+                // Surface 2: the draggable sidebar (skipped while arrange mode owns it).
                 if (_editing) return;
-                if (any && _config.ShowMmrPanel)
+                if (any && _config.PanelInUse)
                 {
                     EnsurePanel();
                     _panel.IsDuos = isDuos;
@@ -596,38 +593,29 @@ namespace HsbgCardLookup.Game
 
         private void SyncPanelFlags()
         {
-            _panel.NameMode = _config.OpponentNameMode;
-            _panel.ShowRating = _config.ShowMmrRating;
-            _panel.ShowDeltas = _config.ShowMmrDeltas;
+            _panel.NameMode = _config.PanelNameMode;
+            _panel.ShowRating = _config.MmrInPanel;
+            _panel.ShowDeltas = _config.MmrInPanel && _config.ShowMmrDeltas;
             _panel.ShowTiers = TiersInPanel;
             _panel.ShowTribes = TribesInPanel;
             _panel.DimDead = _config.DimDeadPlayers;
         }
 
-        // Location axes ("Off"/"Portraits"/"Panel"/"Both"; unknown/empty = Both) → per-surface bools.
         // Static so anything that renders the same surfaces (the settings preview) reads an axis
         // through this one rule instead of re-implementing it and drifting.
-        private static bool OnPortraits(string mode) =>
-            string.IsNullOrEmpty(mode)
-            || string.Equals(mode, "Both", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "Portraits", StringComparison.OrdinalIgnoreCase);
-
-        private static bool InPanel(string mode) =>
-            string.IsNullOrEmpty(mode)
-            || string.Equals(mode, "Both", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "Panel", StringComparison.OrdinalIgnoreCase);
-
         /// <summary>Where tavern-tier icons go, resolved from TavernTierMode.</summary>
-        internal static bool TiersOnPortraitsFor(PluginConfig config) => OnPortraits(config.TavernTierMode);
-        internal static bool TiersInPanelFor(PluginConfig config) => InPanel(config.TavernTierMode);
+        internal static bool TiersOnPortraitsFor(PluginConfig config) => PluginConfig.OnPortraits(config.TavernTierMode);
+        internal static bool TiersInPanelFor(PluginConfig config) => PluginConfig.InPanel(config.TavernTierMode);
         /// <summary>Where the opponents' minion-type icons go, resolved from OpponentTribeMode.</summary>
-        internal static bool TribesOnPortraitsFor(PluginConfig config) => OnPortraits(config.OpponentTribeMode);
-        internal static bool TribesInPanelFor(PluginConfig config) => InPanel(config.OpponentTribeMode);
+        internal static bool TribesOnPortraitsFor(PluginConfig config) => PluginConfig.OnPortraits(config.OpponentTribeMode);
+        internal static bool TribesInPanelFor(PluginConfig config) => PluginConfig.InPanel(config.OpponentTribeMode);
 
         private bool TiersOnPortraits => TiersOnPortraitsFor(_config);
         private bool TiersInPanel => TiersInPanelFor(_config);
         private bool TribesOnPortraits => TribesOnPortraitsFor(_config);
         private bool TribesInPanel => TribesInPanelFor(_config);
+        private bool PortraitsInUse =>
+            _config.MmrOnPortraits || _config.NamesOnPortraits || TiersOnPortraits || TribesOnPortraits || _config.ShowLastOpponent;
 
         private void HideIfShown()
         {

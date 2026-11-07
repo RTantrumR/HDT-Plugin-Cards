@@ -96,9 +96,12 @@ namespace HsbgCardLookup.Ui
                 double yf = hud != null && hud.WF > 0 ? hud.YF : 0.30;
                 _panel.Place(xf, yf, wf);
 
-                _panel.NameMode = _config.OpponentNameMode;
-                _panel.ShowRating = _config.ShowMmrRating;
-                _panel.ShowDeltas = _config.ShowMmrDeltas;
+                // With nothing assigned to the sidebar, show what clicking the dimmed preview gives:
+                // the rating there.
+                bool rating = _config.MmrInPanel || !_config.PanelInUse;
+                _panel.NameMode = _config.PanelNameMode;
+                _panel.ShowRating = rating;
+                _panel.ShowDeltas = rating && _config.ShowMmrDeltas;
                 _panel.ShowTiers = Game.BgMmr.TiersInPanelFor(_config);
                 _panel.ShowTribes = Game.BgMmr.TribesInPanelFor(_config);
                 _panel.DimDead = _config.DimDeadPlayers;

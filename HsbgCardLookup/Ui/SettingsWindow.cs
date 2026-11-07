@@ -51,6 +51,7 @@ namespace HsbgCardLookup.Ui
         // Every right-hand control on a settings row (key binding, On/Off pill, cycler, action button)
         // uses this, so their left AND right edges line up down the page.
         private const double ControlW = 106;
+        private const double StatusH = 35;   // two lines of the 13px status strip (17.3 each)
 
         private StackPanel _pageRoot;        // page-local: what ShowPage renders (header + status + body)
         private Func<bool> _pageMaster;      // page-local: the master switch gating this page, if any
@@ -70,8 +71,6 @@ namespace HsbgCardLookup.Ui
         private UpdateNotice _updateNotice;     // most recently pushed state (see RefreshUpdateStatus)
         private bool _onUpdatesPage;
         private StackPanel _updateActionsHost;  // repainted in place, no full page rebuild needed
-        /// <summary>How many recap records take part in the averages right now (set by Plugin).</summary>
-        internal Func<int> RecapComparableCount;
 
         internal SettingsWindow(PluginConfig config, Data.CardStore store, CardLanguage cardLanguage,
             HotkeyManager hotkey, Action onChanged, Action<ArrangeTarget> onArrange,
@@ -99,11 +98,17 @@ namespace HsbgCardLookup.Ui
             ShowInTaskbar = false;
             Background = new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E));
 
-            // Notice line lives at the top of every page so feedback is immediately visible.
+            // Notice line lives at the top of every page so feedback is immediately visible. Its
+            // height is FIXED at two lines: the window sizes to content, so a strip that grew and
+            // shrank with each hint moved every row under it on every click (owner, 2026-11-06).
+            // Every string that lands here fits two lines at this width in all 13 catalogs (measured
+            // with WPF's own layout, 2026-11-06; the "*Hint", "*On", "*Off" keys are the ones that do).
+            // A third line would be clipped, not pushed down — keep new hints short.
             _status = new TextBlock
             {
-                Foreground = UiKit.AccentBrush, FontSize = 13, MinHeight = 18,
-                Margin = new Thickness(0, 6, 0, 12), TextWrapping = TextWrapping.Wrap
+                Foreground = UiKit.AccentBrush, FontSize = 13, Height = StatusH,
+                Margin = new Thickness(0, 6, 0, 12), TextWrapping = TextWrapping.Wrap,
+                ClipToBounds = true
             };
 
             BuildMain();
@@ -302,7 +307,8 @@ namespace HsbgCardLookup.Ui
                 head.Children.Add(new TextBlock
                 {
                     Text = title, Foreground = UiKit.TextPrimary, FontSize = 20, FontWeight = FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0)
+                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0),
+                    TextWrapping = TextWrapping.Wrap
                 });
                 stack.Children.Add(head);
             }
@@ -345,30 +351,8 @@ namespace HsbgCardLookup.Ui
             _currentPage = BuildMain;
             var stack = NewPage(Strings.T("settings.title"), sub: false);
 
-            stack.Children.Add(CategoryRow(Strings.T("settings.cardSearch.title"),
-                Strings.T("settings.main.cardSearchHint"),
-                null, null, BuildCardSearch));
-
-            stack.Children.Add(CategoryRow(Strings.T("settings.trinkets.title"),
-                Strings.T("settings.main.trinketsHint"),
-                () => _config.ShowTrinkets, v =>
-                {
-                    _config.ShowTrinkets = v;
-                    _status.Text = v ? Strings.T("settings.trinkets.on") : Strings.T("settings.trinkets.off");
-                    Changed();
-                    UpdateArrangeRow();
-                }, BuildTrinkets));
-
-            stack.Children.Add(CategoryRow(Strings.T("settings.anomaly.title"),
-                Strings.T("settings.main.anomalyHint"),
-                () => _config.ShowAnomaly, v =>
-                {
-                    _config.ShowAnomaly = v;
-                    _status.Text = v ? Strings.T("settings.anomaly.on") : Strings.T("settings.anomaly.off");
-                    Changed();
-                    UpdateArrangeRow();
-                }, BuildAnomaly));
-
+            // Order is the owner's (2026-11-06): the two in-match overlays players come for first,
+            // then the search, the two streamer HUDs, updates, language.
             stack.Children.Add(CategoryRow(Strings.T("settings.mmr.title"),
                 Strings.T("settings.main.mmrHint"),
                 () => _config.ShowOpponentMmr, v =>
@@ -392,16 +376,29 @@ namespace HsbgCardLookup.Ui
                     Changed();
                 }, BuildDarkGifts));
 
-            stack.Children.Add(CategoryRow(Strings.T("settings.recap.title"),
-                Strings.T("settings.main.recapHint"),
-                () => _config.ShowMatchRecap, v =>
+            stack.Children.Add(CategoryRow(Strings.T("settings.cardSearch.title"),
+                Strings.T("settings.main.cardSearchHint"),
+                null, null, BuildCardSearch));
+
+            stack.Children.Add(CategoryRow(Strings.T("settings.trinkets.title"),
+                Strings.T("settings.main.trinketsHint"),
+                () => _config.ShowTrinkets, v =>
                 {
-                    _config.ShowMatchRecap = v;
-                    _status.Text = v
-                        ? Strings.T("settings.main.recapOn")
-                        : Strings.T("settings.recap.off");
+                    _config.ShowTrinkets = v;
+                    _status.Text = v ? Strings.T("settings.trinkets.on") : Strings.T("settings.trinkets.off");
                     Changed();
-                }, BuildRecap));
+                    UpdateArrangeRow();
+                }, BuildTrinkets));
+
+            stack.Children.Add(CategoryRow(Strings.T("settings.anomaly.title"),
+                Strings.T("settings.main.anomalyHint"),
+                () => _config.ShowAnomaly, v =>
+                {
+                    _config.ShowAnomaly = v;
+                    _status.Text = v ? Strings.T("settings.anomaly.on") : Strings.T("settings.anomaly.off");
+                    Changed();
+                    UpdateArrangeRow();
+                }, BuildAnomaly));
 
             stack.Children.Add(CategoryRow(Strings.T("settings.updates.title"), UpdatesHint(), null, null, BuildUpdates));
 
@@ -534,6 +531,13 @@ namespace HsbgCardLookup.Ui
                 UpdateArrangeRow();
             });
 
+            stack.Children.Add(new TextBlock
+            {
+                Text = Strings.T("settings.anomaly.intro"),
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
             stack.Children.Add(HudPreviewBlock(isAnomaly: true));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.Anomaly, Strings.T("settings.anomaly.arrangeTitle")));
@@ -559,84 +563,41 @@ namespace HsbgCardLookup.Ui
                 UpdateArrangeRow();
             });
 
-            stack.Children.Add(new TextBlock
-            {
-                Text = Strings.T("settings.mmr.intro"),
-                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 4),
-                TextWrapping = TextWrapping.Wrap
-            });
+            // ── What goes where ──────────────────────────────────────────────────────────────
+            // No surface switches: each part names its place, and a surface draws when something is
+            // assigned to it. The arrange button follows, so the setters have to tell it.
+            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.placementHeader"), first: true));
 
-            // ── Where ──────────────────────────────────────────────────────────────────────────
-            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.whereHeader"), first: true));
-
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.portraits"), _config.ShowMmrLabels, v =>
-            {
-                _config.ShowMmrLabels = v;
-                _status.Text = v
-                    ? Strings.T("settings.mmr.portraitsOn")
-                    : Strings.T("settings.mmr.portraitsOff");
-                Changed();
-            }));
-
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.panel"), _config.ShowMmrPanel, v =>
-            {
-                _config.ShowMmrPanel = v;
-                _status.Text = v
-                    ? Strings.T("settings.mmr.panelOn")
-                    : Strings.T("settings.mmr.panelOff");
-                NormalizeLocationModes();   // panel off → panel-involving tier/type modes snap to their fallback
-                Changed();
-                UpdateArrangeRow();
-                foreach (var r in _modeRefresh) r();   // the tier/type cyclers skip panel options while it is off
-            }, get: () => _config.ShowMmrPanel));
-
-            // ── What ───────────────────────────────────────────────────────────────────────────
-            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.whatHeader")));
-
-            stack.Children.Add(CycleRow(Strings.T("settings.mmr.names"),
-                new[] { "Players", "Heroes", "Off" },
-                new[] { Strings.T("settings.mmr.namesPlayers"), Strings.T("settings.mmr.namesHeroes"), Strings.T("settings.mmr.namesNone") },
-                new[] { Strings.T("settings.mmr.namesPlayersHint"),
-                        Strings.T("settings.mmr.namesHeroesHint"),
-                        Strings.T("settings.mmr.namesNoneHint") },
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.rating"), "mmr",
+                () => _config.OpponentMmrMode, v => _config.OpponentMmrMode = v));
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.tiers"), "tiers",
+                () => _config.TavernTierMode, v => _config.TavernTierMode = v));
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.types"), "types",
+                () => _config.OpponentTribeMode, v => _config.OpponentTribeMode = v));
+            stack.Children.Add(LocationRow(Strings.T("settings.mmr.names"), "names",
                 () => _config.OpponentNameMode, v => _config.OpponentNameMode = v));
 
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.rating"), _config.ShowMmrRating, v =>
-            {
-                _config.ShowMmrRating = v;
-                _status.Text = v ? Strings.T("settings.mmr.ratingOn") : Strings.T("settings.mmr.ratingOff");
-                Changed();
-            }));
+            // ── Details ───────────────────────────────────────────────────────────────────────
+            // Each detail belongs to one of the parts above and locks when that part is nowhere: the
+            // name type to the names, today's delta to the rating.
+            stack.Children.Add(GroupHeader(Strings.T("settings.mmr.detailsHeader")));
 
-            stack.Children.Add(ToggleRow(Strings.T("settings.mmr.deltas"), _config.ShowMmrDeltas, v =>
+            var nameType = CycleRow(Strings.T("settings.mmr.nameType"),
+                new[] { "Battletags", "Heroes" },
+                new[] { Strings.T("settings.mmr.nameTypeBattletags"), Strings.T("settings.mmr.nameTypeHeroes") },
+                new[] { Strings.T("settings.mmr.nameTypeBattletagsHint"), Strings.T("settings.mmr.nameTypeHeroesHint") },
+                () => _config.OpponentNameType, v => _config.OpponentNameType = v);
+            FollowPart(nameType, () => _config.NamesOnPortraits || _config.NamesInPanel);
+            stack.Children.Add(nameType);
+
+            var deltas = ToggleRow(Strings.T("settings.mmr.deltas"), _config.ShowMmrDeltas, v =>
             {
                 _config.ShowMmrDeltas = v;
                 _status.Text = v ? Strings.T("settings.mmr.deltasOn") : Strings.T("settings.mmr.deltasOff");
                 Changed();
-            }));
-
-            NormalizeLocationModes();   // e.g. a fresh config: panel off + mode "Both" → show as "Portraits"
-            stack.Children.Add(CycleRow(Strings.T("settings.mmr.tiers"),
-                new[] { "Both", "Portraits", "Panel", "Off" },
-                LocationCaptions(),
-                new[] { Strings.T("settings.mmr.tiersBothHint"),
-                        Strings.T("settings.mmr.tiersPortraitsHint"),
-                        Strings.T("settings.mmr.tiersPanelHint"),
-                        Strings.T("settings.mmr.tiersOffHint") },
-                () => _config.TavernTierMode, v => _config.TavernTierMode = v,
-                // The two panel-involving locations simply aren't offered while the panel is off,
-                // rather than being shown greyed out.
-                PanelLocationSelectable));
-
-            stack.Children.Add(CycleRow(Strings.T("settings.mmr.types"),
-                new[] { "Both", "Portraits", "Panel", "Off" },
-                LocationCaptions(),
-                new[] { Strings.T("settings.mmr.typesBothHint"),
-                        Strings.T("settings.mmr.typesPortraitsHint"),
-                        Strings.T("settings.mmr.typesPanelHint"),
-                        Strings.T("settings.mmr.typesOffHint") },
-                () => _config.OpponentTribeMode, v => _config.OpponentTribeMode = v,
-                PanelLocationSelectable));
+            });
+            FollowPart(deltas, () => _config.MmrOnPortraits || _config.MmrInPanel);
+            stack.Children.Add(deltas);
 
             stack.Children.Add(ToggleRow(Strings.T("settings.mmr.lastOpponent"), _config.ShowLastOpponent, v =>
             {
@@ -661,8 +622,12 @@ namespace HsbgCardLookup.Ui
             _mmrPreview = new MmrPanelPreview(_config, 394, 222);
             stack.Children.Add(TabSwitch(new[] { Strings.T("settings.mmr.previewSolo"), Strings.T("settings.mmr.previewDuos") }, 0, i => _mmrPreview?.SetDuos(i == 1)));
             stack.Children.Add(PreviewBlock(_mmrPreview.Root, () => _mmrPreview?.Refresh(),
-                () => _config.ShowMmrPanel,
-                () => { _config.ShowMmrPanel = true; AfterEnable(Strings.T("settings.mmr.panelOnShort")); }));
+                () => _config.PanelInUse,
+                () =>
+                {
+                    _config.OpponentMmrMode = _config.MmrOnPortraits ? "Both" : "Panel";
+                    AfterEnable(Strings.T("settings.mmr.panelOnShort"));
+                }));
 
             stack.Children.Add(ArrangeHudRow(ArrangeTarget.MmrPanel, Strings.T("settings.mmr.arrangeTitle")));
 
@@ -679,37 +644,38 @@ namespace HsbgCardLookup.Ui
             return _hudPreview.Root;
         }
 
-        // With the panel surface off, the panel-involving locations make no sense — snap them to the
-        // equivalent panel-less choice ("Both"→"Portraits", "Panel"→"Off") so the selection always
-        // sits on an option that's actually selectable. Applies to every Off/Portraits/Panel/Both axis
-        // (tavern tiers, minion types).
-        private void NormalizeLocationModes()
+        // A detail row that is greyed and locked while the part it belongs to shows nowhere; repainted
+        // with every carousel step, like the master ring.
+        private void FollowPart(UIElement row, Func<bool> live)
         {
-            if (_config.ShowMmrPanel) return;
-            _config.TavernTierMode = PanelLessMode(_config.TavernTierMode);
-            _config.OpponentTribeMode = PanelLessMode(_config.OpponentTribeMode);
+            Action paint = () =>
+            {
+                bool on = live();
+                row.IsEnabled = on;
+                row.IsHitTestVisible = on;
+                row.Opacity = on ? 1.0 : 0.42;
+            };
+            paint();
+            _modeRefresh.Add(paint);
         }
 
-        private static string PanelLessMode(string m)
-        {
-            if (string.IsNullOrEmpty(m) || string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase)) return "Portraits";
-            if (string.Equals(m, "Panel", StringComparison.OrdinalIgnoreCase)) return "Off";
-            return m;
-        }
-
-        // CycleRow gate for a location axis: the panel-involving choices are offered only while the
-        // panel surface is on.
-        private bool PanelLocationSelectable(string v) =>
-            _config.ShowMmrPanel
-            || (!string.Equals(v, "Both", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(v, "Panel", StringComparison.OrdinalIgnoreCase));
-
-        // Captions for a Both/Portraits/Panel/Off location axis — same order as its value array.
-        private static string[] LocationCaptions() => new[]
-        {
-            Strings.T("settings.mmr.locBoth"), Strings.T("settings.mmr.locPortraits"),
-            Strings.T("settings.mmr.locPanel"), Strings.T("settings.mmr.locOff")
-        };
+        // One Portraits/Sidebar/Both/Off row. Its hints live under settings.mmr.<hintPrefix>*Hint.
+        private UIElement LocationRow(string label, string hintPrefix, Func<string> get, Action<string> set) =>
+            CycleRow(label,
+                new[] { "Portraits", "Panel", "Both", "Off" },
+                new[]
+                {
+                    Strings.T("settings.mmr.locPortraits"), Strings.T("settings.mmr.locPanel"),
+                    Strings.T("settings.mmr.locBoth"), Strings.T("settings.mmr.locOff")
+                },
+                new[]
+                {
+                    Strings.T("settings.mmr." + hintPrefix + "PortraitsHint"),
+                    Strings.T("settings.mmr." + hintPrefix + "PanelHint"),
+                    Strings.T("settings.mmr." + hintPrefix + "BothHint"),
+                    Strings.T("settings.mmr." + hintPrefix + "OffHint")
+                },
+                get, v => { set(v); UpdateArrangeRow(); });
 
         private void BuildDarkGifts()
         {
@@ -760,67 +726,6 @@ namespace HsbgCardLookup.Ui
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
-
-            ShowPage();
-        }
-
-        // ── Match recap ───────────────────────────────────────────────────────────────────────
-        private void BuildRecap()
-        {
-            _currentPage = BuildRecap;
-            var stack = NewPage(Strings.T("settings.recap.title"), sub: true, () => _config.ShowMatchRecap, v =>
-            {
-                _config.ShowMatchRecap = v;
-                _status.Text = v ? Strings.T("settings.recap.on") : Strings.T("settings.recap.off");
-                Changed();
-            });
-
-            stack.Children.Add(new TextBlock
-            {
-                Text = Strings.F("settings.recap.intro", Game.Recap.RecapText.MinHistory),
-                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
-                TextWrapping = TextWrapping.Wrap
-            });
-
-            stack.Children.Add(ToggleRow(Strings.T("settings.recap.autoDismiss"), _config.RecapAutoDismiss, v =>
-            {
-                _config.RecapAutoDismiss = v;
-                _status.Text = v ? Strings.T("settings.recap.autoDismissOn") : Strings.T("settings.recap.autoDismissOff");
-                Changed();
-            }, () => _config.RecapAutoDismiss));
-
-            stack.Children.Add(Separator());
-
-            var historyLine = new TextBlock { Foreground = UiKit.TextSecondary, FontSize = 13, Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap };
-            Action paintHistory = () =>
-            {
-                int n = 0;
-                try { n = RecapComparableCount?.Invoke() ?? 0; } catch { }
-                string season = string.IsNullOrEmpty(_config.RecapSeason) ? Strings.T("settings.recap.unknownSeason") : _config.RecapSeason;
-                historyLine.Text = Strings.F(n == 1 ? "settings.recap.historyOne" : "settings.recap.historyMany", n, season);
-            };
-            paintHistory();
-            stack.Children.Add(historyLine);
-
-            var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(SmallButton(Strings.T("settings.recap.resetHistory"), () =>
-            {
-                _config.RecapResetAt = DateTime.Now;
-                Changed();
-                paintHistory();
-                _status.Text = Strings.T("settings.recap.historyReset");
-            }));
-            actions.Children.Add(SmallButton(Strings.T("settings.recap.openFolder"), () =>
-            {
-                try
-                {
-                    string dir = System.IO.Path.Combine(PluginConfig.DataDir, "recaps");
-                    System.IO.Directory.CreateDirectory(dir);
-                    System.Diagnostics.Process.Start("explorer.exe", dir);
-                }
-                catch { }
-            }));
-            stack.Children.Add(actions);
 
             ShowPage();
         }
@@ -995,14 +900,12 @@ namespace HsbgCardLookup.Ui
         /// <summary>
         /// A compact one-line selector: label on the left, "&#x25c4; value &#x25ba;" on the right, in a box the same
         /// width as the key-binding buttons so every right edge on the page lines up. Replaces stacking
-        /// one bordered radio-card per option, which cost ~60px each for a single choice.
-        /// <paramref name="selectable"/> filters which values can be stepped to (an unavailable value is
-        /// skipped rather than shown greyed), and the caption always re-reads through
-        /// <paramref name="get"/> so it can't go stale the way <see cref="TogglePill"/>'s cached state can.
+        /// one bordered radio-card per option, which cost ~60px each for a single choice. The caption
+        /// always re-reads through <paramref name="get"/> so it can't go stale the way
+        /// <see cref="TogglePill"/>'s cached state can.
         /// </summary>
         private UIElement CycleRow(string label, string[] values, string[] captions, string[] hints,
-                                   Func<string> get, Action<string> set,
-                                   Func<string, bool> selectable = null)
+                                   Func<string> get, Action<string> set)
         {
             var dock = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
 
@@ -1052,14 +955,7 @@ namespace HsbgCardLookup.Ui
 
             Action<int> step = dir =>
             {
-                int i = IndexOf(get());
-                // Walk in the requested direction until a selectable value turns up. The bound stops the
-                // walk if every other option is unavailable, leaving the current value untouched.
-                for (int n = 0; n < values.Length; n++)
-                {
-                    i = (i + dir + values.Length) % values.Length;
-                    if (selectable == null || selectable(values[i])) break;
-                }
+                int i = (IndexOf(get()) + dir + values.Length) % values.Length;
                 set(values[i]);
                 foreach (var r in _modeRefresh) r();
                 // The caption has to stay short to fit the shared control width, so the explanation
@@ -1597,7 +1493,7 @@ namespace HsbgCardLookup.Ui
             {
                 case ArrangeTarget.Trinkets: return _config.ShowTrinkets;
                 case ArrangeTarget.Anomaly: return _config.ShowAnomaly;
-                case ArrangeTarget.MmrPanel: return _config.ShowOpponentMmr && _config.ShowMmrPanel;
+                case ArrangeTarget.MmrPanel: return _config.ShowOpponentMmr && _config.PanelInUse;
                 default: return false;
             }
         }
