@@ -17,8 +17,8 @@
 ; installed and the portable HDT alike (HDT's PluginManager.PluginDirectory = Config.AppDataPath);
 ; what Setup needs HDT's program for is to know it exists, to start it at the end, and — for a
 ; portable HDT that keeps its config next to its exe — to find plugins.xml (Config.ConfigDir).
-; Looked for, in order: the exe picked with "Locate HDT...", /HDTEXE=<path>, a running HDT (WMI
-; ExecutablePath), the Squirrel launcher %LOCALAPPDATA%\HearthstoneDeckTracker\HearthstoneDeckTracker.exe,
+; Looked for, in order: the exe picked with "Locate HDT...", /HDTEXE=<path>, a running HDT (its
+; process image path), the Squirrel launcher %LOCALAPPDATA%\HearthstoneDeckTracker\HearthstoneDeckTracker.exe,
 ; an Apps & features entry named "Hearthstone Deck Tracker" (its InstallLocation), and the exe the
 ; last run of this Setup used. A found app-<ver>\HearthstoneDeckTracker.exe is swapped for the
 ; Squirrel launcher next to app-<ver>, which always starts the newest version.
@@ -70,7 +70,9 @@ CloseApplications=no
 
 [Messages]
 WelcomeLabel2=This will install [name/ver] into Hearthstone Deck Tracker's plugin folder for the current user.%n%nHearthstone Deck Tracker is closed while the files are copied; Setup can start it again at the end.
-ReadyLabel2a=Click Install to continue. Setup closes Hearthstone Deck Tracker if it is running, installs the plugin and switches it on.
+ReadyLabel2a=Click Install to continue. Setup closes Hearthstone Deck Tracker if it is running, installs the plugin and, on a first install, switches it on.
+; Setup creates no shortcuts, so Inno shows FinishedLabelNoIcons; FinishedLabel is kept in step.
+FinishedLabelNoIcons=[name] is installed and starts together with Hearthstone Deck Tracker.%n%nWhile HDT runs, press F3 to open the card search; the rest appears over Hearthstone in a Battlegrounds match. The first launch downloads card art in the background (about 200 MB, once).
 FinishedLabel=[name] is installed and starts together with Hearthstone Deck Tracker.%n%nWhile HDT runs, press F3 to open the card search; the rest appears over Hearthstone in a Battlegrounds match. The first launch downloads card art in the background (about 200 MB, once).
 
 [Files]
@@ -156,25 +158,49 @@ begin
     Result := PreferSquirrelLauncher(Path);
 end;
 
+function OpenProcess(DesiredAccess: DWORD; InheritHandle: BOOL; ProcessId: DWORD): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function QueryFullProcessImageName(Process: THandle; Flags: DWORD; ExeName: String; var Size: DWORD): BOOL;
+  external 'QueryFullProcessImageNameW@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// The program file of a process. PROCESS_QUERY_LIMITED_INFORMATION is granted even for a process
+// running elevated, where WMI's ExecutablePath comes back Null.
+function ProcessImagePath(Pid: DWORD): String;
+var
+  H: THandle;
+  Size: DWORD;
+begin
+  Result := '';
+  H := OpenProcess($1000 {PROCESS_QUERY_LIMITED_INFORMATION}, False, Pid);
+  if H = 0 then Exit;
+  try
+    Size := 1024;
+    SetLength(Result, Size);
+    if QueryFullProcessImageName(H, 0, Result, Size) then
+      SetLength(Result, Size)
+    else
+      Result := '';
+  finally
+    CloseHandle(H);
+  end;
+end;
+
 function RunningHdtExe: String;
 var
-  Locator, Wmi, Found, Proc: Variant;
+  Locator, Wmi, Found: Variant;
   I: Integer;
 begin
   Result := '';
   try
     Locator := CreateOleObject('WbemScripting.SWbemLocator');
     Wmi := Locator.ConnectServer('.', 'root\CIMV2');
-    Found := Wmi.ExecQuery('SELECT ExecutablePath FROM Win32_Process WHERE Name = ''' + HdtProcessName + '''');
+    Found := Wmi.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE Name = ''' + HdtProcessName + '''');
     for I := 0 to Found.Count - 1 do
     begin
-      Proc := Found.ItemIndex(I);
-      // ExecutablePath is Null for a process this user may not query (e.g. an elevated HDT).
-      if not VarIsNull(Proc.ExecutablePath) then
-      begin
-        Result := ValidHdtExe(Proc.ExecutablePath);
-        if Result <> '' then Exit;
-      end;
+      Result := ValidHdtExe(ProcessImagePath(Found.ItemIndex(I).ProcessId));
+      if Result <> '' then Exit;
     end;
   except
     Log('RunningHdtExe: WMI query failed: ' + GetExceptionMessage);
@@ -292,6 +318,8 @@ begin
       'Click Next to continue. Setup closes Hearthstone Deck Tracker while it copies the files ' +
       'and can start it again at the end.';
     HdtGetButton.Visible := False;
+    HdtCheckButton.Left := 0;
+    HdtLocateButton.Left := HdtGetButton.Width + ScaleX(8);
     HdtLocateButton.Caption := '&Use another HDT...';
   end
   else
@@ -304,10 +332,12 @@ begin
       'Already have HDT and Setup still cannot find it? Click Locate HDT and pick ' +
       'HearthstoneDeckTracker.exe in the folder where HDT is.';
     HdtGetButton.Visible := True;
+    HdtCheckButton.Left := HdtGetButton.Width + ScaleX(8);
+    HdtLocateButton.Left := 2 * (HdtGetButton.Width + ScaleX(8));
     HdtLocateButton.Caption := '&Locate HDT...';
   end;
   if (WizardForm <> nil) and (WizardForm.CurPageID = HdtPage.ID) then
-    WizardForm.NextButton.Enabled := HdtExe <> '';
+    WizardForm.NextButton.Enabled := (HdtExe <> '') or WizardSilent;
 end;
 
 procedure HdtGetButtonClick(Sender: TObject);
@@ -330,7 +360,7 @@ begin
       'If it is installed in a folder of your own, click Locate HDT and pick HearthstoneDeckTracker.exe.',
       mbInformation, MB_OK)
   else
-    WizardForm.NextButton.SetFocus;
+    WizardForm.ActiveControl := WizardForm.NextButton;
 end;
 
 procedure HdtLocateButtonClick(Sender: TObject);
@@ -357,7 +387,7 @@ begin
   DetectHdt;
   LogHdt;
   UpdateHdtPage;
-  WizardForm.NextButton.SetFocus;
+  WizardForm.ActiveControl := WizardForm.NextButton;
 end;
 
 procedure CreateHdtPage;
@@ -385,10 +415,9 @@ begin
   HdtStatusText.Top := Intro.Top + Intro.Height + ScaleY(6);
   HdtStatusText.Font.Style := [fsBold];
 
-  Gap := ScaleX(8);
-  ButtonWidth := (HdtPage.SurfaceWidth - 2 * Gap) div 3;
-  ButtonTop := HdtPage.SurfaceHeight - WizardForm.NextButton.Height;
-
+  // The buttons sit right under the text (UpdateHdtPage moves them left when Download is hidden):
+  // the surface grows after InitializeWizard, so a position taken from SurfaceHeight here would
+  // leave them floating mid-page.
   HdtDetailText := TNewStaticText.Create(HdtPage);
   HdtDetailText.Parent := HdtPage.Surface;
   HdtDetailText.AutoSize := False;
@@ -396,7 +425,11 @@ begin
   HdtDetailText.Left := 0;
   HdtDetailText.Top := HdtStatusText.Top + ScaleY(22);
   HdtDetailText.Width := HdtPage.SurfaceWidth;
-  HdtDetailText.Height := ButtonTop - HdtDetailText.Top - ScaleY(8);
+  HdtDetailText.Height := ScaleY(84);
+
+  Gap := ScaleX(8);
+  ButtonWidth := (HdtPage.SurfaceWidth - 2 * Gap) div 3;
+  ButtonTop := HdtDetailText.Top + HdtDetailText.Height + ScaleY(8);
 
   HdtGetButton := TNewButton.Create(HdtPage);
   HdtGetButton.Parent := HdtPage.Surface;
@@ -420,7 +453,7 @@ begin
   HdtLocateButton.Parent := HdtPage.Surface;
   HdtLocateButton.Left := 2 * (ButtonWidth + Gap);
   HdtLocateButton.Top := ButtonTop;
-  HdtLocateButton.Width := HdtPage.SurfaceWidth - HdtLocateButton.Left;
+  HdtLocateButton.Width := ButtonWidth;
   HdtLocateButton.Height := WizardForm.NextButton.Height;
   HdtLocateButton.OnClick := @HdtLocateButtonClick;
 
@@ -441,10 +474,12 @@ begin
   Result := (PageID = HdtPage.ID) and FoundAtStart;
 end;
 
+// A silent install also "clicks" Next on every page; it goes on to PrepareToInstall, which logs
+// why it stops and exits with code 7, instead of a message box nobody sees.
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = HdtPage.ID) and (HdtExe = '') then
+  if (CurPageID = HdtPage.ID) and (HdtExe = '') and not WizardSilent then
   begin
     MsgBox('Install Hearthstone Deck Tracker first, then click Check again.', mbInformation, MB_OK);
     Result := False;
@@ -656,17 +691,30 @@ begin
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
+var
+  Note, Caption, ClickFinish: String;
+  Delta: Integer;
 begin
   if CurPageID = HdtPage.ID then
   begin
-    WizardForm.NextButton.Enabled := HdtExe <> '';
+    WizardForm.NextButton.Enabled := (HdtExe <> '') or WizardSilent;
     Exit;
   end;
   if CurPageID <> wpFinished then Exit;
   if PluginEnabled then
-    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
-      'The plugin is switched on in Hearthstone Deck Tracker.'
+    Note := 'The plugin is switched on in Hearthstone Deck Tracker.'
   else
-    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
-      'If it does not show up in Hearthstone Deck Tracker, switch it on under Options > Tracker > Plugins.';
+    Note := 'If it does not show up in Hearthstone Deck Tracker, switch it on under Options > Tracker > Plugins.';
+  // Inno has already laid the page out for its own text (ending in "Click Finish to exit Setup.")
+  // when this runs: put the note before that line, then grow the label and move the
+  // "Start Hearthstone Deck Tracker" box down by as much, or the note is cut off behind it.
+  Caption := WizardForm.FinishedLabel.Caption;
+  ClickFinish := SetupMessage(msgClickFinish);
+  if Pos(ClickFinish, Caption) > 0 then
+    StringChangeEx(Caption, ClickFinish, Note + #13#10#13#10 + ClickFinish, True)
+  else
+    Caption := Caption + #13#10#13#10 + Note;
+  WizardForm.FinishedLabel.Caption := Caption;
+  Delta := WizardForm.AdjustLabelHeight(WizardForm.FinishedLabel);
+  WizardForm.RunList.Top := WizardForm.RunList.Top + Delta;
 end;
