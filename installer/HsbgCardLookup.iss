@@ -309,6 +309,8 @@ end;
 // ---------------------------------------------------------------------------------------------
 
 procedure UpdateHdtPage;
+var
+  ButtonTop: Integer;
 begin
   if HdtExe <> '' then
   begin
@@ -336,6 +338,13 @@ begin
     HdtLocateButton.Left := 2 * (HdtGetButton.Width + ScaleX(8));
     HdtLocateButton.Caption := '&Locate HDT...';
   end;
+  // Fit the label to its text (on Windows the not-found text wraps to six lines; a fixed height
+  // cut the last one off behind the buttons) and keep the buttons right under it.
+  WizardForm.AdjustLabelHeight(HdtDetailText);
+  ButtonTop := HdtDetailText.Top + HdtDetailText.Height + ScaleY(8);
+  HdtGetButton.Top := ButtonTop;
+  HdtCheckButton.Top := ButtonTop;
+  HdtLocateButton.Top := ButtonTop;
   if (WizardForm <> nil) and (WizardForm.CurPageID = HdtPage.ID) then
     WizardForm.NextButton.Enabled := (HdtExe <> '') or WizardSilent;
 end;
@@ -393,7 +402,7 @@ end;
 procedure CreateHdtPage;
 var
   Intro: TNewStaticText;
-  Gap, ButtonWidth, ButtonTop: Integer;
+  Gap, ButtonWidth: Integer;
 begin
   HdtPage := CreateCustomPage(wpWelcome, 'Hearthstone Deck Tracker',
     'The toolkit is a plugin: it runs inside Hearthstone Deck Tracker (HDT).');
@@ -415,9 +424,9 @@ begin
   HdtStatusText.Top := Intro.Top + Intro.Height + ScaleY(6);
   HdtStatusText.Font.Style := [fsBold];
 
-  // The buttons sit right under the text (UpdateHdtPage moves them left when Download is hidden):
-  // the surface grows after InitializeWizard, so a position taken from SurfaceHeight here would
-  // leave them floating mid-page.
+  // The buttons sit right under the text (UpdateHdtPage sizes the text and places them, and moves
+  // them left when Download is hidden): the surface grows after InitializeWizard, so a position
+  // taken from SurfaceHeight here would leave them floating mid-page.
   HdtDetailText := TNewStaticText.Create(HdtPage);
   HdtDetailText.Parent := HdtPage.Surface;
   HdtDetailText.AutoSize := False;
@@ -429,12 +438,10 @@ begin
 
   Gap := ScaleX(8);
   ButtonWidth := (HdtPage.SurfaceWidth - 2 * Gap) div 3;
-  ButtonTop := HdtDetailText.Top + HdtDetailText.Height + ScaleY(8);
 
   HdtGetButton := TNewButton.Create(HdtPage);
   HdtGetButton.Parent := HdtPage.Surface;
   HdtGetButton.Left := 0;
-  HdtGetButton.Top := ButtonTop;
   HdtGetButton.Width := ButtonWidth;
   HdtGetButton.Height := WizardForm.NextButton.Height;
   HdtGetButton.Caption := '&Download HDT';
@@ -443,7 +450,6 @@ begin
   HdtCheckButton := TNewButton.Create(HdtPage);
   HdtCheckButton.Parent := HdtPage.Surface;
   HdtCheckButton.Left := ButtonWidth + Gap;
-  HdtCheckButton.Top := ButtonTop;
   HdtCheckButton.Width := ButtonWidth;
   HdtCheckButton.Height := WizardForm.NextButton.Height;
   HdtCheckButton.Caption := 'Check &again';
@@ -452,7 +458,6 @@ begin
   HdtLocateButton := TNewButton.Create(HdtPage);
   HdtLocateButton.Parent := HdtPage.Surface;
   HdtLocateButton.Left := 2 * (ButtonWidth + Gap);
-  HdtLocateButton.Top := ButtonTop;
   HdtLocateButton.Width := ButtonWidth;
   HdtLocateButton.Height := WizardForm.NextButton.Height;
   HdtLocateButton.OnClick := @HdtLocateButtonClick;
