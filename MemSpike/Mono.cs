@@ -316,6 +316,39 @@ namespace MemSpike
             }
         }
 
+        /// <summary>Map&lt;int-or-enum, int&gt;: both arrays hold 4-byte values inline.</summary>
+        public IEnumerable<KeyValuePair<int, int>> IntIntMap(long map)
+        {
+            long links = Obj(map, "linkSlots"), keys = Obj(map, "keySlots"), vals = Obj(map, "valueSlots");
+            int n = Math.Min(ArrayLen(links), 4096);
+            for (int i = 0; i < n; i++)
+            {
+                if ((M.I32(links + 0x20 + i * 8L) & int.MinValue) == 0) continue;
+                yield return new KeyValuePair<int, int>(M.I32(keys + 0x20 + i * 4L), M.I32(vals + 0x20 + i * 4L));
+            }
+        }
+
+        /// <summary>System.Collections.Generic.List&lt;TRef&gt;: _items + _size.</summary>
+        public IEnumerable<long> List(long list)
+        {
+            long items = Obj(list, "_items");
+            int n = Math.Min(Int(list, "_size"), ArrayLen(items));
+            for (int i = 0; i < n && i < 4096; i++) yield return M.Ptr(items + 0x20 + i * 8L);
+        }
+
+        /// <summary>System Dictionary&lt;int,int&gt;: _entries is Entry[] { hashCode, next, key, value }, 16 bytes each; a live entry has hashCode >= 0.</summary>
+        public IEnumerable<KeyValuePair<int, int>> IntIntDict(long dict)
+        {
+            long entries = Obj(dict, "_entries");
+            int n = Math.Min(Int(dict, "_count"), ArrayLen(entries));
+            for (int i = 0; i < n && i < 65536; i++)
+            {
+                long e = entries + 0x20 + i * 16L;
+                if (M.I32(e) < 0) continue;
+                yield return new KeyValuePair<int, int>(M.I32(e + 8), M.I32(e + 12));
+            }
+        }
+
         public string Describe()
         {
             return "root domain 0x" + RootDomain.ToString("X") + ", " + AssemblyCount + " assemblies; image 0x" + Image.ToString("X")

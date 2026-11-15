@@ -48,6 +48,10 @@ namespace MemSpike
                             if (!statics) { Console.WriteLine("statics not calibrated"); return 3; }
                             Lobby(mono);
                             break;
+                        case "board":
+                            if (!statics) { Console.WriteLine("statics not calibrated"); return 3; }
+                            Board(mono);
+                            break;
                         default:
                             Console.WriteLine("unknown command");
                             return 1;
@@ -71,6 +75,39 @@ namespace MemSpike
             long tag = mono.Obj(mono.Obj(mono.Obj(mgr, "m_myPlayer"), "m_account"), "m_battleTag");
             if (tag == 0) { Console.WriteLine("no battletag (not logged in yet?)"); return; }
             Console.WriteLine("me: " + mono.Str(tag, "m_name") + "#" + mono.Str(tag, "m_number"));
+        }
+
+        // The leaderboard as the client draws it, top to bottom:
+        // PlayerLeaderboardManager.s_instance.m_teams[].m_playerLeaderboardCards[]
+        //   .m_playerHeroEntity { m_cardIdInternal, m_tags.m_values }   .m_overlay { m_raceCounts, m_recentCombatsPanel.m_techLevelCount }
+        private static void Board(Mono mono)
+        {
+            long mgr = mono.StaticObj("PlayerLeaderboardManager", "s_instance");
+            if (mgr == 0) { Console.WriteLine("no leaderboard (PlayerLeaderboardManager.s_instance is null)"); return; }
+            int pos = 0;
+            foreach (long team in mono.List(mono.Obj(mgr, "m_teams")))
+                foreach (long card in mono.List(mono.Obj(team, "m_playerLeaderboardCards")))
+                {
+                    pos++;
+                    long hero = mono.Obj(card, "m_playerHeroEntity");
+                    int entityId = 0, playerId = 0, place = 0, tierTag = 0, health = 0, damage = 0;
+                    foreach (var t in mono.IntIntDict(mono.Obj(mono.Obj(hero, "m_tags"), "m_values")))
+                    {
+                        if (t.Key == 53) entityId = t.Value;          // ENTITY_ID
+                        else if (t.Key == 30) playerId = t.Value;     // PLAYER_ID
+                        else if (t.Key == 1373) place = t.Value;      // PLAYER_LEADERBOARD_PLACE
+                        else if (t.Key == 1377) tierTag = t.Value;    // PLAYER_TECH_LEVEL
+                        else if (t.Key == 45) health = t.Value;       // HEALTH
+                        else if (t.Key == 44) damage = t.Value;       // DAMAGE
+                    }
+                    long overlay = mono.Obj(card, "m_overlay");
+                    var races = new System.Text.StringBuilder();
+                    foreach (var r in mono.IntIntMap(mono.Obj(overlay, "m_raceCounts"))) races.Append(r.Key).Append(':').Append(r.Value).Append(' ');
+                    int tierShown = mono.Int(mono.Obj(overlay, "m_recentCombatsPanel"), "m_techLevelCount");
+                    Console.WriteLine("#" + pos + " hero=" + mono.Str(hero, "m_cardIdInternal") + " entity=" + entityId + " player=" + playerId
+                        + " place=" + place + " hp=" + (health - damage) + " tier(tag)=" + tierTag + " tier(shown)=" + tierShown + " races[" + races.ToString().Trim() + "]");
+                }
+            Console.WriteLine(pos + " tiles");
         }
 
         // GameState.s_instance.m_playerInfoMap : Map<int, SharedPlayerInfo { m_name, m_playerHero }>
