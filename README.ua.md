@@ -60,7 +60,9 @@
    його один раз.
 2. **Завантажте інсталятор.** Візьміть `TantrumsBattlegroundsToolkit-Setup-X.Y.Z.exe` зі сторінки
    [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/latest).
-3. **Запустіть його.** Майстер закриє HDT, скопіює плагін куди треба й може знову запустити HDT. Якщо
+3. **Запустіть його.** Спершу майстер перевіряє, чи встановлено HDT. Якщо ні, він зупиняється на
+   сторінці з посиланням на завантаження HDT і кнопками **Check again** та **Locate HDT** і нічого не
+   встановлює, доки HDT не знайдено. Далі він закриє HDT, скопіює плагін куди треба й може знову запустити HDT. Якщо
    Windows SmartScreen попереджає про невідомого видавця, натисніть *More info → Run anyway*.
    *Вручну*: zip на тій самій сторінці містить теку `HsbgCardLookup`; перемістіть її до
    `%APPDATA%\HearthstoneDeckTracker\Plugins\` із закритим HDT або запустіть `install.bat` із zip.

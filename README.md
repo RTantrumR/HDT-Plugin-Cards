@@ -51,7 +51,9 @@ Windows only. Hearthstone must run in **Borderless** or **Windowed** mode, as fo
 1. **Get Hearthstone Deck Tracker.** Install [HDT](https://hsdecktracker.net/) and launch it once.
 2. **Download the installer.** Grab `TantrumsBattlegroundsToolkit-Setup-X.Y.Z.exe` from
    [Releases](https://github.com/RTantrumR/HDT-Plugin-Cards/releases/latest).
-3. **Run it.** The wizard closes HDT, copies the plugin into place and can start HDT again. If Windows
+3. **Run it.** The wizard first checks that HDT is installed. If it is not, the wizard stops on a page
+   that links HDT's download, with **Check again** and **Locate HDT** buttons, and installs nothing
+   until HDT is found. Then it closes HDT, copies the plugin into place and can start HDT again. If Windows
    SmartScreen warns about an unknown publisher, click *More info → Run anyway*.
    *Manual install*: the zip on the same page holds the `HsbgCardLookup` folder; drop it into
    `%APPDATA%\HearthstoneDeckTracker\Plugins\` with HDT closed, or run the zip's `install.bat`.
