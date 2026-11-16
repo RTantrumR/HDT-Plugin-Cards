@@ -12,9 +12,18 @@ using System.Windows.Threading;
 namespace Toolkit.Standalone
 {
     /// <summary>
-    /// A transparent, never-activated window kept exactly over Hearthstone's client area, shown only
-    /// while Hearthstone is the foreground window. Its <see cref="Surface"/> canvas is what the
-    /// plugin's own features draw on — the standalone counterpart of HDT's overlay canvas.
+    /// A transparent, never-activated window kept exactly over Hearthstone's client area, drawn only
+    /// while Hearthstone (or one of the toolkit's own windows over it, like the F3 search) is the
+    /// foreground window. Its <see cref="Surface"/> canvas is what the plugin's own features draw on:
+    /// the standalone counterpart of HDT's overlay canvas.
+    ///
+    /// Streaming: this window is what OBS captures, the way HDT's own overlay is captured. It is not a
+    /// tool window (OBS's Window Capture list skips those), its title is fixed and never translated (OBS
+    /// finds the window again by it), and it is never hidden, only faded to fully transparent, because
+    /// OBS stops capturing a hidden window. The other toolkit windows over the game (F3 search, floating
+    /// cards) are mirrored onto it under their real windows, so one capture carries everything.
+    /// The UI thread's name puts "Chrome" into WPF's window class, which OBS's defaults read as "capture
+    /// this with Windows Graphics Capture, find it by title" (see Program.Main).
     ///
     /// Clicks: the window is click-through (WS_EX_TRANSPARENT) except while the cursor is over an
     /// element registered with <see cref="RegisterClickable"/>; then it takes real mouse input. It is
@@ -23,7 +32,13 @@ namespace Toolkit.Standalone
     /// </summary>
     internal sealed class OverlayWindow : Window
     {
+        public const string WindowTitle = "Tantrum's BG Toolkit - Overlay";
+
         public readonly Canvas Surface = new Canvas();
+        private readonly Canvas _mirrorLayer = new Canvas { IsHitTestVisible = false };
+        private readonly Dictionary<Window, System.Windows.Shapes.Rectangle> _mirrors = new Dictionary<Window, System.Windows.Shapes.Rectangle>();
+        private readonly int _pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+        private bool _drawn;
 
         /// <summary>Test switch (--ignore-focus): draw even when Hearthstone isn't the foreground window.</summary>
         public bool IgnoreFocus;
@@ -46,8 +61,13 @@ namespace Toolkit.Standalone
             ShowInTaskbar = false;
             ShowActivated = false;
             ResizeMode = ResizeMode.NoResize;
+            Title = WindowTitle;
+            Opacity = 0;
             Left = -10000; Top = -10000; Width = 10; Height = 10;
-            Content = Surface;
+            var root = new Grid();
+            root.Children.Add(Surface);
+            root.Children.Add(_mirrorLayer);
+            Content = root;
 
             SourceInitialized += (s, e) =>
             {
@@ -139,33 +159,96 @@ namespace Toolkit.Standalone
         private void MakeClickThrough()
         {
             var h = Hwnd;
-            SetWindowLong(h, GWL_EXSTYLE, GetWindowLong(h, GWL_EXSTYLE) | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_NOACTIVATE);
+            // No WS_EX_TOOLWINDOW: OBS lists only non-tool windows. It stays out of the taskbar and Alt-Tab
+            // anyway: WPF gives a ShowInTaskbar=false window a hidden owner, and it is WS_EX_NOACTIVATE.
+            SetWindowLong(h, GWL_EXSTYLE, GetWindowLong(h, GWL_EXSTYLE) | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE);
+        }
+
+        [DllImport("user32")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32")] private static extern uint GetWindowThreadProcessId(IntPtr h, out int pid);
+        private const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4;
+
+        // The foreground window is one of ours that sits over the game (the F3 search, a HUD menu): the
+        // overlay keeps drawing under it. Not the settings, which the overlay must not cover.
+        private bool OwnWindowInFront()
+        {
+            var fg = GetForegroundWindow();
+            int pid;
+            if (fg == IntPtr.Zero || GetWindowThreadProcessId(fg, out pid) == 0 || pid != _pid) return false;
+            var win = HwndSource.FromHwnd(fg)?.RootVisual as Window;
+            return win != null && win != this && win.GetType().Name != "SettingsWindow";
         }
 
         private void Glue()
         {
             int x, y, w, h; bool fg;
             bool hs = HsWindow.ClientArea(out x, out y, out w, out h, out fg);
-            bool want = hs && (fg || IgnoreFocus);
+            bool ownInFront = hs && !fg && OwnWindowInFront();
+            bool want = hs && (fg || ownInFront || IgnoreFocus);
+            if (!IsVisible) Show();     // once; from then on it is faded, never hidden (see the class note)
+            // Follow Hearthstone even while faded, so a capture keeps the game's size. Raise it to the top
+            // of the topmost band only while Hearthstone itself is in front: over our own windows it stays
+            // where it is, under the F3 search.
+            if (hs && (x != _lastX || y != _lastY || w != _lastW || h != _lastH))
+            {
+                SetWindowPos(Hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW | (fg ? 0 : SWP_NOZORDER));
+                _lastX = x; _lastY = y; _lastW = w; _lastH = h;
+            }
             if (!want)
             {
-                if (Visibility == Visibility.Visible) { SetClickThrough(true, null); Hide(); Log?.Invoke("overlay hidden (hs=" + hs + " foreground=" + fg + ")"); }
+                if (_drawn) { _drawn = false; Opacity = 0; SetClickThrough(true, null); Log?.Invoke("overlay faded (hs=" + hs + " foreground=" + fg + ")"); }
                 if (_glue.Interval != HiddenRate) _glue.Interval = HiddenRate;
                 return;
             }
             if (_glue.Interval != ShownRate) _glue.Interval = ShownRate;
-            if (x != _lastX || y != _lastY || w != _lastW || h != _lastH || Visibility != Visibility.Visible)
+            if (!_drawn)
             {
-                if (Visibility != Visibility.Visible) { Show(); Log?.Invoke("overlay shown (foreground=" + fg + ")"); }
-                SetWindowPos(Hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-                _lastX = x; _lastY = y; _lastW = w; _lastH = h;
+                _drawn = true; Opacity = 1;
+                if (fg) SetWindowPos(Hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+                Log?.Invoke("overlay drawn (foreground=" + (fg ? "hs" : ownInFront ? "toolkit" : "ignored") + ")");
             }
+            SyncMirrors();
             // While a button is held, keep whatever state the press started in: a drag that outruns its
             // element must not turn the window click-through mid-gesture.
             // (GetAsyncKeyState, not WPF's Mouse: that only knows about presses this window received.)
             if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 || (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0) return;
             var over = ClickableUnderCursor();
             SetClickThrough(over == null, over);
+        }
+
+        // Mirrors of the toolkit's other windows over the game, at their places relative to the game. On
+        // screen each sits under its real window; in a capture of this window it is the only copy.
+        private void SyncMirrors()
+        {
+            HashSet<Window> seen = null;
+            foreach (Window win in Application.Current.Windows)
+            {
+                if (win == this || !win.IsVisible || win.WindowState == WindowState.Minimized) continue;
+                string type = win.GetType().Name;
+                if (type == "SettingsWindow") continue;
+                var visual = win.Content as Visual;
+                if (visual == null) continue;
+                Point at;
+                try { at = Surface.PointFromScreen(win.PointToScreen(new Point(0, 0))); } catch { continue; }
+                (seen ?? (seen = new HashSet<Window>())).Add(win);
+                System.Windows.Shapes.Rectangle r;
+                if (!_mirrors.TryGetValue(win, out r))
+                {
+                    r = new System.Windows.Shapes.Rectangle
+                    {
+                        Fill = new VisualBrush(visual) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }
+                    };
+                    _mirrors[win] = r;
+                    _mirrorLayer.Children.Add(r);
+                }
+                if (r.Width != win.ActualWidth) r.Width = win.ActualWidth;
+                if (r.Height != win.ActualHeight) r.Height = win.ActualHeight;
+                if (Canvas.GetLeft(r) != at.X) Canvas.SetLeft(r, at.X);
+                if (Canvas.GetTop(r) != at.Y) Canvas.SetTop(r, at.Y);
+            }
+            if (_mirrors.Count == (seen?.Count ?? 0)) return;
+            foreach (var gone in new List<Window>(_mirrors.Keys))
+                if (seen == null || !seen.Contains(gone)) { _mirrorLayer.Children.Remove(_mirrors[gone]); _mirrors.Remove(gone); }
         }
 
         /// <summary>Test aid: Hearthstone's own frame (PrintWindow) with this overlay drawn on top, as a PNG.</summary>
@@ -181,11 +264,11 @@ namespace Toolkit.Standalone
                     bool ok = PrintWindow(HsWindow.Find(), dc, 0x1 | 0x2);   // PW_CLIENTONLY | PW_RENDERFULLCONTENT
                     g.ReleaseHdc(dc);
                     if (!ok) return "PrintWindow failed";
-                    if (ActualWidth > 0 && Visibility == Visibility.Visible)
+                    if (ActualWidth > 0 && _drawn)
                     {
                         var dpi = VisualTreeHelper.GetDpi(this);
                         var rtb = new RenderTargetBitmap(w, h, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
-                        rtb.Render(Surface);
+                        rtb.Render((Visual)Content);     // the surface and the mirrors: what a capture gets
                         var enc = new PngBitmapEncoder();
                         enc.Frames.Add(BitmapFrame.Create(rtb));
                         using (var ms = new MemoryStream())
@@ -197,7 +280,7 @@ namespace Toolkit.Standalone
                 }
                 bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
             }
-            return "saved " + w + "x" + h + (Visibility == Visibility.Visible ? "" : " (overlay hidden)");
+            return "saved " + w + "x" + h + (_drawn ? "" : " (overlay faded)");
         }
     }
 }

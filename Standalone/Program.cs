@@ -16,6 +16,12 @@ namespace Toolkit.Standalone
         private static int Main(string[] args)
         {
             if (Array.IndexOf(args, "--autostart") >= 0) return Watcher.Run();
+            // WPF names every window class "HwndWrapper[<exe>;<thread name>;<random GUID>]". OBS's Window
+            // Capture, left on its defaults, picks Windows Graphics Capture (the only method that keeps a
+            // transparent window's alpha) and finds the window again by title only for classes containing
+            // "Chrome"; any other class gets BitBlt (black) and is matched by class, which the GUID changes
+            // every run. With this name a streamer picks the overlay in OBS and changes nothing.
+            System.Threading.Thread.CurrentThread.Name = "ToolkitUI-Chrome";
             return ToolkitHost.Run(args);
         }
     }
