@@ -32,6 +32,9 @@ namespace Toolkit.Standalone
         public List<KeyValuePair<string, string>> Lobby = new List<KeyValuePair<string, string>>();   // name, hero card id
         public List<int> LobbyTribes = new List<int>();
         public long ReadMs;
+
+        /// <summary>A Battlegrounds game: it has lobby minion types from its creation, tiles later.</summary>
+        public bool IsBattlegrounds => GameStateAddr != 0 && (LobbyTribes.Count > 0 || Tiles.Count > 0);
     }
 
     /// <summary>
@@ -61,18 +64,18 @@ namespace Toolkit.Standalone
         /// <summary>Null when Hearthstone isn't running or can't be read yet.</summary>
         public Snapshot Read()
         {
-            var procs = Process.GetProcessesByName("Hearthstone");
-            if (procs.Length == 0) { if (_pid != 0) _log("Hearthstone exited"); Detach(); return null; }
-            var p = procs[0];
+            int pid;
+            HsWindow.Find(out pid);      // never a process list: see HsWindow
+            if (pid == 0) { if (_pid != 0) _log("Hearthstone exited"); Detach(); return null; }
             try
             {
-                if (_pid != p.Id)
+                if (_pid != pid)
                 {
                     Detach();
-                    _mem = new Mem(p.Id);
+                    _mem = new Mem(pid);
                     _mono = new Mono(_mem);
-                    _mono.Attach(p, "Assembly-CSharp");
-                    _pid = p.Id;
+                    using (var p = Process.GetProcessById(pid)) _mono.Attach(p, "Assembly-CSharp");
+                    _pid = pid;
                     _log("attached: " + _mono.Describe().Replace("\n", " | "));
                 }
                 if (!_statics)
@@ -126,6 +129,37 @@ namespace Toolkit.Standalone
             if (gs == 0) return s;
             if (_stringsFor != gs) { _strings.Clear(); _stringsFor = gs; }
 
+            // Lobby: display name + hero per player, from Battle.net presence.
+            foreach (var kv in m.IntMap(m.Obj(gs, "m_playerInfoMap")))
+            {
+                long hero = m.Obj(kv.Value, "m_playerHero");
+                s.Lobby.Add(new KeyValuePair<string, string>(m.Str(kv.Value, "m_name"), CachedStr(m.Obj(hero, "m_cardIdInternal"))));
+            }
+
+            foreach (int race in m.IntList(m.Obj(gs, "m_availableRacesInBattlegroundsExcludingAmalgam")))
+                if (race > 0) s.LobbyTribes.Add(race);
+
+            long mgr = m.StaticObj("PlayerLeaderboardManager", "s_instance");
+            if (mgr != 0)
+                foreach (long team in m.List(m.Obj(mgr, "m_teams")))
+                {
+                    int cards = 0;
+                    foreach (long card in m.List(m.Obj(team, "m_playerLeaderboardCards")))
+                    {
+                        cards++;
+                        var t = new TileSnap();
+                        int id;
+                        if (TagsOf(m.Obj(card, "m_playerHeroEntity")).TryGetValue(53, out id)) t.HeroEntityId = id;
+                        foreach (var r in m.IntIntMap(m.Obj(m.Obj(card, "m_overlay"), "m_raceCounts"))) t.Races[r.Key] = r.Value;
+                        s.Tiles.Add(t);
+                    }
+                    if (cards >= 2) s.TeamsWithTwo++;
+                }
+
+            // Standard, Arena, Tavern Brawl...: nothing reads their entities, so don't walk them. Only a
+            // Battlegrounds game has lobby minion types (from its creation) or leaderboard tiles.
+            if (!s.IsBattlegrounds) return s;
+
             // Every entity the client holds: id -> card id + tags.
             foreach (var kv in m.IntMap(m.Obj(gs, "m_entityMap")))
             {
@@ -150,33 +184,6 @@ namespace Toolkit.Standalone
                 long local = m.FieldAddr(kv.Value, "m_local");
                 bool isLocal = local != 0 && (m.M.I32(local) & 0xFF) != 0;
                 if (isLocal) s.LocalPlayerEntityId = kv.Key; else s.OpponentPlayerEntityId = kv.Key;
-            }
-
-            // Lobby: display name + hero per player, from Battle.net presence.
-            foreach (var kv in m.IntMap(m.Obj(gs, "m_playerInfoMap")))
-            {
-                long hero = m.Obj(kv.Value, "m_playerHero");
-                s.Lobby.Add(new KeyValuePair<string, string>(m.Str(kv.Value, "m_name"), CachedStr(m.Obj(hero, "m_cardIdInternal"))));
-            }
-
-            foreach (int race in m.IntList(m.Obj(gs, "m_availableRacesInBattlegroundsExcludingAmalgam")))
-                if (race > 0) s.LobbyTribes.Add(race);
-
-            long mgr = m.StaticObj("PlayerLeaderboardManager", "s_instance");
-            if (mgr == 0) return s;
-            foreach (long team in m.List(m.Obj(mgr, "m_teams")))
-            {
-                int cards = 0;
-                foreach (long card in m.List(m.Obj(team, "m_playerLeaderboardCards")))
-                {
-                    cards++;
-                    var t = new TileSnap();
-                    int id;
-                    if (TagsOf(m.Obj(card, "m_playerHeroEntity")).TryGetValue(53, out id)) t.HeroEntityId = id;
-                    foreach (var r in m.IntIntMap(m.Obj(m.Obj(card, "m_overlay"), "m_raceCounts"))) t.Races[r.Key] = r.Value;
-                    s.Tiles.Add(t);
-                }
-                if (cards >= 2) s.TeamsWithTwo++;
             }
             return s;
         }

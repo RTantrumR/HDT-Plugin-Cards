@@ -32,6 +32,10 @@ namespace Toolkit.Standalone
         private int _lastX = int.MinValue, _lastY, _lastW, _lastH;
         private readonly List<WeakReference<FrameworkElement>> _clickable = new List<WeakReference<FrameworkElement>>();
         private bool _clickThrough = true;
+        private readonly DispatcherTimer _glue;
+        private static readonly TimeSpan ShownRate = TimeSpan.FromMilliseconds(16), HiddenRate = TimeSpan.FromMilliseconds(250);
+        private WinEventProc _onForeground;     // held: the hook calls it from native code
+        private IntPtr _foregroundHook;
 
         public OverlayWindow()
         {
@@ -49,13 +53,23 @@ namespace Toolkit.Standalone
             {
                 MakeClickThrough();
                 HwndSource.FromHwnd(Hwnd)?.AddHook(WndProc);
+                // Alt-tab back into Hearthstone shows the overlay at once, without polling fast for it.
+                _onForeground = (hook, ev, hwnd, obj, child, thread, time) => Glue();
+                _foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _onForeground, 0, 0, WINEVENT_OUTOFCONTEXT);
             };
+            Closed += (s, e) => { if (_foregroundHook != IntPtr.Zero) UnhookWinEvent(_foregroundHook); };
 
-            // 60 Hz glue: follow the HS window, hide when it isn't in front.
-            var glue = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(16) };
-            glue.Tick += (s, e) => Glue();
-            glue.Start();
+            // Glue: follow the HS window, hide when it isn't in front. 60 Hz while shown (window moves,
+            // hover over clickable elements); 4 Hz while hidden, when the foreground hook does the waking.
+            _glue = new DispatcherTimer(DispatcherPriority.Render) { Interval = HiddenRate };
+            _glue.Tick += (s, e) => Glue();
+            _glue.Start();
         }
+
+        private delegate void WinEventProc(IntPtr hook, uint ev, IntPtr hwnd, int obj, int child, uint thread, uint time);
+        [DllImport("user32")] private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventProc proc, uint pid, uint thread, uint flags);
+        [DllImport("user32")] private static extern bool UnhookWinEvent(IntPtr hook);
+        private const uint EVENT_SYSTEM_FOREGROUND = 3, WINEVENT_OUTOFCONTEXT = 0;
 
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x20, WS_EX_TOOLWINDOW = 0x80, WS_EX_LAYERED = 0x80000, WS_EX_NOACTIVATE = 0x8000000;
@@ -136,8 +150,10 @@ namespace Toolkit.Standalone
             if (!want)
             {
                 if (Visibility == Visibility.Visible) { SetClickThrough(true, null); Hide(); Log?.Invoke("overlay hidden (hs=" + hs + " foreground=" + fg + ")"); }
+                if (_glue.Interval != HiddenRate) _glue.Interval = HiddenRate;
                 return;
             }
+            if (_glue.Interval != ShownRate) _glue.Interval = ShownRate;
             if (x != _lastX || y != _lastY || w != _lastW || h != _lastH || Visibility != Visibility.Visible)
             {
                 if (Visibility != Visibility.Visible) { Show(); Log?.Invoke("overlay shown (foreground=" + fg + ")"); }

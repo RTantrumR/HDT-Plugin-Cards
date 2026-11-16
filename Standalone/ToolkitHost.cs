@@ -75,13 +75,16 @@ namespace Toolkit.Standalone
                     }
                 }) { IsBackground = true, Name = "quit" };
 
-                // Reader thread: a snapshot every 250 ms, handed to the UI thread.
+                // Reader thread: a snapshot every 250 ms during a Battlegrounds game, handed to the UI thread;
+                // every second otherwise (menus, other modes, no Hearthstone), when it only watches for one.
                 var worker = new Thread(() =>
                 {
                     string lastSummary = null;
-                    while (!stop.WaitOne(250))
+                    int wait = 250;
+                    while (!stop.WaitOne(wait))
                     {
                         var snap = reader.Read();
+                        wait = snap != null && snap.IsBattlegrounds ? 250 : 1000;
                         string summary = Summary(snap);
                         if (summary != lastSummary) { Shared.Log(summary); lastSummary = summary; }
                         ui.BeginInvoke(new Action(() => game.Publish(snap)));
@@ -91,8 +94,8 @@ namespace Toolkit.Standalone
                 // The toolkit's tick, every 100 ms on the UI thread — what HDT's OnUpdate does for the plugin.
                 // Every 5 s also: close with Hearthstone (when the watcher started us), and warn once per
                 // HDT run when HDT has this toolkit's plugin on too (two of everything otherwise).
-                DateTime lastSlow = DateTime.MinValue, hsGoneSince = DateTime.MinValue;
-                bool sawHs = false;
+                DateTime lastSlow = DateTime.MinValue, hsGoneSince = DateTime.MinValue, trimAt = DateTime.UtcNow.AddSeconds(30);
+                bool sawHs = false, wasBg = false;
                 int warnedForHdt = 0;
                 var poll = new DispatcherTimer(DispatcherPriority.Background, ui) { Interval = TimeSpan.FromMilliseconds(100) };
                 poll.Tick += (s, e) =>
@@ -100,6 +103,18 @@ namespace Toolkit.Standalone
                     try { toolkit.Update(); } catch (Exception ex) { Shared.Log("ToolkitApp.Update: " + ex.Message); }
                     if ((DateTime.UtcNow - lastSlow).TotalSeconds < 5) return;
                     lastSlow = DateTime.UtcNow;
+
+                    // Give memory back once start-up has settled, and again a little after each
+                    // Battlegrounds game (its snapshots and the overlay's match elements are garbage then).
+                    bool bg = game.IsBattlegroundsMatch;
+                    if (wasBg && !bg) trimAt = DateTime.UtcNow.AddSeconds(10);
+                    wasBg = bg;
+                    if (trimAt != DateTime.MinValue && DateTime.UtcNow >= trimAt && !bg)
+                    {
+                        trimAt = DateTime.MinValue;
+                        Shared.TrimMemory();
+                        Shared.Log("memory trimmed: " + (GC.GetTotalMemory(false) >> 20) + " MB managed");
+                    }
 
                     if (withHs)
                     {
@@ -111,8 +126,7 @@ namespace Toolkit.Standalone
                         }
                     }
 
-                    var hdt = System.Diagnostics.Process.GetProcessesByName("HearthstoneDeckTracker");
-                    int hdtPid = hdt.Length > 0 ? hdt[0].Id : 0;
+                    int hdtPid = Shared.ProcessId("HearthstoneDeckTracker.exe");
                     if (hdtPid != 0 && hdtPid != warnedForHdt && Shared.HdtPluginActive())
                     {
                         warnedForHdt = hdtPid;
