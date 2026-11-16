@@ -135,6 +135,7 @@
     <Compile Include="Net\AssetClient.cs" />
     <Compile Include="Net\PluginNotice.cs" />
     <Compile Include="Plugin.cs" />
+    <Compile Include="ToolkitApp.cs" />
     <Compile Include="Host\Seams.cs" />
     <Compile Include="Host\Hdt\HdtHost.cs" />
     <Compile Include="Host\Hdt\HdtProbe.cs" />

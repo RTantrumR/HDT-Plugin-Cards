@@ -88,7 +88,7 @@ namespace HsbgCardLookup.Ui
             _openDownloadPage = openDownloadPage;
             _skipUpdate = skipUpdate;
 
-            Title = Strings.F("settings.windowTitle", Plugin.DisplayName);
+            Title = Strings.F("settings.windowTitle", ToolkitApp.DisplayName);
             WindowStyle = WindowStyle.SingleBorderWindow;
             ResizeMode = ResizeMode.NoResize;
             Width = 470;
@@ -151,7 +151,7 @@ namespace HsbgCardLookup.Ui
                 if (Strings.Web != _builtWeb)
                 {
                     _builtWeb = Strings.Web;
-                    Title = Strings.F("settings.windowTitle", Plugin.DisplayName);
+                    Title = Strings.F("settings.windowTitle", ToolkitApp.DisplayName);
                     _currentPage?.Invoke();
                 }
                 else foreach (var r in _modeRefresh) { try { r(); } catch { } }
@@ -1450,7 +1450,7 @@ namespace HsbgCardLookup.Ui
                 _status.Text = Strings.T("settings.common.hsNotRunning");
                 MessageBox.Show(this,
                     Strings.T("settings.common.hsNotRunningDetail"),
-                    Strings.F("settings.common.arrangeCaption", Plugin.DisplayName),
+                    Strings.F("settings.common.arrangeCaption", ToolkitApp.DisplayName),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
