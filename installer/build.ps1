@@ -53,6 +53,19 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item "$bin\*.dll" $stage -Force
 Copy-Item "$bin\data" $stage -Recurse -Force
 
+# The language page's flags: the plugin's own Ui\Flags.cs rendered to BMPs (out\flags) by
+# tools\RenderFlags.cs, so the wizard shows the same marks as the plugin and the site.
+$outDir = Join-Path $here "out"
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+$ref = "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2"
+$csc = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
+& $csc /nologo /target:exe "/out:$outDir\RenderFlags.exe" "/r:$ref\PresentationCore.dll" "/r:$ref\PresentationFramework.dll" `
+    "/r:$ref\WindowsBase.dll" "/r:$ref\System.Xaml.dll" (Join-Path $here "tools\RenderFlags.cs")
+if ($LASTEXITCODE -ne 0) { throw "RenderFlags did not compile (exit $LASTEXITCODE)" }
+Remove-Item "$outDir\flags" -Recurse -Force -ErrorAction SilentlyContinue
+& "$outDir\RenderFlags.exe" "$bin\HsbgCardLookup.dll" "$outDir\flags"
+if ($LASTEXITCODE -ne 0) { throw "RenderFlags failed (exit $LASTEXITCODE)" }
+
 # The wizard's own texts: installer\i18n\<lang>.json -> out\messages.iss, one language-qualified
 # [Messages] / [CustomMessages] line per key (HsbgCardLookup.iss #includes it). A language file
 # missing a key falls back to English for that key, with a warning.

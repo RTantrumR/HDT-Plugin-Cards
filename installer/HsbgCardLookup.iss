@@ -76,6 +76,8 @@ OutputBaseFilename=TantrumsBattlegroundsToolkit-Setup-{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; The language page holds an intro, a row and two columns of seven: a tenth more room than the default.
+WizardSizePercent=110
 CloseApplications=no
 
 [Languages]
@@ -103,6 +105,10 @@ Name: "chinesetraditional"; MessagesFile: "languages\ChineseTraditional.isl"
 ; but only files with a NEWER timestamp — "touch" stamps every installed file with the install time,
 ; so the mirror always picks the new files up (install.bat did the same).
 Source: "stage\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs touch
+
+; The language page's flags (rendered from the plugin's own Ui\Flags.cs by build.ps1), unpacked
+; to {tmp} for the page only.
+Source: "out\flags\*.bmp"; Flags: dontcopy
 
 [InstallDelete]
 ; The installer replaces the whole set: a DLL or data file that a newer version no longer ships
@@ -134,8 +140,9 @@ var
 
   HdtPage: TWizardPage;
   LangPage: TWizardPage;
-  LangCombo: TNewComboBox;
-  LangCodes: TArrayOfString;   // LangCombo item i -> the plugin's language code ('' = same as HDT)
+  LangRadios: array of TNewRadioButton;
+  LangCodes: TArrayOfString;   // LangRadios[i] -> the plugin's language code ('' = same as HDT)
+  LangNames: TArrayOfString;   // LangRadios[i] -> what the row says, for the Ready page
   CurrentLang: String;         // the plugin's Language setting before this install; '?' = no config yet
   LangPreselected: Boolean;    // PreselectLanguage has run (it needs the final {app})
   HdtStatusText: TNewStaticText;
@@ -547,22 +554,109 @@ begin
   else Result := 'en';
 end;
 
-procedure AddLang(const Code, Name: String);
+// The flag size nearest this DPI, drawn by build.ps1 at 22/28/33/44 px wide (100-200 %).
+function FlagWidth: Integer;
+begin
+  Result := ScaleX(22);
+  if Result <= 24 then Result := 22
+  else if Result <= 30 then Result := 28
+  else if Result <= 38 then Result := 33
+  else Result := 44;
+end;
+
+function LoadMark(const FileName: String; Parent: TWinControl; Left, Top: Integer): TBitmapImage;
+begin
+  ExtractTemporaryFile(FileName);
+  Result := TBitmapImage.Create(LangPage);
+  Result.Parent := Parent;
+  Result.Bitmap.LoadFromFile(ExpandConstant('{tmp}\' + FileName));
+  Result.AutoSize := True;
+  Result.Left := Left;
+  Result.Top := Top;
+end;
+
+// A click on a row's flag or words picks that row, as on the radio itself.
+procedure LangRowClick(Sender: TObject);
+begin
+  LangRadios[TComponent(Sender).Tag].Checked := True;
+end;
+
+// One row: radio, mark, name in its own words, and the locale tag in grey — the plugin's own
+// language page in miniature (Settings > Language).
+procedure AddLang(const Code, Name, LocaleTag, MarkFile: String; Left, Top, RowH: Integer);
 var
   N: Integer;
+  Radio: TNewRadioButton;
+  Mark: TBitmapImage;
+  NameText, TagText: TNewStaticText;
 begin
   N := GetArrayLength(LangCodes);
   SetArrayLength(LangCodes, N + 1);
+  SetArrayLength(LangNames, N + 1);
+  SetArrayLength(LangRadios, N + 1);
   LangCodes[N] := Code;
-  LangCombo.Items.Add(Name);
+  if LocaleTag <> '' then LangNames[N] := Name + ' (' + LocaleTag + ')' else LangNames[N] := Name;
+
+  Radio := TNewRadioButton.Create(LangPage);
+  Radio.Parent := LangPage.Surface;
+  Radio.Left := Left;
+  Radio.Width := ScaleX(17);
+  Radio.Height := RowH;
+  Radio.Top := Top;
+  LangRadios[N] := Radio;
+
+  Mark := LoadMark(MarkFile, LangPage.Surface, Left + ScaleX(19), Top);
+  Mark.Top := Top + (RowH - Mark.Height) div 2;
+  Mark.Tag := N;
+  Mark.OnClick := @LangRowClick;
+
+  NameText := TNewStaticText.Create(LangPage);
+  NameText.Parent := LangPage.Surface;
+  NameText.Caption := Name;
+  NameText.Left := Mark.Left + Mark.Width + ScaleX(6);
+  NameText.Top := Top + (RowH - NameText.Height) div 2;
+  NameText.Tag := N;
+  NameText.OnClick := @LangRowClick;
+
+  if LocaleTag <> '' then
+  begin
+    TagText := TNewStaticText.Create(LangPage);
+    TagText.Parent := LangPage.Surface;
+    TagText.Caption := LocaleTag;
+    TagText.Font.Color := clGrayText;
+    TagText.Left := NameText.Left + NameText.Width + ScaleX(6);
+    TagText.Top := NameText.Top;
+    TagText.Tag := N;
+    TagText.OnClick := @LangRowClick;
+  end;
+end;
+
+function ChosenIndex: Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  for I := 0 to GetArrayLength(LangRadios) - 1 do
+    if LangRadios[I].Checked then Result := I;
 end;
 
 // The code the page (or /TOOLKITLANG) settles on.
 function ChosenLanguage: String;
+var
+  I: Integer;
 begin
   Result := '';
-  if (LangCombo <> nil) and (LangCombo.ItemIndex >= 0) then
-    Result := LangCodes[LangCombo.ItemIndex];
+  I := ChosenIndex;
+  if I >= 0 then Result := LangCodes[I];
+end;
+
+function ChosenLanguageName: String;
+var
+  I: Integer;
+begin
+  Result := '';
+  I := ChosenIndex;
+  if I >= 0 then Result := LangNames[I];
 end;
 
 procedure SelectLanguage(const Code: String);
@@ -572,7 +666,7 @@ begin
   for I := 0 to GetArrayLength(LangCodes) - 1 do
     if CompareText(LangCodes[I], Code) = 0 then
     begin
-      LangCombo.ItemIndex := I;
+      LangRadios[I].Checked := True;
       Exit;
     end;
   // A code this list doesn't know (a language added later, a typo in config.xml) -> English.
@@ -582,6 +676,8 @@ end;
 procedure CreateLanguagePage;
 var
   Intro: TNewStaticText;
+  W, RowH, Top, ColW: Integer;
+  F: String;
 begin
   // After the folder page (hidden, DisableDirPage): {app} — and with it where config.xml is — is
   // only final from there on, /DIR included. The preselection waits for it (PreselectLanguage).
@@ -597,29 +693,29 @@ begin
   Intro.Caption := CustomMessage('LangIntro');
   WizardForm.AdjustLabelHeight(Intro);
 
-  LangCombo := TNewComboBox.Create(LangPage);
-  LangCombo.Parent := LangPage.Surface;
-  LangCombo.Style := csDropDownList;
-  LangCombo.Left := 0;
-  LangCombo.Top := Intro.Top + Intro.Height + ScaleY(12);
-  LangCombo.Width := ScaleX(260);
+  W := FlagWidth;
+  F := '_' + IntToStr(W) + '.bmp';
+  RowH := ScaleY(23);
+  ColW := LangPage.SurfaceWidth div 2;
+  Top := Intro.Top + Intro.Height + ScaleY(8);
 
-  // Each language in its own words, as the plugin's own switcher lists them.
-  AddLang('', CustomMessage('LangSameAsHdt'));
-  AddLang('en', 'English');
-  AddLang('de', 'Deutsch');
-  AddLang('es', 'Español (España)');
-  AddLang('es-mx', 'Español (Latinoamérica)');
-  AddLang('fr', 'Français');
-  AddLang('it', 'Italiano');
-  AddLang('ja', '日本語');
-  AddLang('ko', '한국어');
-  AddLang('pl', 'Polski');
-  AddLang('pt', 'Português (Brasil)');
-  AddLang('th', 'ไทย');
-  AddLang('zh-cn', '简体中文');
-  AddLang('zh-tw', '繁體中文');
-
+  // "Same as HDT" across the top, then the languages in two columns, each in its own words with
+  // the flag and tag the plugin and the site show.
+  AddLang('', CustomMessage('LangSameAsHdt'), '', 'globe' + F, 0, Top, RowH);
+  Top := Top + RowH + ScaleY(4);
+  AddLang('en', 'English', 'en-US', 'flag_en' + F, 0, Top + 0 * RowH, RowH);
+  AddLang('de', 'Deutsch', 'de-DE', 'flag_de' + F, 0, Top + 1 * RowH, RowH);
+  AddLang('es', 'Español (España)', 'es-ES', 'flag_es' + F, 0, Top + 2 * RowH, RowH);
+  AddLang('es-mx', 'Español (Latinoamérica)', 'es-MX', 'flag_es-mx' + F, 0, Top + 3 * RowH, RowH);
+  AddLang('fr', 'Français', 'fr-FR', 'flag_fr' + F, 0, Top + 4 * RowH, RowH);
+  AddLang('it', 'Italiano', 'it-IT', 'flag_it' + F, 0, Top + 5 * RowH, RowH);
+  AddLang('ja', '日本語', 'ja-JP', 'flag_ja' + F, 0, Top + 6 * RowH, RowH);
+  AddLang('ko', '한국어', 'ko-KR', 'flag_ko' + F, ColW, Top + 0 * RowH, RowH);
+  AddLang('pl', 'Polski', 'pl-PL', 'flag_pl' + F, ColW, Top + 1 * RowH, RowH);
+  AddLang('pt', 'Português (Brasil)', 'pt-BR', 'flag_pt' + F, ColW, Top + 2 * RowH, RowH);
+  AddLang('th', 'ไทย', 'th-TH', 'flag_th' + F, ColW, Top + 3 * RowH, RowH);
+  AddLang('zh-cn', '简体中文', 'zh-CN', 'flag_zh-cn' + F, ColW, Top + 4 * RowH, RowH);
+  AddLang('zh-tw', '繁體中文', 'zh-TW', 'flag_zh-tw' + F, ColW, Top + 5 * RowH, RowH);
 end;
 
 // Preselect, once {app} is final: /TOOLKITLANG, else the setting already there, else the wizard's
@@ -678,7 +774,7 @@ begin
   PreselectLanguage;
   Result := CustomMessage('ReadyHdt') + NewLine + Space + HdtExe + NewLine + NewLine +
     CustomMessage('ReadyFolder') + NewLine + Space + ExpandConstant('{app}') + NewLine + NewLine +
-    CustomMessage('ReadyLanguage') + NewLine + Space + LangCombo.Text;
+    CustomMessage('ReadyLanguage') + NewLine + Space + ChosenLanguageName;
 end;
 
 // ---------------------------------------------------------------------------------------------
