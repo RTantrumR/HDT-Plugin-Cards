@@ -15,6 +15,11 @@ v1.0.0: Runs with or without Hearthstone Deck Tracker
 - It keeps its own settings in `%APPDATA%\TantrumsBattlegroundsToolkit`. On its first start it copies your plugin's settings and downloaded card art, so nothing has to be set up or downloaded again.
 - It uninstalls from Apps & features like any other program.
 
+### Stream view for OBS (standalone program)
+- OBS's Game Capture records only Hearthstone, so anything drawn over the game never reaches your stream. The standalone program can now open a **stream view**: a window the size of the game that shows the overlay, the F3 card search and floating cards on a solid green or magenta background.
+- In OBS, add it as a Window Capture above your Game Capture and give it a Chroma Key filter. The exact steps are on the stream view's settings page. The window can stay behind the game; it only must not be minimized.
+- It's off by default and costs nothing until you switch it on.
+
 ### Setup in your language
 - Setup runs in 12 languages. The selector at the top right changes Setup's language on any page.
 - A page near the start picks the **toolkit's** language, shown with the same flags as in the toolkit. It starts on Setup's language, and an update keeps whatever language you already use.
