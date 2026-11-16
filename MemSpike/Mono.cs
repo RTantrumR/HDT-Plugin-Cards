@@ -304,48 +304,75 @@ namespace MemSpike
         // Arrays: element 0 at 0x20, length at 0x18.
         public int ArrayLen(long arr) { return arr == 0 ? 0 : M.I32(arr + 0x18); }
 
+        // Every collection reader below reads each backing array in ONE call: the entity map of a late
+        // Battlegrounds game holds thousands of entries, and a read per slot would cost tens of ms.
+        private byte[] Arr(long arr, int elemSize, int max, out int n)
+        {
+            n = Math.Min(ArrayLen(arr), max);
+            if (n <= 0) { n = 0; return null; }
+            var b = M.Bytes(arr + 0x20, n * elemSize);
+            if (b == null) n = 0;
+            return b;
+        }
+
         /// <summary>Blizzard.T5.Core.Map&lt;int, TRef&gt; (old Mono dictionary): a slot is live when its link's HashCode has the top bit set.</summary>
         public IEnumerable<KeyValuePair<int, long>> IntMap(long map)
         {
-            long links = Obj(map, "linkSlots"), keys = Obj(map, "keySlots"), vals = Obj(map, "valueSlots");
-            int n = Math.Min(ArrayLen(links), 4096);
+            int nl, nk, nv;
+            var links = Arr(Obj(map, "linkSlots"), 8, 65536, out nl);
+            var keys = Arr(Obj(map, "keySlots"), 4, 65536, out nk);
+            var vals = Arr(Obj(map, "valueSlots"), 8, 65536, out nv);
+            int n = Math.Min(nl, Math.Min(nk, nv));
             for (int i = 0; i < n; i++)
             {
-                if ((M.I32(links + 0x20 + i * 8L) & int.MinValue) == 0) continue;
-                yield return new KeyValuePair<int, long>(M.I32(keys + 0x20 + i * 4L), M.Ptr(vals + 0x20 + i * 8L));
+                if ((BitConverter.ToInt32(links, i * 8) & int.MinValue) == 0) continue;
+                yield return new KeyValuePair<int, long>(BitConverter.ToInt32(keys, i * 4), BitConverter.ToInt64(vals, i * 8));
             }
         }
 
         /// <summary>Map&lt;int-or-enum, int&gt;: both arrays hold 4-byte values inline.</summary>
         public IEnumerable<KeyValuePair<int, int>> IntIntMap(long map)
         {
-            long links = Obj(map, "linkSlots"), keys = Obj(map, "keySlots"), vals = Obj(map, "valueSlots");
-            int n = Math.Min(ArrayLen(links), 4096);
+            int nl, nk, nv;
+            var links = Arr(Obj(map, "linkSlots"), 8, 65536, out nl);
+            var keys = Arr(Obj(map, "keySlots"), 4, 65536, out nk);
+            var vals = Arr(Obj(map, "valueSlots"), 4, 65536, out nv);
+            int n = Math.Min(nl, Math.Min(nk, nv));
             for (int i = 0; i < n; i++)
             {
-                if ((M.I32(links + 0x20 + i * 8L) & int.MinValue) == 0) continue;
-                yield return new KeyValuePair<int, int>(M.I32(keys + 0x20 + i * 4L), M.I32(vals + 0x20 + i * 4L));
+                if ((BitConverter.ToInt32(links, i * 8) & int.MinValue) == 0) continue;
+                yield return new KeyValuePair<int, int>(BitConverter.ToInt32(keys, i * 4), BitConverter.ToInt32(vals, i * 4));
             }
         }
 
         /// <summary>System.Collections.Generic.List&lt;TRef&gt;: _items + _size.</summary>
         public IEnumerable<long> List(long list)
         {
-            long items = Obj(list, "_items");
-            int n = Math.Min(Int(list, "_size"), ArrayLen(items));
-            for (int i = 0; i < n && i < 4096; i++) yield return M.Ptr(items + 0x20 + i * 8L);
+            int n;
+            var items = Arr(Obj(list, "_items"), 8, 65536, out n);
+            n = Math.Min(n, Int(list, "_size"));
+            for (int i = 0; i < n; i++) yield return BitConverter.ToInt64(items, i * 8);
+        }
+
+        /// <summary>List&lt;int-or-enum&gt;: 4-byte values inline.</summary>
+        public IEnumerable<int> IntList(long list)
+        {
+            int n;
+            var items = Arr(Obj(list, "_items"), 4, 65536, out n);
+            n = Math.Min(n, Int(list, "_size"));
+            for (int i = 0; i < n; i++) yield return BitConverter.ToInt32(items, i * 4);
         }
 
         /// <summary>System Dictionary&lt;int,int&gt;: _entries is Entry[] { hashCode, next, key, value }, 16 bytes each; a live entry has hashCode >= 0.</summary>
         public IEnumerable<KeyValuePair<int, int>> IntIntDict(long dict)
         {
-            long entries = Obj(dict, "_entries");
-            int n = Math.Min(Int(dict, "_count"), ArrayLen(entries));
-            for (int i = 0; i < n && i < 65536; i++)
+            int n;
+            var e = Arr(Obj(dict, "_entries"), 16, 65536, out n);
+            n = Math.Min(n, Int(dict, "_count"));
+            for (int i = 0; i < n; i++)
             {
-                long e = entries + 0x20 + i * 16L;
-                if (M.I32(e) < 0) continue;
-                yield return new KeyValuePair<int, int>(M.I32(e + 8), M.I32(e + 12));
+                if (BitConverter.ToInt32(e, i * 16) < 0) continue;
+                yield return new KeyValuePair<int, int>(BitConverter.ToInt32(e, i * 16 + 8), BitConverter.ToInt32(e, i * 16 + 12));
             }
         }
 
