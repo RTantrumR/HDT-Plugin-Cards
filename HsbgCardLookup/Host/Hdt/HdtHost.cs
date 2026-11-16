@@ -141,5 +141,6 @@ namespace HsbgCardLookup.Host.Hdt
         public bool IsHearthstoneRunning => User32.GetHearthstoneWindow() != IntPtr.Zero;
         public void BringHearthstoneToForeground() => User32.BringHsToForeground();
         public string HostLanguage() => HdtLanguage.Detect();
+        public bool? StartWithWindows { get { return null; } set { } }
     }
 }

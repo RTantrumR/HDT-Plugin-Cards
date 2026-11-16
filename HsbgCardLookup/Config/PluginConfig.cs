@@ -181,10 +181,18 @@ namespace HsbgCardLookup.Config
         // one-time "Updated to vN" notice (replaced the retired staging-marker mechanism).
         public string LastRunVersion { get; set; } = "";
 
-        /// <summary>Writable data folder in %APPDATA% (config, caches) — survives DLL redeploys.</summary>
-        public static string DataDir => Path.Combine(
+        /// <summary>The HDT plugin's data folder in %APPDATA% (config, caches) — survives DLL redeploys.</summary>
+        public static string PluginDataDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "HearthstoneDeckTracker", "HsbgCardLookup");
+
+        /// <summary>Where a host other than HDT keeps its data (the standalone exe:
+        /// %APPDATA%\TantrumsBattlegroundsToolkit). Set first thing, before any other part of the
+        /// toolkit runs: the art cache path is fixed the first time it is read.</summary>
+        public static string DataDirOverride;
+
+        /// <summary>Writable data folder (config, caches): the host's own, else the HDT plugin's.</summary>
+        public static string DataDir => DataDirOverride ?? PluginDataDir;
 
         private static string Dir => DataDir;
 

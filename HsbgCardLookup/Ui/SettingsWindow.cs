@@ -402,6 +402,23 @@ namespace HsbgCardLookup.Ui
 
             stack.Children.Add(CategoryRow(Strings.T("settings.updates.title"), UpdatesHint(), null, null, BuildUpdates));
 
+            // Start with Windows: the standalone's own switch (HDT starts the plugin, and has its own).
+            bool? autostart = null;
+            try { autostart = HsbgCardLookup.Host.HostServices.Shell?.StartWithWindows; } catch { }
+            if (autostart.HasValue)
+            {
+                stack.Children.Add(ToggleRow(Strings.T("settings.autostart.label"), autostart.Value, v =>
+                {
+                    try { HsbgCardLookup.Host.HostServices.Shell.StartWithWindows = v; } catch { }
+                    _status.Text = v ? Strings.T("settings.autostart.on") : Strings.T("settings.autostart.off");
+                }));
+                stack.Children.Add(new TextBlock
+                {
+                    Text = Strings.T("settings.autostart.hint"), Foreground = UiKit.TextMuted, FontSize = 12.5,
+                    TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10)
+                });
+            }
+
             // Language is its own row, last and under the globe, so it is found at a glance rather than
             // buried in the card-search page: it governs every surface, not one feature.
             stack.Children.Add(CategoryRow(Strings.T("settings.language"),

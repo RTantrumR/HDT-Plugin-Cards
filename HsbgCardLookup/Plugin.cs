@@ -176,6 +176,27 @@ namespace HsbgCardLookup
             _giftProbe?.Poll();
 #endif
             _app?.Update();
+            WarnIfStandaloneRunning();
+        }
+
+        // The standalone exe holds this mutex while its toolkit runs. Both at once means two F3 hooks and
+        // two of every label, so say so once per HDT session (the Setup wizard switches the other one off;
+        // this is for when both are started by hand).
+        private const string StandaloneMutex = "TantrumsBattlegroundsToolkit.Standalone";
+        private DateTime _lastStandaloneCheck = DateTime.MinValue;
+        private bool _warnedStandalone;
+
+        private void WarnIfStandaloneRunning()
+        {
+            if (_warnedStandalone || (DateTime.UtcNow - _lastStandaloneCheck).TotalSeconds < 10) return;
+            _lastStandaloneCheck = DateTime.UtcNow;
+            System.Threading.Mutex m;
+            if (!System.Threading.Mutex.TryOpenExisting(StandaloneMutex, out m)) return;
+            m.Dispose();
+            _warnedStandalone = true;
+            Log("Both running: the standalone toolkit is running too");
+            _ui?.BeginInvoke(new Action(() =>
+                MessageBox.Show(Strings.T("plugin.bothRunning"), DisplayName, MessageBoxButton.OK, MessageBoxImage.Warning)));
         }
 
         private static readonly string LogDir = Path.Combine(

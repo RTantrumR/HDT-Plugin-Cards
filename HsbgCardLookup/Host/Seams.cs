@@ -92,6 +92,9 @@ namespace HsbgCardLookup.Host
         void BringHearthstoneToForeground();
         /// <summary>The host's own UI language as a locale code, or null — what <c>Language = ""</c> follows.</summary>
         string HostLanguage();
+        /// <summary>Whether the toolkit starts with Windows; null when the host has no such switch (HDT
+        /// starts the plugin itself, and has its own "start with Windows").</summary>
+        bool? StartWithWindows { get; set; }
     }
 
     /// <summary>The services of the current host, set once by it at start-up.</summary>

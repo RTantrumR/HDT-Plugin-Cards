@@ -12,6 +12,7 @@
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
     <CodePage>65001</CodePage>
+    <ApplicationIcon>toolkit.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -19,6 +20,7 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Xaml" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
@@ -47,6 +49,12 @@
     <Compile Include="OverlayWindow.cs" />
     <Compile Include="StandaloneHost.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Shared.cs" />
+    <Compile Include="ToolkitHost.cs" />
+    <Compile Include="Watcher.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="toolkit.ico"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
   </ItemGroup>
   <ItemGroup>
     <!-- The plugin's bundled data, where its code looks for it: next to the assembly, under data\. -->
