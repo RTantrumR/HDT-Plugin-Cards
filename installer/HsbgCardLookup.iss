@@ -1,4 +1,4 @@
-; Tantrum's Battlegrounds Toolkit — per-user setup for the Hearthstone Deck Tracker plugin.
+﻿; Tantrum's Battlegrounds Toolkit — per-user setup for the Hearthstone Deck Tracker plugin.
 ; Built by installer\build.ps1, which stages the Release build (the plugin DLL, the bundled
 ; WebP-decoder DLLs and data\) into installer\stage first and passes the version as /DAppVersion.
 ;
@@ -25,6 +25,16 @@
 ; When nothing is found the page says so, links hsdecktracker.net, and offers Check again and
 ; Locate HDT...; Next stays disabled. A silent install without HDT fails (exit code 7) instead of
 ; installing a plugin nothing will load.
+;
+; Languages. The wizard runs in the language Windows is set to when it has that one (English
+; otherwise — Russian and Ukrainian systems included), and asks at the start. Its own lines live in
+; installer\i18n\<lang>.json; build.ps1 turns them into out\messages.iss, #included below. A page
+; then asks which language the TOOLKIT uses — by default the wizard's language (es-MX and the other
+; Latin American Spanish systems get es-mx, Taiwan/Hong Kong/Macau Chinese get zh-tw), on an
+; upgrade the language already set. The choice reaches the plugin as setup-language.txt in its data
+; folder, which the plugin applies once and deletes; the wizard never writes config.xml, because
+; the plugin's first-run defaults and PluginEverRan below both depend on it not existing.
+; /TOOLKITLANG=<code> preselects (silent installs too); "follow" = same as HDT.
 ;
 ; Testing: /DIR=<temp>\HearthstoneDeckTracker\Plugins\HsbgCardLookup installs into a throwaway
 ; profile — every data path in [Code] is derived from {app}, never from {userappdata} directly.
@@ -68,12 +78,25 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=no
 
-[Messages]
-WelcomeLabel2=This will install [name/ver] into Hearthstone Deck Tracker's plugin folder for the current user.%n%nHearthstone Deck Tracker is closed while the files are copied; Setup can start it again at the end.
-ReadyLabel2a=Click Install to continue. Setup closes Hearthstone Deck Tracker if it is running, installs the plugin and, on a first install, switches it on.
-; Setup creates no shortcuts, so Inno shows FinishedLabelNoIcons; FinishedLabel is kept in step.
-FinishedLabelNoIcons=[name] is installed and starts together with Hearthstone Deck Tracker.%n%nWhile HDT runs, press F3 to open the card search; the rest appears over Hearthstone in a Battlegrounds match. The first launch downloads card art in the background (about 200 MB, once).
-FinishedLabel=[name] is installed and starts together with Hearthstone Deck Tracker.%n%nWhile HDT runs, press F3 to open the card search; the rest appears over Hearthstone in a Battlegrounds match. The first launch downloads card art in the background (about 200 MB, once).
+[Languages]
+; English first: it is what a Windows language without its own entry gets.
+Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "german"; MessagesFile: "compiler:Languages\German.isl"
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
+Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
+Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "thai"; MessagesFile: "compiler:Languages\Thai.isl"
+; Not shipped with Inno Setup 6.7: the official translations from jrsoftware/issrc (Files\Languages).
+Name: "chinesesimplified"; MessagesFile: "languages\ChineseSimplified.isl"
+Name: "chinesetraditional"; MessagesFile: "languages\ChineseTraditional.isl"
+
+; Our own wizard texts in every language above (Setup creates no shortcuts, so Inno shows
+; FinishedLabelNoIcons; FinishedLabel is kept in step there).
+#include "out\messages.iss"
 
 [Files]
 ; HDT 1.57+ runs plugins from a per-version mirror that it refreshes from this folder at startup,
@@ -90,7 +113,7 @@ Type: filesandordirs; Name: "{app}\data"
 [Run]
 ; The HDT that the "Hearthstone Deck Tracker" page found (for the installed HDT, the Squirrel
 ; launcher, which starts the newest app-<ver>). Never next to a live instance.
-Filename: "{code:HdtExePath}"; WorkingDir: "{code:HdtExeDir}"; Description: "Start Hearthstone Deck Tracker"; Flags: postinstall nowait skipifsilent; Check: HdtCanStart
+Filename: "{code:HdtExePath}"; WorkingDir: "{code:HdtExeDir}"; Description: "{cm:RunHdt}"; Flags: postinstall nowait skipifsilent; Check: HdtCanStart
 
 [Code]
 const
@@ -110,6 +133,11 @@ var
   FoundAtStart: Boolean;    // found before the wizard showed: the HDT page is skipped
 
   HdtPage: TWizardPage;
+  LangPage: TWizardPage;
+  LangCombo: TNewComboBox;
+  LangCodes: TArrayOfString;   // LangCombo item i -> the plugin's language code ('' = same as HDT)
+  CurrentLang: String;         // the plugin's Language setting before this install; '?' = no config yet
+  LangPreselected: Boolean;    // PreselectLanguage has run (it needs the final {app})
   HdtStatusText: TNewStaticText;
   HdtDetailText: TNewStaticText;
   HdtGetButton: TNewButton;
@@ -241,10 +269,10 @@ procedure DetectHdt;
 begin
   HdtSource := '';
   HdtExe := ValidHdtExe(ManualHdtExe);
-  if HdtExe <> '' then begin HdtSource := 'the file you picked'; Exit; end;
+  if HdtExe <> '' then begin HdtSource := CustomMessage('SrcPicked'); Exit; end;
 
   HdtExe := ValidHdtExe(ExpandConstant('{param:HDTEXE|}'));
-  if HdtExe <> '' then begin HdtSource := 'the /HDTEXE parameter'; Exit; end;
+  if HdtExe <> '' then begin HdtSource := CustomMessage('SrcParam'); Exit; end;
 
   if AssumeNoHdt then
   begin
@@ -253,18 +281,18 @@ begin
   end;
 
   HdtExe := RunningHdtExe;
-  if HdtExe <> '' then begin HdtSource := 'the running Hearthstone Deck Tracker'; Exit; end;
+  if HdtExe <> '' then begin HdtSource := CustomMessage('SrcRunning'); Exit; end;
 
   HdtExe := ValidHdtExe(ExpandConstant('{localappdata}\HearthstoneDeckTracker\') + HdtProcessName);
-  if HdtExe <> '' then begin HdtSource := 'its usual install folder'; Exit; end;
+  if HdtExe <> '' then begin HdtSource := CustomMessage('SrcUsual'); Exit; end;
 
   HdtExe := HdtFromUninstallEntries(HKCU);
   if HdtExe = '' then HdtExe := HdtFromUninstallEntries(HKLM32);
   if (HdtExe = '') and IsWin64 then HdtExe := HdtFromUninstallEntries(HKLM64);
-  if HdtExe <> '' then begin HdtSource := 'Apps & features'; Exit; end;
+  if HdtExe <> '' then begin HdtSource := CustomMessage('SrcApps'); Exit; end;
 
   HdtExe := ValidHdtExe(GetPreviousData('HdtExe', ''));
-  if HdtExe <> '' then begin HdtSource := 'the previous install of this toolkit'; Exit; end;
+  if HdtExe <> '' then begin HdtSource := CustomMessage('SrcPrevious'); Exit; end;
 end;
 
 procedure LogHdt;
@@ -314,29 +342,23 @@ var
 begin
   if HdtExe <> '' then
   begin
-    HdtStatusText.Caption := 'Hearthstone Deck Tracker found';
+    HdtStatusText.Caption := CustomMessage('HdtFound');
     HdtDetailText.Caption :=
-      HdtExe + #13#10 + '(found via ' + HdtSource + ')' + #13#10#13#10 +
-      'Click Next to continue. Setup closes Hearthstone Deck Tracker while it copies the files ' +
-      'and can start it again at the end.';
+      HdtExe + #13#10 + FmtMessage(CustomMessage('HdtFoundVia'), [HdtSource]) + #13#10#13#10 +
+      CustomMessage('HdtFoundNext');
     HdtGetButton.Visible := False;
     HdtCheckButton.Left := 0;
     HdtLocateButton.Left := HdtGetButton.Width + ScaleX(8);
-    HdtLocateButton.Caption := '&Use another HDT...';
+    HdtLocateButton.Caption := CustomMessage('HdtUseAnother');
   end
   else
   begin
-    HdtStatusText.Caption := 'Hearthstone Deck Tracker was not found on this PC';
-    HdtDetailText.Caption :=
-      '1. Click Download HDT and install Hearthstone Deck Tracker from its website. ' +
-      'Its installer starts HDT when it is done; leave it running.' + #13#10 +
-      '2. Come back to this window and click Check again.' + #13#10#13#10 +
-      'Already have HDT and Setup still cannot find it? Click Locate HDT and pick ' +
-      'HearthstoneDeckTracker.exe in the folder where HDT is.';
+    HdtStatusText.Caption := CustomMessage('HdtNotFound');
+    HdtDetailText.Caption := CustomMessage('HdtNotFoundSteps');
     HdtGetButton.Visible := True;
     HdtCheckButton.Left := HdtGetButton.Width + ScaleX(8);
     HdtLocateButton.Left := 2 * (HdtGetButton.Width + ScaleX(8));
-    HdtLocateButton.Caption := '&Locate HDT...';
+    HdtLocateButton.Caption := CustomMessage('HdtLocate');
   end;
   // Fit the label to its text (on Windows the not-found text wraps to six lines; a fixed height
   // cut the last one off behind the buttons) and keep the buttons right under it.
@@ -354,8 +376,7 @@ var
   ErrorCode: Integer;
 begin
   if not ShellExec('open', HdtDownloadUrl, '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode) then
-    MsgBox('Could not open the browser. Go to ' + HdtDownloadUrl + ' to download Hearthstone Deck Tracker.',
-      mbError, MB_OK);
+    MsgBox(FmtMessage(CustomMessage('HdtBrowserFailed'), [HdtDownloadUrl]), mbError, MB_OK);
 end;
 
 procedure HdtCheckButtonClick(Sender: TObject);
@@ -364,10 +385,7 @@ begin
   LogHdt;
   UpdateHdtPage;
   if HdtExe = '' then
-    MsgBox('Hearthstone Deck Tracker is still not found.' + #13#10#13#10 +
-      'If you have just installed it, start it once and click Check again. ' +
-      'If it is installed in a folder of your own, click Locate HDT and pick HearthstoneDeckTracker.exe.',
-      mbInformation, MB_OK)
+    MsgBox(CustomMessage('HdtStillNotFound'), mbInformation, MB_OK)
   else
     WizardForm.ActiveControl := WizardForm.NextButton;
 end;
@@ -381,15 +399,14 @@ begin
     InitialDir := ExtractFileDir(HdtExe)
   else
     InitialDir := ExpandConstant('{localappdata}');
-  if not GetOpenFileName('Pick HearthstoneDeckTracker.exe', FileName, InitialDir,
-       'Hearthstone Deck Tracker (HearthstoneDeckTracker.exe)|HearthstoneDeckTracker.exe|Programs (*.exe)|*.exe',
+  if not GetOpenFileName(CustomMessage('HdtPickTitle'), FileName, InitialDir,
+       'Hearthstone Deck Tracker (HearthstoneDeckTracker.exe)|HearthstoneDeckTracker.exe|' +
+       CustomMessage('HdtPickPrograms') + ' (*.exe)|*.exe',
        'exe') then
     Exit;
   if ValidHdtExe(FileName) = '' then
   begin
-    MsgBox('That is not Hearthstone Deck Tracker.' + #13#10#13#10 +
-      'Pick the file named HearthstoneDeckTracker.exe in the folder where HDT is installed.',
-      mbError, MB_OK);
+    MsgBox(CustomMessage('HdtNotHdt'), mbError, MB_OK);
     Exit;
   end;
   ManualHdtExe := FileName;
@@ -404,8 +421,7 @@ var
   Intro: TNewStaticText;
   Gap, ButtonWidth: Integer;
 begin
-  HdtPage := CreateCustomPage(wpWelcome, 'Hearthstone Deck Tracker',
-    'The toolkit is a plugin: it runs inside Hearthstone Deck Tracker (HDT).');
+  HdtPage := CreateCustomPage(wpWelcome, 'Hearthstone Deck Tracker', CustomMessage('HdtPageDescription'));
 
   Intro := TNewStaticText.Create(HdtPage);
   Intro.Parent := HdtPage.Surface;
@@ -415,8 +431,7 @@ begin
   Intro.Top := 0;
   Intro.Width := HdtPage.SurfaceWidth;
   Intro.Height := ScaleY(42);
-  Intro.Caption := 'It has no window or desktop icon of its own and starts together with HDT, ' +
-    'the free deck tracker. Setup installs it only once HDT is on this PC.';
+  Intro.Caption := CustomMessage('HdtIntro');
 
   HdtStatusText := TNewStaticText.Create(HdtPage);
   HdtStatusText.Parent := HdtPage.Surface;
@@ -444,7 +459,7 @@ begin
   HdtGetButton.Left := 0;
   HdtGetButton.Width := ButtonWidth;
   HdtGetButton.Height := WizardForm.NextButton.Height;
-  HdtGetButton.Caption := '&Download HDT';
+  HdtGetButton.Caption := CustomMessage('HdtDownload');
   HdtGetButton.OnClick := @HdtGetButtonClick;
 
   HdtCheckButton := TNewButton.Create(HdtPage);
@@ -452,7 +467,7 @@ begin
   HdtCheckButton.Left := ButtonWidth + Gap;
   HdtCheckButton.Width := ButtonWidth;
   HdtCheckButton.Height := WizardForm.NextButton.Height;
-  HdtCheckButton.Caption := 'Check &again';
+  HdtCheckButton.Caption := CustomMessage('HdtCheckAgain');
   HdtCheckButton.OnClick := @HdtCheckButtonClick;
 
   HdtLocateButton := TNewButton.Create(HdtPage);
@@ -465,12 +480,178 @@ begin
   UpdateHdtPage;
 end;
 
+// ---------------------------------------------------------------------------------------------
+// The "Toolkit language" page
+// ---------------------------------------------------------------------------------------------
+
+// The plugin's Language setting as config.xml holds it ('' = same as HDT), or '?' when the plugin
+// has no settings file yet (a fresh install). A plain text search: the element is a single line
+// written by .NET's XmlSerializer, <Language>de</Language> or <Language /> when empty.
+function ReadCurrentLanguage: String;
+var
+  Xml: AnsiString;
+  Text: String;
+  I, J: Integer;
+begin
+  Result := '?';
+  if not LoadStringFromFile(DataDir('') + '\config.xml', Xml) then Exit;
+  Text := String(Xml);
+  Result := '';
+  I := Pos('<Language>', Text);
+  if I = 0 then Exit;
+  I := I + Length('<Language>');
+  J := Pos('</Language>', Copy(Text, I, 64));
+  if J > 0 then
+    Result := Trim(Copy(Text, I, J - 1));
+end;
+
+// Windows' UI language split into its primary language and sublanguage (LANGID bits).
+function UiPrimary: Integer;
+begin
+  Result := GetUILanguage and $3FF;
+end;
+
+function UiSub: Integer;
+begin
+  Result := GetUILanguage shr 10;
+end;
+
+// The toolkit language that matches the wizard's language. The wizard has one Spanish and picks
+// the Chinese entry by exact LANGID only, so the variant comes from Windows itself when Windows is
+// set to that language: Spanish other than Spain's -> es-mx; Chinese of Taiwan (1), Hong Kong (3)
+// or Macau (5) -> zh-tw, of the PRC (2) or Singapore (4) -> zh-cn.
+function DefaultToolkitLanguage: String;
+var
+  L: String;
+begin
+  L := ActiveLanguage;
+  if L = 'german' then Result := 'de'
+  else if L = 'spanish' then
+  begin
+    Result := 'es';
+    if (UiPrimary = $0A) and (UiSub <> 1) and (UiSub <> 3) then Result := 'es-mx';
+  end
+  else if L = 'french' then Result := 'fr'
+  else if L = 'italian' then Result := 'it'
+  else if L = 'japanese' then Result := 'ja'
+  else if L = 'korean' then Result := 'ko'
+  else if L = 'polish' then Result := 'pl'
+  else if L = 'brazilianportuguese' then Result := 'pt'
+  else if L = 'thai' then Result := 'th'
+  else if (L = 'chinesesimplified') or (L = 'chinesetraditional') then
+  begin
+    if L = 'chinesetraditional' then Result := 'zh-tw' else Result := 'zh-cn';
+    if UiPrimary = $04 then
+      if (UiSub = 1) or (UiSub = 3) or (UiSub = 5) then Result := 'zh-tw' else Result := 'zh-cn';
+  end
+  else Result := 'en';
+end;
+
+procedure AddLang(const Code, Name: String);
+var
+  N: Integer;
+begin
+  N := GetArrayLength(LangCodes);
+  SetArrayLength(LangCodes, N + 1);
+  LangCodes[N] := Code;
+  LangCombo.Items.Add(Name);
+end;
+
+// The code the page (or /TOOLKITLANG) settles on.
+function ChosenLanguage: String;
+begin
+  Result := '';
+  if (LangCombo <> nil) and (LangCombo.ItemIndex >= 0) then
+    Result := LangCodes[LangCombo.ItemIndex];
+end;
+
+procedure SelectLanguage(const Code: String);
+var
+  I: Integer;
+begin
+  for I := 0 to GetArrayLength(LangCodes) - 1 do
+    if CompareText(LangCodes[I], Code) = 0 then
+    begin
+      LangCombo.ItemIndex := I;
+      Exit;
+    end;
+  // A code this list doesn't know (a language added later, a typo in config.xml) -> English.
+  SelectLanguage('en');
+end;
+
+procedure CreateLanguagePage;
+var
+  Intro: TNewStaticText;
+begin
+  // After the folder page (hidden, DisableDirPage): {app} — and with it where config.xml is — is
+  // only final from there on, /DIR included. The preselection waits for it (PreselectLanguage).
+  LangPage := CreateCustomPage(wpSelectDir, CustomMessage('LangPageCaption'), CustomMessage('LangPageDescription'));
+
+  Intro := TNewStaticText.Create(LangPage);
+  Intro.Parent := LangPage.Surface;
+  Intro.AutoSize := False;
+  Intro.WordWrap := True;
+  Intro.Left := 0;
+  Intro.Top := 0;
+  Intro.Width := LangPage.SurfaceWidth;
+  Intro.Caption := CustomMessage('LangIntro');
+  WizardForm.AdjustLabelHeight(Intro);
+
+  LangCombo := TNewComboBox.Create(LangPage);
+  LangCombo.Parent := LangPage.Surface;
+  LangCombo.Style := csDropDownList;
+  LangCombo.Left := 0;
+  LangCombo.Top := Intro.Top + Intro.Height + ScaleY(12);
+  LangCombo.Width := ScaleX(260);
+
+  // Each language in its own words, as the plugin's own switcher lists them.
+  AddLang('', CustomMessage('LangSameAsHdt'));
+  AddLang('en', 'English');
+  AddLang('de', 'Deutsch');
+  AddLang('es', 'Español (España)');
+  AddLang('es-mx', 'Español (Latinoamérica)');
+  AddLang('fr', 'Français');
+  AddLang('it', 'Italiano');
+  AddLang('ja', '日本語');
+  AddLang('ko', '한국어');
+  AddLang('pl', 'Polski');
+  AddLang('pt', 'Português (Brasil)');
+  AddLang('th', 'ไทย');
+  AddLang('zh-cn', '简体中文');
+  AddLang('zh-tw', '繁體中文');
+
+end;
+
+// Preselect, once {app} is final: /TOOLKITLANG, else the setting already there, else the wizard's
+// language. Runs when the page first shows, and before the Ready page and the install for a silent
+// run, which shows no pages.
+procedure PreselectLanguage;
+var
+  Wanted: String;
+begin
+  if LangPreselected then Exit;
+  LangPreselected := True;
+  CurrentLang := ReadCurrentLanguage;
+  Wanted := ExpandConstant('{param:TOOLKITLANG|}');
+  if CompareText(Wanted, 'follow') = 0 then
+    SelectLanguage('')
+  else if Wanted <> '' then
+    SelectLanguage(Wanted)
+  else if CurrentLang <> '?' then
+    SelectLanguage(CurrentLang)
+  else
+    SelectLanguage(DefaultToolkitLanguage);
+  Log('Toolkit language: current=' + CurrentLang + ' default=' + DefaultToolkitLanguage +
+    ' preselected=' + ChosenLanguage + ' (wizard: ' + ActiveLanguage + ', UI LANGID $' + Format('%.4x', [GetUILanguage]) + ')');
+end;
+
 procedure InitializeWizard;
 begin
   DetectHdt;
   LogHdt;
   FoundAtStart := HdtExe <> '';
   CreateHdtPage;
+  CreateLanguagePage;
 end;
 
 // HDT found right away: nothing to do on that page; the Ready page still names the HDT used.
@@ -486,7 +667,7 @@ begin
   Result := True;
   if (CurPageID = HdtPage.ID) and (HdtExe = '') and not WizardSilent then
   begin
-    MsgBox('Install Hearthstone Deck Tracker first, then click Check again.', mbInformation, MB_OK);
+    MsgBox(CustomMessage('HdtInstallFirst'), mbInformation, MB_OK);
     Result := False;
   end;
 end;
@@ -494,8 +675,10 @@ end;
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
   MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 begin
-  Result := 'Hearthstone Deck Tracker:' + NewLine + Space + HdtExe + NewLine + NewLine +
-    'Plugin folder:' + NewLine + Space + ExpandConstant('{app}');
+  PreselectLanguage;
+  Result := CustomMessage('ReadyHdt') + NewLine + Space + HdtExe + NewLine + NewLine +
+    CustomMessage('ReadyFolder') + NewLine + Space + ExpandConstant('{app}') + NewLine + NewLine +
+    CustomMessage('ReadyLanguage') + NewLine + Space + LangCombo.Text;
 end;
 
 // ---------------------------------------------------------------------------------------------
@@ -566,9 +749,7 @@ begin
   while not WaitForHdtClosed(TimeoutMs) do
   begin
     Log('Hearthstone Deck Tracker is still running; asking the user');
-    if SuppressibleMsgBox('Hearthstone Deck Tracker is still running.' + #13#10#13#10 +
-         'Close it (if its window is hidden: right-click the HDT tray icon > Exit), then click Retry.',
-         mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
+    if SuppressibleMsgBox(CustomMessage('HdtStillRunning'), mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
     begin
       Result := False;
       Exit;
@@ -591,12 +772,11 @@ begin
   end;
   if HdtExe = '' then
   begin
-    Result := 'Hearthstone Deck Tracker is not installed on this PC. The toolkit is a plugin that ' +
-      'runs inside it: install HDT from ' + HdtDownloadUrl + ', start it once, then run Setup again.';
+    Result := FmtMessage(CustomMessage('HdtMissingSilent'), [HdtDownloadUrl]);
     Exit;
   end;
   if not EnsureHdtClosed then
-    Result := 'Hearthstone Deck Tracker is still running. Close it and run Setup again.';
+    Result := CustomMessage('HdtRunningAbort');
 end;
 
 function InitializeUninstall: Boolean;
@@ -675,11 +855,33 @@ begin
   Doc.save(F);
 end;
 
+// The plugin applies setup-language.txt once at its next start and deletes it. Written only when
+// the choice differs from what config.xml already holds (always on a fresh install), so an upgrade
+// that keeps the setting leaves nothing behind.
+procedure HandOverLanguage;
+var
+  Code: String;
+begin
+  PreselectLanguage;
+  Code := ChosenLanguage;
+  if (CurrentLang <> '?') and (CompareText(Code, CurrentLang) = 0) then
+  begin
+    Log('Toolkit language unchanged (' + Code + ')');
+    Exit;
+  end;
+  ForceDirectories(DataDir(''));
+  if SaveStringToFile(DataDir('') + '\setup-language.txt', Code, False) then
+    Log('Toolkit language handed to the plugin: "' + Code + '"')
+  else
+    Log('Could not write setup-language.txt');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ConfigDir: String;
 begin
   if CurStep <> ssPostInstall then Exit;
+  HandOverLanguage;
   if PluginEverRan(HdtDataRoot) then
   begin
     Log('The plugin has run on this PC before; plugins.xml is left as the user set it');
@@ -705,11 +907,16 @@ begin
     WizardForm.NextButton.Enabled := (HdtExe <> '') or WizardSilent;
     Exit;
   end;
+  if CurPageID = LangPage.ID then
+  begin
+    PreselectLanguage;
+    Exit;
+  end;
   if CurPageID <> wpFinished then Exit;
   if PluginEnabled then
-    Note := 'The plugin is switched on in Hearthstone Deck Tracker.'
+    Note := CustomMessage('PluginSwitchedOn')
   else
-    Note := 'If it does not show up in Hearthstone Deck Tracker, switch it on under Options > Tracker > Plugins.';
+    Note := CustomMessage('PluginSwitchOnHint');
   // Inno has already laid the page out for its own text (ending in "Click Finish to exit Setup.")
   // when this runs: put the note before that line, then grow the label and move the
   // "Start Hearthstone Deck Tracker" box down by as much, or the note is cut off behind it.
