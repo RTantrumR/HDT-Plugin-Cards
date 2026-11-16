@@ -75,8 +75,11 @@ namespace Toolkit.Standalone
 
         public IList<IGameEntity> Entities()
         {
+            // Three features each walk this list ten times a second: build it once per snapshot. It is
+            // shared, so it is read-only; snapshots are published and read on the UI thread alone.
             var s = S;
-            return s == null ? new List<IGameEntity>() : s.Entities.Values.Select(e => (IGameEntity)new SnapEntity(e)).ToList();
+            if (s == null) return new List<IGameEntity>();
+            return s.EntityList ?? (s.EntityList = s.Entities.Values.Select(e => (IGameEntity)new SnapEntity(e)).ToList().AsReadOnly());
         }
 
         public IGameEntity Entity(int id)
@@ -95,7 +98,7 @@ namespace Toolkit.Standalone
             int me = PlayerId;
             var s = S;
             if (s == null || me == 0) return new List<IGameEntity>();
-            return s.Entities.Values.Select(e => new SnapEntity(e))
+            return Entities().Cast<SnapEntity>()
                 .Where(e => e.GetTag(TagController) == me && e.IsInPlay && pick(e))
                 .Cast<IGameEntity>().ToList();
         }
