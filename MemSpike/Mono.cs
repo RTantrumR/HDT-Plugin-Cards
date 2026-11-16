@@ -171,6 +171,13 @@ namespace MemSpike
             }
             if (bestTotal < heads.Count) throw new InvalidOperationException("next_class_cache slot not found");
 
+            IndexClasses(heads);
+        }
+
+        // Walk every bucket chain into the name -> class index.
+        private void IndexClasses(List<long> heads)
+        {
+            ClassesFound = 0;
             foreach (long h in heads)
                 for (long k = h; k != 0; k = M.Ptr(k + OffNextClass))
                 {
@@ -182,8 +189,35 @@ namespace MemSpike
                 }
         }
 
+        // Mono creates a class the first time the game uses it, so an attach made while the game is
+        // still starting sees only part of the image (seen: 1 809 of 14 390). A lookup that misses
+        // re-reads the cache at its known offset — at most once a second.
+        private DateTime _lastRefresh = DateTime.MinValue;
+
+        private bool RefreshClasses()
+        {
+            if (OffClassCache == 0 || (DateTime.UtcNow - _lastRefresh).TotalSeconds < 1) return false;
+            _lastRefresh = DateTime.UtcNow;
+            long c = Image + OffClassCache;
+            int size = M.I32(c + 0x18), ne = M.I32(c + 0x1C);
+            long table = M.Ptr(c + 0x20);
+            if (size < 16 || size > (1 << 22) || ne == CacheEntries || table == 0) return false;
+            var raw = M.Bytes(table, size * 8);
+            if (raw == null) return false;
+            var heads = new List<long>();
+            for (int i = 0; i < size; i++) { long h = BitConverter.ToInt64(raw, i * 8); if (h != 0) heads.Add(h); }
+            CacheEntries = ne;
+            IndexClasses(heads);
+            return true;
+        }
+
         // ── classes, fields, statics ────────────────────────────────────────────────────────────
-        public long Class(string name) { long k; return _classes.TryGetValue(name, out k) ? k : 0; }
+        public long Class(string name)
+        {
+            long k;
+            if (_classes.TryGetValue(name, out k)) return k;
+            return RefreshClasses() && _classes.TryGetValue(name, out k) ? k : 0;
+        }
         public string ClassName(long k) { return M.CStr(M.Ptr(k + OffName)); }
         public long Parent(long k) { return M.Ptr(k + OffName - 0x18); }
 
