@@ -3,20 +3,17 @@ using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
-using HsbgCardLookup.Config;
-using HsbgCardLookup.Data;
-using HsbgCardLookup.Game;
+using HsbgCardLookup;
 using HsbgCardLookup.Host;
-using HsbgCardLookup.Localization;
 using Forms = System.Windows.Forms;
 
 namespace Toolkit.Standalone
 {
     /// <summary>
     /// The toolkit without HDT: our memory reader feeds the host seams, our own window over Hearthstone
-    /// is the overlay surface, and the plugin's real in-match features (MMR sidebar + portrait labels,
-    /// minion types, Dark Gifts, trinket/anomaly HUD) run on top, unchanged. Settings come from the
-    /// plugin's own config.xml. Tray icon → Exit. Log: standalone.log next to the exe.
+    /// is the overlay surface, and the plugin's whole ToolkitApp runs on top, unchanged — F3 search,
+    /// the in-match features, settings, data/art refresh, update notices. Settings come from the
+    /// plugin's own config.xml. Tray icon → Card search / Settings / Exit. Log: standalone.log.
     /// </summary>
     internal static class Program
     {
@@ -49,18 +46,9 @@ namespace Toolkit.Standalone
                 var game = new StandaloneGameState();
                 HostServices.Use(game, new StandaloneMemory(game), new StandaloneOverlay(overlay), new StandaloneShell());
 
-                var config = PluginConfig.Load();
-                var store = new CardStore();
-                store.Load();
-                Log("CardStore: " + store.LoadInfo);
-                var language = new CardLanguage(store, config, ui, Log);
-                language.Initialize();
-                HsbgCardLookup.Ui.DarkGiftPanel.SetKeywordHighlight(language.Vocab.Keyword.Values);
-                DarkGiftWatcher.TribeLabel = t => language.Vocab.TribeLabel(t) ?? t;
-
-                var hud = new BgHud(store, config, ui);
-                var mmr = new BgMmr(config, ui, Log, id => store.Lookup(id)?.DisplayName);
-                var gifts = new DarkGiftWatcher(store, config, ui, Log);
+                // Three parts, as the plugin reports it: the updater compares and stores this string.
+                var v = typeof(ToolkitApp).Assembly.GetName().Version;
+                var toolkit = new ToolkitApp(new Version(v.Major, v.Minor, v.Build), Log);
 
                 var reader = new GameReader(Log);
                 var tray = new Forms.NotifyIcon
@@ -70,6 +58,8 @@ namespace Toolkit.Standalone
                     Visible = true,
                     ContextMenuStrip = new Forms.ContextMenuStrip()
                 };
+                tray.ContextMenuStrip.Items.Add("Card search", null, (s, e) => toolkit.ToggleSearch());
+                tray.ContextMenuStrip.Items.Add("Settings", null, (s, e) => ui.BeginInvoke(new Action(toolkit.OpenSettings)));
                 tray.ContextMenuStrip.Items.Add("Exit", null, (s, e) => app.Shutdown());
 
                 // Reader thread: a snapshot every 250 ms, handed to the UI thread.
@@ -86,13 +76,11 @@ namespace Toolkit.Standalone
                     }
                 }) { IsBackground = true, Name = "reader" };
 
-                // The features' poll, every 100 ms on the UI thread — what HDT's OnUpdate does for the plugin.
+                // The toolkit's tick, every 100 ms on the UI thread — what HDT's OnUpdate does for the plugin.
                 var poll = new DispatcherTimer(DispatcherPriority.Background, ui) { Interval = TimeSpan.FromMilliseconds(100) };
                 poll.Tick += (s, e) =>
                 {
-                    try { hud.Poll(); } catch (Exception ex) { Log("BgHud.Poll: " + ex.Message); }
-                    try { mmr.Poll(); } catch (Exception ex) { Log("BgMmr.Poll: " + ex.Message); }
-                    try { gifts.Poll(); } catch (Exception ex) { Log("DarkGiftWatcher.Poll: " + ex.Message); }
+                    try { toolkit.Update(); } catch (Exception ex) { Log("ToolkitApp.Update: " + ex.Message); }
                     // Test aid: drop a file named snap.trigger next to the exe to get snap.png.
                     string trigger = Path.Combine(dir, "snap.trigger");
                     if (File.Exists(trigger))
@@ -102,12 +90,11 @@ namespace Toolkit.Standalone
                     }
                 };
 
-                app.Startup += (s, e) => { worker.Start(); poll.Start(); };
+                app.Startup += (s, e) => { toolkit.Start(ui); worker.Start(); poll.Start(); };
                 app.Exit += (s, e) =>
                 {
                     stop.Set(); poll.Stop();
-                    try { hud.CloseAll(); } catch { }
-                    try { gifts.CloseAll(); } catch { }
+                    try { toolkit.Stop(); } catch (Exception ex) { Log("ToolkitApp.Stop: " + ex.Message); }
                     tray.Visible = false; tray.Dispose(); reader.Dispose(); Log("=== exit");
                 };
                 app.Run();

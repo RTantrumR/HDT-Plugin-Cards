@@ -164,8 +164,27 @@ namespace Toolkit.Standalone
     internal sealed class StandaloneShell : IHostShell
     {
         [DllImport("user32")] private static extern bool SetForegroundWindow(IntPtr h);
+        [DllImport("user32")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32")] private static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+        [DllImport("user32")] private static extern bool AttachThreadInput(uint a, uint b, bool attach);
+        [DllImport("user32")] private static extern bool ShowWindow(IntPtr h, int cmd);
+        [DllImport("user32")] private static extern bool IsIconic(IntPtr h);
+        [DllImport("kernel32")] private static extern uint GetCurrentThreadId();
+
         public bool IsHearthstoneRunning => HsWindow.Find() != IntPtr.Zero;
-        public void BringHearthstoneToForeground() { var h = HsWindow.Find(); if (h != IntPtr.Zero) SetForegroundWindow(h); }
+
+        // A bare SetForegroundWindow from a process that isn't in front is refused by Windows'
+        // foreground lock; joining the foreground thread's input queue for the call lifts it.
+        public void BringHearthstoneToForeground()
+        {
+            var h = HsWindow.Find();
+            if (h == IntPtr.Zero) return;
+            if (IsIconic(h)) ShowWindow(h, 9);   // SW_RESTORE
+            uint fgThread = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero), me = GetCurrentThreadId();
+            bool joined = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+            try { SetForegroundWindow(h); }
+            finally { if (joined) AttachThreadInput(me, fgThread, false); }
+        }
         public string HostLanguage() => null;   // no host language: Language = "" falls back to the default
     }
 }
