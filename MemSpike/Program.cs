@@ -8,12 +8,15 @@ namespace MemSpike
     ///   MemSpike info            attach, print the discovered runtime layout
     ///   MemSpike me              own battletag (works from the main menu)
     ///   MemSpike lobby           the match's players: id, name, hero card (needs a game in progress)
+    ///   MemSpike board           leaderboard tiles in screen order: hero, place, tier, minion types
+    ///   MemSpike recent          Battle.net recent-players list with battletags
     ///   MemSpike class &lt;Name&gt;    fields a class declares
     /// </summary>
     internal static class Program
     {
         private static int Main(string[] args)
         {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;   // names can be Cyrillic, CJK, ...
             string cmd = args.Length > 0 ? args[0] : "info";
             var procs = Process.GetProcessesByName("Hearthstone");
             if (procs.Length == 0) { Console.WriteLine("Hearthstone is not running."); return 2; }
@@ -51,6 +54,10 @@ namespace MemSpike
                         case "board":
                             if (!statics) { Console.WriteLine("statics not calibrated"); return 3; }
                             Board(mono);
+                            break;
+                        case "recent":
+                            if (!statics) { Console.WriteLine("statics not calibrated"); return 3; }
+                            Recent(mono);
                             break;
                         default:
                             Console.WriteLine("unknown command");
@@ -110,6 +117,40 @@ namespace MemSpike
             Console.WriteLine(pos + " tiles");
         }
 
+        // BnetRecentPlayerMgr.s_instance.m_recentPlayers : List<BnetPlayer>, capped at 5 on PC.
+        // Each BnetPlayer's battletag: m_account.m_battleTag, else m_hsGameAccount.m_battleTag.
+        private static void Recent(Mono mono)
+        {
+            long mgr = mono.StaticObj("BnetRecentPlayerMgr", "s_instance");
+            if (mgr == 0) { Console.WriteLine("no BnetRecentPlayerMgr instance"); return; }
+            int n = 0;
+            foreach (long p in mono.List(mono.Obj(mgr, "m_recentPlayers")))
+            {
+                Console.WriteLine("recent " + (++n) + ": " + BattleTag(mono, p));
+            }
+            Console.WriteLine(n + " recent players");
+        }
+
+        private static string BattleTag(Mono mono, long bnetPlayer)
+        {
+            long tag = mono.Obj(mono.Obj(bnetPlayer, "m_account"), "m_battleTag");
+            if (tag == 0) tag = mono.Obj(mono.Obj(bnetPlayer, "m_hsGameAccount"), "m_battleTag");
+            return tag == 0 ? "(no battletag)" : mono.Str(tag, "m_name") + "#" + mono.Str(tag, "m_number");
+        }
+
+        // Every instance field of an object as raw 8 bytes — for classes outside Assembly-CSharp
+        // whose layout we have not decompiled (e.g. BnetGameAccountId).
+        private static string Raw(Mono mono, long obj)
+        {
+            if (obj == 0) return "null";
+            var sb = new System.Text.StringBuilder(mono.ClassName(mono.ClassOf(obj)) ?? "?");
+            int depth = 0;
+            for (long k = mono.ClassOf(obj); k != 0 && depth < 4; k = mono.Parent(k), depth++)
+                foreach (var f in mono.Fields(k))
+                    if (!f.Static) sb.Append(' ').Append(f.Name).Append("=0x").Append(mono.M.Ptr(obj + f.Offset).ToString("X"));
+            return sb.ToString();
+        }
+
         // GameState.s_instance.m_playerInfoMap : Map<int, SharedPlayerInfo { m_name, m_playerHero }>
         private static void Lobby(Mono mono)
         {
@@ -119,7 +160,8 @@ namespace MemSpike
             foreach (var kv in mono.IntMap(mono.Obj(gs, "m_playerInfoMap")))
             {
                 long hero = mono.Obj(kv.Value, "m_playerHero");
-                Console.WriteLine("player " + kv.Key + ": name='" + mono.Str(kv.Value, "m_name") + "' hero=" + (mono.Str(hero, "m_cardIdInternal") ?? "(none)"));
+                Console.WriteLine("player " + kv.Key + ": name='" + mono.Str(kv.Value, "m_name") + "' hero=" + (mono.Str(hero, "m_cardIdInternal") ?? "(none)")
+                    + " gameAccount=[" + Raw(mono, mono.Obj(kv.Value, "m_gameAccountId")) + "]");
                 n++;
             }
             Console.WriteLine(n + " entries in m_playerInfoMap");
