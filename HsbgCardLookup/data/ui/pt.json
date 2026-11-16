@@ -267,5 +267,14 @@
   "settings.language.status.english": "Dados das cartas: inglês.",
   "settings.language.status.ready": "Dados das cartas: {0} — {1} cartas traduzidas (patch {2}).",
   "settings.language.status.pending": "Dados das cartas: {0} — cerca de 1 MB é baixado na primeira vez que a busca abre ou uma partida começa; em inglês até então.",
-  "settings.language.status.empty": "Dados das cartas: {0} — o hsbg.cards ainda não tem tradução para esse idioma; exibindo em inglês."
+  "settings.language.status.empty": "Dados das cartas: {0} — o hsbg.cards ainda não tem tradução para esse idioma; exibindo em inglês.",
+  "settings.autostart.label": "Iniciar com o Windows",
+  "settings.autostart.hint": "Fica aguardando na área de notificação, quase sem usar recursos, até o Hearthstone iniciar; então o toolkit abre e fecha de novo junto com o jogo.",
+  "settings.autostart.on": "Inicia com o Windows.",
+  "settings.autostart.off": "Não inicia com o Windows: inicie-o pelo atalho dele.",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit: aguardando o Hearthstone",
+  "standalone.tray.startNow": "Iniciar agora",
+  "standalone.tray.exit": "Sair",
+  "standalone.bothRunning": "O Hearthstone Deck Tracker também está executando o plugin deste toolkit, então tudo aparece em dobro. Desative o plugin no HDT (Options > Tracker > Plugins) ou feche este programa pelo ícone dele na área de notificação.",
+  "plugin.bothRunning": "O Tantrum's Battlegrounds Toolkit independente também está em execução, então tudo aparece em dobro. Feche-o pelo ícone dele na área de notificação ou desative este plugin em Options > Tracker > Plugins."
 }

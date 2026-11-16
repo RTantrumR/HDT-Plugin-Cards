@@ -267,5 +267,14 @@
   "settings.language.status.english": "ข้อมูลการ์ด: อังกฤษ",
   "settings.language.status.ready": "ข้อมูลการ์ด: {0} — แปลแล้ว {1} ใบ (แพตช์ {2})",
   "settings.language.status.pending": "ข้อมูลการ์ด: {0} — จะดาวน์โหลดประมาณ 1 MB ครั้งแรกที่เปิดการค้นหาหรือเริ่มแมตช์ จนกว่านั้นจะแสดงภาษาอังกฤษ",
-  "settings.language.status.empty": "ข้อมูลการ์ด: {0} — hsbg.cards ยังไม่มีคำแปลสำหรับภาษานี้ จึงแสดงภาษาอังกฤษ"
+  "settings.language.status.empty": "ข้อมูลการ์ด: {0} — hsbg.cards ยังไม่มีคำแปลสำหรับภาษานี้ จึงแสดงภาษาอังกฤษ",
+  "settings.autostart.label": "เริ่มพร้อม Windows",
+  "settings.autostart.hint": "รออยู่ในถาดระบบโดยแทบไม่ใช้ทรัพยากร จนกว่า Hearthstone จะเริ่มทำงาน จากนั้นชุดเครื่องมือจะเปิดขึ้นและปิดลงพร้อมเกม",
+  "settings.autostart.on": "เริ่มทำงานพร้อม Windows",
+  "settings.autostart.off": "ไม่เริ่มพร้อม Windows: เปิดจากทางลัดของโปรแกรม",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit: กำลังรอ Hearthstone",
+  "standalone.tray.startNow": "เริ่มทันที",
+  "standalone.tray.exit": "ออก",
+  "standalone.bothRunning": "Hearthstone Deck Tracker กำลังเรียกใช้ปลั๊กอินของชุดเครื่องมือนี้อยู่ด้วย ทุกอย่างจึงแสดงซ้ำสองครั้ง ปิดปลั๊กอินใน HDT (Options > Tracker > Plugins) หรือออกจากโปรแกรมนี้ที่ไอคอนในถาดระบบ",
+  "plugin.bothRunning": "Tantrum's Battlegrounds Toolkit แบบสแตนด์อโลนกำลังทำงานอยู่ด้วย ทุกอย่างจึงแสดงซ้ำสองครั้ง ออกจากโปรแกรมนั้นที่ไอคอนในถาดระบบ หรือปิดปลั๊กอินนี้ที่ Options > Tracker > Plugins"
 }

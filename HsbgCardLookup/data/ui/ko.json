@@ -267,5 +267,14 @@
   "settings.language.status.english": "카드 데이터: 영어.",
   "settings.language.status.ready": "카드 데이터: {0} — 카드 {1}장 번역됨 (패치 {2}).",
   "settings.language.status.pending": "카드 데이터: {0} — 검색을 처음 열거나 경기가 시작될 때 약 1 MB를 내려받습니다. 그때까지는 영어로 표시됩니다.",
-  "settings.language.status.empty": "카드 데이터: {0} — hsbg.cards에 아직 번역이 없어 영어로 표시됩니다."
+  "settings.language.status.empty": "카드 데이터: {0} — hsbg.cards에 아직 번역이 없어 영어로 표시됩니다.",
+  "settings.autostart.label": "Windows와 함께 시작",
+  "settings.autostart.hint": "하스스톤이 시작될 때까지 트레이에서 거의 자원을 쓰지 않고 대기하다가, 시작되면 툴킷이 나타나고 게임이 종료되면 함께 닫힙니다.",
+  "settings.autostart.on": "Windows와 함께 시작합니다.",
+  "settings.autostart.off": "Windows와 함께 시작하지 않습니다. 바로 가기로 직접 시작하세요.",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit: 하스스톤 대기 중",
+  "standalone.tray.startNow": "지금 시작",
+  "standalone.tray.exit": "종료",
+  "standalone.bothRunning": "Hearthstone Deck Tracker에서도 이 툴킷의 플러그인이 실행 중이라 모든 것이 두 번 표시됩니다. HDT에서 플러그인을 끄거나(Options > Tracker > Plugins) 트레이 아이콘에서 이 프로그램을 종료하세요.",
+  "plugin.bothRunning": "독립 실행형 Tantrum's Battlegrounds Toolkit도 실행 중이라 모든 것이 두 번 표시됩니다. 트레이 아이콘에서 해당 프로그램을 종료하거나, Options > Tracker > Plugins에서 이 플러그인을 끄세요."
 }

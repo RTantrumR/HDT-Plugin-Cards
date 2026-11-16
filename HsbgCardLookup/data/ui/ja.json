@@ -267,5 +267,14 @@
   "settings.language.status.english": "カードデータ：英語。",
   "settings.language.status.ready": "カードデータ：{0} — {1}枚のカードを翻訳済み（パッチ {2}）。",
   "settings.language.status.pending": "カードデータ：{0} — 検索を初めて開くか試合が始まったときに約1 MBをダウンロードします。それまでは英語です。",
-  "settings.language.status.empty": "カードデータ：{0} — hsbg.cardsにまだ翻訳がありません。英語で表示します。"
+  "settings.language.status.empty": "カードデータ：{0} — hsbg.cardsにまだ翻訳がありません。英語で表示します。",
+  "settings.autostart.label": "Windows と同時に起動",
+  "settings.autostart.hint": "ハースストーンが始まるまでタスクトレイで待機し（負荷はほぼゼロ）、始まるとツールキットが起動して、ゲームの終了とともに再び閉じます。",
+  "settings.autostart.on": "Windows と同時に起動します。",
+  "settings.autostart.off": "Windows と同時には起動しません。ショートカットから起動してください。",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit: ハースストーンを待機中",
+  "standalone.tray.startNow": "今すぐ開始",
+  "standalone.tray.exit": "終了",
+  "standalone.bothRunning": "Hearthstone Deck Tracker でもこのツールキットのプラグインが動作しているため、すべてが二重に表示されます。HDT でプラグインをオフにする（Options > Tracker > Plugins）か、このプログラムをトレイアイコンから終了してください。",
+  "plugin.bothRunning": "スタンドアロン版の Tantrum's Battlegrounds Toolkit も動作しているため、すべてが二重に表示されます。トレイアイコンから終了するか、Options > Tracker > Plugins でこのプラグインをオフにしてください。"
 }

@@ -267,5 +267,14 @@
   "settings.language.status.english": "卡牌資料：英文。",
   "settings.language.status.ready": "卡牌資料：{0}，已翻譯{1}張卡牌（{2} 版）。",
   "settings.language.status.pending": "卡牌資料：{0}，首次開啟搜尋或開始對戰時會下載約 1 MB；在此之前顯示英文。",
-  "settings.language.status.empty": "卡牌資料：{0}，hsbg.cards 尚無此語言的翻譯；目前顯示英文。"
+  "settings.language.status.empty": "卡牌資料：{0}，hsbg.cards 尚無此語言的翻譯；目前顯示英文。",
+  "settings.autostart.label": "隨 Windows 啟動",
+  "settings.autostart.hint": "在系統匣中待命，幾乎不佔用資源，直到爐石戰記啟動；之後工具箱會自動開啟，並隨遊戲關閉而關閉。",
+  "settings.autostart.on": "隨 Windows 啟動。",
+  "settings.autostart.off": "不隨 Windows 啟動：請從捷徑啟動。",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit：等待爐石戰記啟動",
+  "standalone.tray.startNow": "立即啟動",
+  "standalone.tray.exit": "結束",
+  "standalone.bothRunning": "Hearthstone Deck Tracker 也在執行本工具箱的外掛，因此所有內容會顯示兩次。請在 HDT 中關閉該外掛（Options > Tracker > Plugins），或從系統匣圖示結束本程式。",
+  "plugin.bothRunning": "獨立執行的 Tantrum's Battlegrounds Toolkit 也在執行，因此所有內容會顯示兩次。請從系統匣圖示結束它，或在 Options > Tracker > Plugins 下關閉此外掛。"
 }

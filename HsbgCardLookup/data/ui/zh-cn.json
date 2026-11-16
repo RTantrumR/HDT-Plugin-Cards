@@ -267,5 +267,14 @@
   "settings.language.status.english": "卡牌数据：英语。",
   "settings.language.status.ready": "卡牌数据：{0}——已翻译{1}张卡牌（补丁{2}）。",
   "settings.language.status.pending": "卡牌数据：{0}——首次打开搜索或开始对局时会下载约1 MB；在此之前显示英语。",
-  "settings.language.status.empty": "卡牌数据：{0}——hsbg.cards尚无该语言的翻译；显示英语。"
+  "settings.language.status.empty": "卡牌数据：{0}——hsbg.cards尚无该语言的翻译；显示英语。",
+  "settings.autostart.label": "随 Windows 启动",
+  "settings.autostart.hint": "在托盘中待命，几乎不占用资源，直到炉石传说启动；之后工具箱自动运行，并随游戏关闭而关闭。",
+  "settings.autostart.on": "随 Windows 启动。",
+  "settings.autostart.off": "不随 Windows 启动：请通过快捷方式启动。",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit：等待炉石传说启动",
+  "standalone.tray.startNow": "立即启动",
+  "standalone.tray.exit": "退出",
+  "standalone.bothRunning": "Hearthstone Deck Tracker 也在运行本工具箱的插件，因此所有内容会显示两次。请在 HDT 中关闭该插件（Options > Tracker > Plugins），或从托盘图标退出本程序。",
+  "plugin.bothRunning": "独立运行的 Tantrum's Battlegrounds Toolkit 也在运行，因此所有内容会显示两次。请从托盘图标退出它，或在 Options > Tracker > Plugins 下关闭此插件。"
 }

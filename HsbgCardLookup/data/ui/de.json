@@ -267,5 +267,14 @@
   "settings.language.status.english": "Kartendaten: Englisch.",
   "settings.language.status.ready": "Kartendaten: {0} — {1} Karten übersetzt (Patch {2}).",
   "settings.language.status.pending": "Kartendaten: {0} — beim ersten Öffnen der Suche oder Start einer Partie werden etwa 1 MB heruntergeladen; bis dahin Englisch.",
-  "settings.language.status.empty": "Kartendaten: {0} — hsbg.cards hat dafür noch keine Übersetzung; Englisch wird angezeigt."
+  "settings.language.status.empty": "Kartendaten: {0} — hsbg.cards hat dafür noch keine Übersetzung; Englisch wird angezeigt.",
+  "settings.autostart.label": "Mit Windows starten",
+  "settings.autostart.hint": "Wartet im Infobereich und verbraucht fast nichts, bis Hearthstone startet; dann öffnet sich das Toolkit und schließt sich mit dem Spiel wieder.",
+  "settings.autostart.on": "Startet mit Windows.",
+  "settings.autostart.off": "Startet nicht mit Windows: Startet es über seine Verknüpfung.",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit: wartet auf Hearthstone",
+  "standalone.tray.startNow": "Jetzt starten",
+  "standalone.tray.exit": "Beenden",
+  "standalone.bothRunning": "Hearthstone Deck Tracker führt auch das Plugin dieses Toolkits aus, daher wird alles doppelt angezeigt. Schaltet das Plugin in HDT aus (Options > Tracker > Plugins) oder beendet dieses Programm über sein Symbol im Infobereich.",
+  "plugin.bothRunning": "Das eigenständige Tantrum's Battlegrounds Toolkit läuft ebenfalls, daher wird alles doppelt angezeigt. Beendet es über sein Symbol im Infobereich oder schaltet dieses Plugin unter Options > Tracker > Plugins aus."
 }

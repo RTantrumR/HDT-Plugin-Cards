@@ -267,5 +267,14 @@
   "settings.language.status.english": "Dane kart: angielski.",
   "settings.language.status.ready": "Dane kart: {0} — przetłumaczone karty: {1} (patch {2}).",
   "settings.language.status.pending": "Dane kart: {0} — przy pierwszym otwarciu wyszukiwania lub starcie meczu pobierze się ok. 1 MB; do tego czasu angielski.",
-  "settings.language.status.empty": "Dane kart: {0} — hsbg.cards nie ma jeszcze tłumaczenia; wyświetlany angielski."
+  "settings.language.status.empty": "Dane kart: {0} — hsbg.cards nie ma jeszcze tłumaczenia; wyświetlany angielski.",
+  "settings.autostart.label": "Uruchamiaj z systemem Windows",
+  "settings.autostart.hint": "Czeka w obszarze powiadomień, zużywając prawie zero zasobów, aż uruchomi się Hearthstone; wtedy toolkit włącza się i znowu zamyka razem z grą.",
+  "settings.autostart.on": "Uruchamia się z systemem Windows.",
+  "settings.autostart.off": "Nie uruchamia się z systemem Windows: uruchom go z jego skrótu.",
+  "standalone.tray.waiting": "Tantrum's BG Toolkit: czeka na Hearthstone",
+  "standalone.tray.startNow": "Uruchom teraz",
+  "standalone.tray.exit": "Zakończ",
+  "standalone.bothRunning": "Hearthstone Deck Tracker uruchamia też wtyczkę tego toolkitu, więc wszystko wyświetla się dwukrotnie. Wyłącz wtyczkę w HDT (Options > Tracker > Plugins) albo zamknij ten program z jego ikony w obszarze powiadomień.",
+  "plugin.bothRunning": "Samodzielny Tantrum's Battlegrounds Toolkit też jest uruchomiony, więc wszystko wyświetla się dwukrotnie. Zamknij go z jego ikony w obszarze powiadomień albo wyłącz tę wtyczkę w Options > Tracker > Plugins."
 }
