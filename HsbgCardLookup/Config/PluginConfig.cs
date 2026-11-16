@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Windows.Input;
 using System.Xml.Serialization;
+using HsbgCardLookup.Localization;
 
 namespace HsbgCardLookup.Config
 {
@@ -191,22 +192,48 @@ namespace HsbgCardLookup.Config
 
         public static PluginConfig Load()
         {
+            PluginConfig config = null;
             try
             {
                 if (File.Exists(FilePath))
                 {
                     using (var fs = File.OpenRead(FilePath))
                     {
-                        var loaded = (PluginConfig)new XmlSerializer(typeof(PluginConfig)).Deserialize(fs);
-                        loaded.Migrate();
-                        return loaded;
+                        config = (PluginConfig)new XmlSerializer(typeof(PluginConfig)).Deserialize(fs);
+                        config.Migrate();
                     }
                 }
             }
-            catch { /* fall through to defaults */ }
-            var fresh = FirstRun();
-            fresh.Migrate();
-            return fresh;
+            catch { config = null; /* fall through to defaults */ }
+            if (config == null)
+            {
+                config = FirstRun();
+                config.Migrate();
+            }
+            config.ApplySetupLanguage();
+            return config;
+        }
+
+        /// <summary>The Setup wizard's "Toolkit language" page hands its choice over in
+        /// setup-language.txt next to config.xml ("" = follow the host, "en", or one of the site's
+        /// codes): applied once and deleted. The wizard never writes config.xml itself — an absent
+        /// file is how a first run is recognised, by this class and by the wizard.</summary>
+        private void ApplySetupLanguage()
+        {
+            try
+            {
+                var file = Path.Combine(Dir, "setup-language.txt");
+                if (!File.Exists(file)) return;
+                string code = File.ReadAllText(file).Trim();
+                File.Delete(file);
+                if (code.Length == 0 || string.Equals(code, Locales.English, StringComparison.OrdinalIgnoreCase)
+                    || Locales.ByWeb(code) != null)
+                {
+                    Language = code.ToLowerInvariant();
+                    Save();
+                }
+            }
+            catch { /* never throw from a plugin */ }
         }
 
         /// <summary>What a PC with no config.xml starts with: opponents' tavern tiers and minion types
