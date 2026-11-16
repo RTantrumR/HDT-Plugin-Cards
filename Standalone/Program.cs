@@ -28,20 +28,21 @@ namespace Toolkit.Standalone
             bool fresh;
             using (var mutex = new Mutex(true, "TantrumsBattlegroundsToolkit.Standalone", out fresh))
             {
-                if (!fresh) return 1;
                 string dir = AppDomain.CurrentDomain.BaseDirectory;
                 _logPath = Path.Combine(dir, "standalone.log");
-                Log("=== start");
+                if (!fresh) { Log("=== refused: another instance is running (args: " + string.Join(" ", args) + ")"); return 1; }
+                bool ignoreFocus = Array.IndexOf(args, "--ignore-focus") >= 0;
+                Log("=== start" + (ignoreFocus ? " (TEST MODE: --ignore-focus)" : ""));
 
                 var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-                var overlay = new OverlayWindow(dir) { IgnoreFocus = Array.IndexOf(args, "--ignore-focus") >= 0 };
+                var overlay = new OverlayWindow(dir) { IgnoreFocus = ignoreFocus, Log = Log };
                 var reader = new GameReader(Log);
                 var mmr = new MmrTable(Log);
 
                 var tray = new Forms.NotifyIcon
                 {
                     Icon = System.Drawing.SystemIcons.Application,
-                    Text = "Tantrum's BG Toolkit (standalone test)",
+                    Text = ignoreFocus ? "Tantrum's BG Toolkit - TEST MODE (draws without focus)" : "Tantrum's BG Toolkit (standalone test)",
                     Visible = true,
                     ContextMenuStrip = new Forms.ContextMenuStrip()
                 };

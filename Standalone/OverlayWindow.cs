@@ -40,6 +40,7 @@ namespace Toolkit.Standalone
 
         /// <summary>Test switch (--ignore-focus): draw even when Hearthstone isn't the foreground window.</summary>
         public bool IgnoreFocus;
+        public Action<string> Log;
 
         public OverlayWindow(string assetsDir)
         {
@@ -103,10 +104,10 @@ namespace Toolkit.Standalone
             int x, y, w, h; bool fg;
             bool hs = HsWindow.ClientArea(out x, out y, out w, out h, out fg);
             bool want = hs && (fg || IgnoreFocus) && BoardShown(_snap);
-            if (!want) { if (Visibility == Visibility.Visible) Hide(); return; }
+            if (!want) { if (Visibility == Visibility.Visible) { Hide(); Log?.Invoke("overlay hidden (hs=" + hs + " foreground=" + fg + ")"); } return; }
             if (x != _lastX || y != _lastY || w != _lastW || h != _lastH || Visibility != Visibility.Visible)
             {
-                if (Visibility != Visibility.Visible) Show();
+                if (Visibility != Visibility.Visible) { Show(); Log?.Invoke("overlay shown (foreground=" + fg + ")"); }
                 SetWindowPos(Hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
                 _lastX = x; _lastY = y; _lastW = w; _lastH = h;
             }
