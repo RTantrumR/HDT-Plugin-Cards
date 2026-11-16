@@ -148,7 +148,7 @@ namespace Toolkit.Standalone
         public StandaloneOverlay(OverlayWindow window) { _window = window; }
         public Canvas Canvas => _window.Surface;
         public Dispatcher Dispatcher => _window.Dispatcher;
-        public void SetHitTestVisible(UIElement element) { }   // the window is click-through as a whole for now
+        public void SetHitTestVisible(UIElement element) => _window.RegisterClickable(element as FrameworkElement);
         public Rect? HearthstoneRect()
         {
             int x, y, w, h; bool fg;
