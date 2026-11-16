@@ -36,6 +36,10 @@ if (-not (Test-Path $msbuild)) { throw "MSBuild not found at $msbuild" }
 Write-Host "Building Release..." -ForegroundColor Cyan
 & $msbuild "$root\HsbgCardLookup.sln" /t:Rebuild /p:Configuration=Release /v:minimal /nologo
 if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)." }
+# The standalone exe is not in the solution, and installer\build.ps1 is called with -SkipBuild below:
+# build it here, or the Setup ships whatever standalone build was left in its bin\Release.
+& $msbuild "$root\Standalone\Standalone.csproj" /t:Rebuild /p:Configuration=Release /v:minimal /nologo
+if ($LASTEXITCODE -ne 0) { throw "Standalone build failed (exit $LASTEXITCODE)." }
 
 $bin = "$root\HsbgCardLookup\bin\Release"
 $dll = "$bin\HsbgCardLookup.dll"

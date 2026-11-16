@@ -62,6 +62,12 @@ Copy-Item "$standaloneBin\TantrumsToolkitStandalone.exe", "$standaloneBin\Tantru
 Copy-Item "$standaloneBin\*.dll" "$stage\standalone" -Force
 Copy-Item "$standaloneBin\data" "$stage\standalone" -Recurse -Force
 
+# Never ship a stale build: every staged binary of ours must carry the version being packaged.
+foreach ($f in "$stage\plugin\HsbgCardLookup.dll", "$stage\standalone\HsbgCardLookup.dll", "$stage\standalone\TantrumsToolkitStandalone.exe") {
+    $v = (Get-Item $f).VersionInfo.FileVersion
+    if ($v -ne $Version -and $v -ne "$Version.0") { throw "Stale build staged: $f is version $v, not $Version (rebuild without -SkipBuild)" }
+}
+
 # The language page's flags: the plugin's own Ui\Flags.cs rendered to BMPs (out\flags) by
 # tools\RenderFlags.cs, so the wizard shows the same marks as the plugin and the site.
 $outDir = Join-Path $here "out"
