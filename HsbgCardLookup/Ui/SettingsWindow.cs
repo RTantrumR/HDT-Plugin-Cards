@@ -400,6 +400,12 @@ namespace HsbgCardLookup.Ui
                     UpdateArrangeRow();
                 }, BuildAnomaly));
 
+            bool streamView = false;
+            try { streamView = HsbgCardLookup.Host.HostServices.Shell?.HasStreamView == true; } catch { }
+            if (streamView)
+                stack.Children.Add(CategoryRow(Strings.T("settings.streamView.title"), Strings.T("settings.streamView.hint"),
+                    () => _config.ShowStreamView, v => SetStreamView(v), BuildStreamView));
+
             stack.Children.Add(CategoryRow(Strings.T("settings.updates.title"), UpdatesHint(), null, null, BuildUpdates));
 
             // Start with Windows: the standalone's own switch (HDT starts the plugin, and has its own).
@@ -531,6 +537,41 @@ namespace HsbgCardLookup.Ui
             {
                 Text = Strings.T("settings.trinkets.footer"),
                 Foreground = UiKit.TextMuted, FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            ShowPage();
+        }
+
+        private void SetStreamView(bool v)
+        {
+            _config.ShowStreamView = v;
+            _status.Text = v ? Strings.T("settings.streamView.on") : Strings.T("settings.streamView.off");
+            Changed();
+        }
+
+        private void BuildStreamView()
+        {
+            _currentPage = BuildStreamView;
+            var stack = NewPage(Strings.T("settings.streamView.title"), sub: true, () => _config.ShowStreamView, SetStreamView);
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = Strings.T("settings.streamView.intro"),
+                Foreground = UiKit.TextMuted, FontSize = 13, Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            stack.Children.Add(CycleRow(Strings.T("settings.streamView.key"),
+                new[] { "Green", "Magenta" },
+                new[] { Strings.T("settings.streamView.key.green"), Strings.T("settings.streamView.key.magenta") },
+                null,
+                () => _config.StreamViewKey, v => { _config.StreamViewKey = v; Changed(); }));
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = Strings.F("settings.streamView.howTo", "Tantrum's BG Toolkit - Stream view"),
+                Foreground = UiKit.TextSecondary, FontSize = 12.5, Margin = new Thickness(0, 10, 0, 0),
                 TextWrapping = TextWrapping.Wrap
             });
 

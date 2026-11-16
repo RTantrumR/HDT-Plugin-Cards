@@ -95,6 +95,9 @@ namespace HsbgCardLookup.Host
         /// <summary>Whether the toolkit starts with Windows; null when the host has no such switch (HDT
         /// starts the plugin itself, and has its own "start with Windows").</summary>
         bool? StartWithWindows { get; set; }
+        /// <summary>Whether the host can open a stream view window for OBS (the standalone can; under HDT the
+        /// toolkit draws on HDT's own overlay window).</summary>
+        bool HasStreamView { get; }
     }
 
     /// <summary>The services of the current host, set once by it at start-up.</summary>

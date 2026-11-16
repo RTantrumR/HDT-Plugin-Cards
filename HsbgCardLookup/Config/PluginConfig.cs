@@ -52,6 +52,10 @@ namespace HsbgCardLookup.Config
         // show each as a floating card. Off by default (opt-in). Each slot's placement+size persists.
         public bool ShowTrinkets { get; set; } = false;
         public bool ShowAnomaly { get; set; } = false;
+        /// <summary>Standalone only: the stream view window for OBS (a mirror of the overlay on a key colour).</summary>
+        public bool ShowStreamView { get; set; } = false;
+        /// <summary>The stream view's background, which OBS keys out: "Green" or "Magenta".</summary>
+        public string StreamViewKey { get; set; } = "Green";
         public HudPlacement LesserTrinketHud { get; set; } = new HudPlacement();
         public HudPlacement GreaterTrinketHud { get; set; } = new HudPlacement();
         // Boxes 3 and 4: transforms and anomalies can leave a player holding more than the usual pair,

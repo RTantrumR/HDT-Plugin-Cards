@@ -189,6 +189,8 @@ namespace Toolkit.Standalone
             finally { if (joined) AttachThreadInput(me, fgThread, false); }
         }
         public string HostLanguage() => null;   // no host language: Language = "" falls back to the default
+        public bool HasStreamView => true;
+
         public bool? StartWithWindows
         {
             get { return Shared.StartsWithWindows; }

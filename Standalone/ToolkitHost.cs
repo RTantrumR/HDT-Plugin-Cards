@@ -97,10 +97,40 @@ namespace Toolkit.Standalone
                 DateTime lastSlow = DateTime.MinValue, hsGoneSince = DateTime.MinValue, trimAt = DateTime.UtcNow.AddSeconds(30);
                 bool sawHs = false, wasBg = false;
                 int warnedForHdt = 0;
+                // The stream view for OBS follows its setting; closing the window switches the setting off.
+                StreamView stream = null;
+                Action syncStream = () =>
+                {
+                    var cfg = toolkit.Config;
+                    bool want = cfg != null && cfg.ShowStreamView;
+                    if (want && stream == null)
+                    {
+                        stream = new StreamView(overlay, cfg.StreamViewKey);
+                        var opened = stream;
+                        stream.Closed += (s2, e2) =>
+                        {
+                            if (stream == opened) stream = null;
+                            if (!opened.UserClosed) return;
+                            cfg.ShowStreamView = false;
+                            try { cfg.Save(); } catch { }
+                            Shared.Log("stream view closed by its window: switched off");
+                        };
+                        stream.Show();
+                        Shared.Log("stream view opened (" + cfg.StreamViewKey + ")");
+                    }
+                    else if (!want && stream != null)
+                    {
+                        var s0 = stream; stream = null; s0.Close();
+                        Shared.Log("stream view closed");
+                    }
+                    else if (stream != null) stream.SetKey(cfg.StreamViewKey);
+                };
+
                 var poll = new DispatcherTimer(DispatcherPriority.Background, ui) { Interval = TimeSpan.FromMilliseconds(100) };
                 poll.Tick += (s, e) =>
                 {
                     try { toolkit.Update(); } catch (Exception ex) { Shared.Log("ToolkitApp.Update: " + ex.Message); }
+                    try { syncStream(); } catch (Exception ex) { Shared.Log("stream view: " + ex.Message); }
                     if ((DateTime.UtcNow - lastSlow).TotalSeconds < 5) return;
                     lastSlow = DateTime.UtcNow;
 

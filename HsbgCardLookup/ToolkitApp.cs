@@ -60,6 +60,8 @@ namespace HsbgCardLookup
         }
 
         public CardStore Store => _store;
+        /// <summary>The live settings (null before Start). The standalone host reads its own switches here.</summary>
+        public PluginConfig Config => _config;
 
         private void Log(string message) => _log(message);
 
