@@ -27,11 +27,14 @@
 ; installing a plugin nothing will load.
 ;
 ; Languages. The wizard runs in the language Windows is set to when it has that one (English
-; otherwise — Russian and Ukrainian systems included), and asks at the start. Its own lines live in
-; installer\i18n\<lang>.json; build.ps1 turns them into out\messages.iss, #included below. A page
-; then asks which language the TOOLKIT uses — by default the wizard's language (es-MX and the other
+; otherwise — Russian and Ukrainian systems included); Inno's own "Select Setup Language" box is off.
+; A small selector at the top right of every page before the install switches it: Inno cannot change
+; a running wizard's language, so Setup starts itself again with /LANG=, on the same page, carrying
+; the toolkit choice if the user made one (/TOOLKITLANG=, /STARTPAGE=). Its own lines live in
+; installer\i18n\<lang>.json; build.ps1 turns them into out\messages.iss, #included below. The first
+; page asks which language the TOOLKIT uses — by default the wizard's language (es-MX and the other
 ; Latin American Spanish systems get es-mx, Taiwan/Hong Kong/Macau Chinese get zh-tw), on an
-; upgrade the language already set. The choice reaches the plugin as setup-language.txt in its data
+; upgrade the language already set; the Ready page shows it again. The choice reaches the plugin as setup-language.txt in its data
 ; folder, which the plugin applies once and deletes; the wizard never writes config.xml, because
 ; the plugin's first-run defaults and PluginEverRan below both depend on it not existing.
 ; /TOOLKITLANG=<code> preselects (silent installs too); "follow" = same as HDT.
@@ -78,6 +81,8 @@ SolidCompression=yes
 WizardStyle=modern
 ; The language page holds an intro, a row and two columns of seven: a tenth more room than the default.
 WizardSizePercent=110
+; The wizard's language comes from Windows, or from the selector at the top right of the wizard.
+ShowLanguageDialog=no
 CloseApplications=no
 
 [Languages]
@@ -144,7 +149,13 @@ var
   LangCodes: TArrayOfString;   // LangRadios[i] -> the plugin's language code ('' = same as HDT)
   LangNames: TArrayOfString;   // LangRadios[i] -> what the row says, for the Ready page
   CurrentLang: String;         // the plugin's Language setting before this install; '?' = no config yet
-  LangPreselected: Boolean;    // PreselectLanguage has run (it needs the final {app})
+  LangPreselected: Boolean;    // PreselectLanguage has run
+  LangTouched: Boolean;        // the user picked a toolkit language on the page (carried over a restart)
+  Selecting: Boolean;          // SelectLanguage is setting a radio: not a user pick
+  WizardLangCombo: TNewComboBox;
+  WizardLangFlag: TBitmapImage;
+  WizardLangNames: TArrayOfString;   // WizardLangCombo item i -> Inno language name
+  Restarting: Boolean;         // closing this run because Setup was started again in another language
   HdtStatusText: TNewStaticText;
   HdtDetailText: TNewStaticText;
   HdtGetButton: TNewButton;
@@ -428,7 +439,7 @@ var
   Intro: TNewStaticText;
   Gap, ButtonWidth: Integer;
 begin
-  HdtPage := CreateCustomPage(wpWelcome, 'Hearthstone Deck Tracker', CustomMessage('HdtPageDescription'));
+  HdtPage := CreateCustomPage(LangPage.ID, 'Hearthstone Deck Tracker', CustomMessage('HdtPageDescription'));
 
   Intro := TNewStaticText.Create(HdtPage);
   Intro.Parent := HdtPage.Surface;
@@ -501,7 +512,9 @@ var
   I, J: Integer;
 begin
   Result := '?';
-  if not LoadStringFromFile(DataDir('') + '\config.xml', Xml) then Exit;
+  // The page is the first one, before {app} can be expanded; the directory value it will become
+  // (DefaultDirName, or /DIR) already holds the same path.
+  if not LoadStringFromFile(ExtractFileDir(ExtractFileDir(WizardDirValue)) + '\HsbgCardLookup\config.xml', Xml) then Exit;
   Text := String(Xml);
   Result := '';
   I := Pos('<Language>', Text);
@@ -581,6 +594,11 @@ begin
   LangRadios[TComponent(Sender).Tag].Checked := True;
 end;
 
+procedure LangRadioClick(Sender: TObject);
+begin
+  if not Selecting then LangTouched := True;
+end;
+
 // One row: radio, mark, name in its own words, and the locale tag in grey — the plugin's own
 // language page in miniature (Settings > Language).
 procedure AddLang(const Code, Name, LocaleTag, MarkFile: String; Left, Top, RowH: Integer);
@@ -603,6 +621,7 @@ begin
   Radio.Width := ScaleX(17);
   Radio.Height := RowH;
   Radio.Top := Top;
+  Radio.OnClick := @LangRadioClick;
   LangRadios[N] := Radio;
 
   Mark := LoadMark(MarkFile, LangPage.Surface, Left + ScaleX(19), Top);
@@ -666,7 +685,9 @@ begin
   for I := 0 to GetArrayLength(LangCodes) - 1 do
     if CompareText(LangCodes[I], Code) = 0 then
     begin
+      Selecting := True;
       LangRadios[I].Checked := True;
+      Selecting := False;
       Exit;
     end;
   // A code this list doesn't know (a language added later, a typo in config.xml) -> English.
@@ -679,9 +700,8 @@ var
   W, RowH, Top, ColW: Integer;
   F: String;
 begin
-  // After the folder page (hidden, DisableDirPage): {app} — and with it where config.xml is — is
-  // only final from there on, /DIR included. The preselection waits for it (PreselectLanguage).
-  LangPage := CreateCustomPage(wpSelectDir, CustomMessage('LangPageCaption'), CustomMessage('LangPageDescription'));
+  // The first page (Inno 6 shows no welcome page): the toolkit's language is the first question.
+  LangPage := CreateCustomPage(wpWelcome, CustomMessage('LangPageCaption'), CustomMessage('LangPageDescription'));
 
   Intro := TNewStaticText.Create(LangPage);
   Intro.Parent := LangPage.Surface;
@@ -718,9 +738,8 @@ begin
   AddLang('zh-tw', '繁體中文', 'zh-TW', 'flag_zh-tw' + F, ColW, Top + 5 * RowH, RowH);
 end;
 
-// Preselect, once {app} is final: /TOOLKITLANG, else the setting already there, else the wizard's
-// language. Runs when the page first shows, and before the Ready page and the install for a silent
-// run, which shows no pages.
+// Preselect: /TOOLKITLANG, else the setting already there, else the wizard's language. Once, right
+// after the page is built; the later calls (Ready page, install) are for safety only.
 procedure PreselectLanguage;
 var
   Wanted: String;
@@ -741,19 +760,178 @@ begin
     ' preselected=' + ChosenLanguage + ' (wizard: ' + ActiveLanguage + ', UI LANGID $' + Format('%.4x', [GetUILanguage]) + ')');
 end;
 
+// ---------------------------------------------------------------------------------------------
+// The wizard-language selector (top right of every page before the install)
+// ---------------------------------------------------------------------------------------------
+
+// Inno language name -> the plugin's code, for the flag next to the selector.
+function FlagCodeOf(const InnoName: String): String;
+begin
+  if InnoName = 'german' then Result := 'de'
+  else if InnoName = 'spanish' then Result := 'es'
+  else if InnoName = 'french' then Result := 'fr'
+  else if InnoName = 'italian' then Result := 'it'
+  else if InnoName = 'japanese' then Result := 'ja'
+  else if InnoName = 'korean' then Result := 'ko'
+  else if InnoName = 'polish' then Result := 'pl'
+  else if InnoName = 'brazilianportuguese' then Result := 'pt'
+  else if InnoName = 'thai' then Result := 'th'
+  else if InnoName = 'chinesesimplified' then Result := 'zh-cn'
+  else if InnoName = 'chinesetraditional' then Result := 'zh-tw'
+  else Result := 'en';
+end;
+
+procedure AddWizardLang(const InnoName, Native: String);
+var
+  N: Integer;
+begin
+  N := GetArrayLength(WizardLangNames);
+  SetArrayLength(WizardLangNames, N + 1);
+  WizardLangNames[N] := InnoName;
+  WizardLangCombo.Items.Add(Native);
+  if InnoName = ActiveLanguage then WizardLangCombo.ItemIndex := N;
+end;
+
+// The command line of this run without the parameters a restart sets itself. Quoted arguments
+// (paths with spaces) stay whole.
+function CarriedParams: String;
+var
+  Tail, Arg, Upper: String;
+  I: Integer;
+  InQuote: Boolean;
+begin
+  Result := '';
+  Tail := GetCmdTail + ' ';
+  Arg := '';
+  InQuote := False;
+  for I := 1 to Length(Tail) do
+  begin
+    if Tail[I] = '"' then InQuote := not InQuote;
+    if (Tail[I] = ' ') and not InQuote then
+    begin
+      if Arg <> '' then
+      begin
+        Upper := Uppercase(RemoveQuotes(Arg));
+        if (Pos('/LANG=', Upper) <> 1) and (Pos('/TOOLKITLANG=', Upper) <> 1) and (Pos('/STARTPAGE=', Upper) <> 1)
+           and (Pos('/SL5=', Upper) <> 1) and (Pos('/SPAWNWND=', Upper) <> 1) and (Pos('/NOTIFYWND=', Upper) <> 1) then
+          Result := Result + ' ' + Arg;
+      end;
+      Arg := '';
+    end
+    else
+      Arg := Arg + Tail[I];
+  end;
+end;
+
+// Start Setup again in another language, on the page the user is on, then close this run quietly.
+procedure WizardLangChange(Sender: TObject);
+var
+  NewLang, Params, Page: String;
+  Code: Integer;
+  Started: Boolean;
+begin
+  if WizardLangCombo.ItemIndex < 0 then Exit;
+  NewLang := WizardLangNames[WizardLangCombo.ItemIndex];
+  if NewLang = ActiveLanguage then Exit;
+  if WizardForm.CurPageID = HdtPage.ID then Page := 'hdt'
+  else if WizardForm.CurPageID = wpReady then Page := 'ready'
+  else Page := 'lang';
+  Params := CarriedParams + ' /LANG=' + NewLang + ' /STARTPAGE=' + Page;
+  // The toolkit choice travels only when the user made it (or it came from an upgrade / the
+  // parameter); otherwise the new wizard language picks the default afresh.
+  if LangTouched or (CurrentLang <> '?') or (ExpandConstant('{param:TOOLKITLANG|}') <> '') then
+  begin
+    if ChosenLanguage = '' then Params := Params + ' /TOOLKITLANG=follow'
+    else Params := Params + ' /TOOLKITLANG=' + ChosenLanguage;
+  end;
+  Log('Wizard language -> ' + NewLang + ': starting Setup again with' + Params);
+  // Starting {srcexe} straight from here is refused with error 5 (access denied), by ShellExec and
+  // Exec alike, though a second copy starts fine from outside. Try it, then through cmd's start.
+  Started := Exec(ExpandConstant('{srcexe}'), Params, ExtractFileDir(ExpandConstant('{srcexe}')), SW_SHOWNORMAL, ewNoWait, Code);
+  if not Started then
+  begin
+    Log('Direct start refused: ' + SysErrorMessage(Code) + ' (' + IntToStr(Code) + '); trying cmd /c start');
+    Started := Exec(ExpandConstant('{cmd}'), '/c start "" "' + ExpandConstant('{srcexe}') + '"' + Params, '', SW_HIDE, ewNoWait, Code);
+  end;
+  if not Started then
+  begin
+    Log('Could not start Setup again: ' + SysErrorMessage(Code) + ' (' + IntToStr(Code) + ')');
+    // Stay in this language and say so on the selector.
+    for Code := 0 to GetArrayLength(WizardLangNames) - 1 do
+      if WizardLangNames[Code] = ActiveLanguage then WizardLangCombo.ItemIndex := Code;
+    Exit;
+  end;
+  Restarting := True;
+  WizardForm.Close;
+end;
+
+procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
+begin
+  if Restarting then Confirm := False;
+end;
+
+// In the band at the top of the wizard, where Inno's small picture sits: this window's flag and a
+// list of the wizard's languages in their own words.
+procedure CreateWizardLangSelector;
+var
+  W: Integer;
+begin
+  WizardForm.WizardSmallBitmapImage.Visible := False;
+
+  WizardLangCombo := TNewComboBox.Create(WizardForm);
+  WizardLangCombo.Parent := WizardForm.MainPanel;
+  WizardLangCombo.Style := csDropDownList;
+  WizardLangCombo.Width := ScaleX(150);
+  WizardLangCombo.Left := WizardForm.MainPanel.ClientWidth - WizardLangCombo.Width - ScaleX(12);
+  WizardLangCombo.Top := (WizardForm.MainPanel.ClientHeight - WizardLangCombo.Height) div 2;
+  WizardLangCombo.Anchors := [akTop, akRight];
+  AddWizardLang('english', 'English');
+  AddWizardLang('german', 'Deutsch');
+  AddWizardLang('spanish', 'Español');
+  AddWizardLang('french', 'Français');
+  AddWizardLang('italian', 'Italiano');
+  AddWizardLang('japanese', '日本語');
+  AddWizardLang('korean', '한국어');
+  AddWizardLang('polish', 'Polski');
+  AddWizardLang('brazilianportuguese', 'Português (Brasil)');
+  AddWizardLang('thai', 'ไทย');
+  AddWizardLang('chinesesimplified', '简体中文');
+  AddWizardLang('chinesetraditional', '繁體中文');
+  WizardLangCombo.OnChange := @WizardLangChange;
+
+  W := FlagWidth;
+  WizardLangFlag := LoadMark('flag_' + FlagCodeOf(ActiveLanguage) + '_' + IntToStr(W) + '.bmp',
+    WizardForm.MainPanel, 0, 0);
+  WizardLangFlag.Left := WizardLangCombo.Left - WizardLangFlag.Width - ScaleX(6);
+  WizardLangFlag.Top := WizardLangCombo.Top + (WizardLangCombo.Height - WizardLangFlag.Height) div 2;
+  WizardLangFlag.Anchors := [akTop, akRight];
+
+  // Keep the page title and its line clear of the selector.
+  WizardForm.PageNameLabel.Width := WizardLangFlag.Left - WizardForm.PageNameLabel.Left - ScaleX(8);
+  WizardForm.PageDescriptionLabel.Width := WizardLangFlag.Left - WizardForm.PageDescriptionLabel.Left - ScaleX(8);
+end;
+
 procedure InitializeWizard;
 begin
   DetectHdt;
   LogHdt;
   FoundAtStart := HdtExe <> '';
-  CreateHdtPage;
   CreateLanguagePage;
+  CreateHdtPage;
+  PreselectLanguage;
+  CreateWizardLangSelector;
 end;
 
 // HDT found right away: nothing to do on that page; the Ready page still names the HDT used.
 function ShouldSkipPage(PageID: Integer): Boolean;
+var
+  Start: String;
 begin
   Result := (PageID = HdtPage.ID) and FoundAtStart;
+  // A restart for another wizard language comes back on the page it left (/STARTPAGE=).
+  Start := Lowercase(ExpandConstant('{param:STARTPAGE|}'));
+  if (PageID = LangPage.ID) and ((Start = 'hdt') or (Start = 'ready')) then Result := True;
+  if (PageID = HdtPage.ID) and (Start = 'ready') and (HdtExe <> '') then Result := True;
 end;
 
 // A silent install also "clicks" Next on every page; it goes on to PrepareToInstall, which logs
@@ -1002,6 +1180,11 @@ begin
   begin
     WizardForm.NextButton.Enabled := (HdtExe <> '') or WizardSilent;
     Exit;
+  end;
+  if WizardLangCombo <> nil then
+  begin
+    WizardLangCombo.Visible := (CurPageID = LangPage.ID) or (CurPageID = HdtPage.ID) or (CurPageID = wpReady);
+    WizardLangFlag.Visible := WizardLangCombo.Visible;
   end;
   if CurPageID = LangPage.ID then
   begin
