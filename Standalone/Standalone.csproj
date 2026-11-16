@@ -49,6 +49,7 @@
     <Compile Include="OverlayWindow.cs" />
     <Compile Include="StandaloneHost.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Shared.cs" />
     <Compile Include="ToolkitHost.cs" />
     <Compile Include="Watcher.cs" />
