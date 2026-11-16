@@ -48,7 +48,6 @@
     <Compile Include="HsWindow.cs" />
     <Compile Include="OverlayWindow.cs" />
     <Compile Include="StandaloneHost.cs" />
-    <Compile Include="StreamView.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Shared.cs" />
