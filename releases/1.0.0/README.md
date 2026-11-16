@@ -15,6 +15,11 @@ v1.0.0: Runs with or without Hearthstone Deck Tracker
 - It keeps its own settings in `%APPDATA%\TantrumsBattlegroundsToolkit`. On its first start it copies your plugin's settings and downloaded card art, so nothing has to be set up or downloaded again.
 - It uninstalls from Apps & features like any other program.
 
+### Streaming with OBS (standalone program)
+- Add a **Window Capture** above your Hearthstone capture and pick **[TantrumsToolkitStandalone.exe]: Tantrum's BG Toolkit - Overlay**. You don't need a filter, a different capture method or any setting in the toolkit, and OBS finds the window again every time the toolkit starts.
+- The capture shows everything the toolkit draws over the game, including the F3 card search and cards you drag out of it.
+- While you're in another program, the overlay leaves the capture, just as it leaves your screen.
+
 ### Setup in your language
 - Setup runs in 12 languages. The selector at the top right changes Setup's language on any page.
 - A page near the start picks the **toolkit's** language, shown with the same flags as in the toolkit. It starts on Setup's language, and an update keeps whatever language you already use.
