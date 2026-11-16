@@ -2,14 +2,21 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Windows;
+using System.Windows.Threading;
+using HsbgCardLookup.Config;
+using HsbgCardLookup.Data;
+using HsbgCardLookup.Game;
+using HsbgCardLookup.Host;
+using HsbgCardLookup.Localization;
 using Forms = System.Windows.Forms;
 
 namespace Toolkit.Standalone
 {
     /// <summary>
-    /// Standalone vertical slice: reads the Hearthstone client with our own memory reader and draws
-    /// names, MMR, tier, minion types and the lobby's tribes over the game. Tray icon → Exit.
-    /// Log: standalone.log next to the exe.
+    /// The toolkit without HDT: our memory reader feeds the host seams, our own window over Hearthstone
+    /// is the overlay surface, and the plugin's real in-match features (MMR sidebar + portrait labels,
+    /// minion types, Dark Gifts, trinket/anomaly HUD) run on top, unchanged. Settings come from the
+    /// plugin's own config.xml. Tray icon → Exit. Log: standalone.log next to the exe.
     /// </summary>
     internal static class Program
     {
@@ -35,10 +42,27 @@ namespace Toolkit.Standalone
                 Log("=== start" + (ignoreFocus ? " (TEST MODE: --ignore-focus)" : ""));
 
                 var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-                var overlay = new OverlayWindow(dir) { IgnoreFocus = ignoreFocus, Log = Log };
-                var reader = new GameReader(Log);
-                var mmr = new MmrTable(Log);
+                var ui = app.Dispatcher;
+                var overlay = new OverlayWindow { IgnoreFocus = ignoreFocus, Log = Log };
 
+                // The host seams, then the plugin's own pieces exactly as its OnLoad builds them.
+                var game = new StandaloneGameState();
+                HostServices.Use(game, new StandaloneMemory(game), new StandaloneOverlay(overlay), new StandaloneShell());
+
+                var config = PluginConfig.Load();
+                var store = new CardStore();
+                store.Load();
+                Log("CardStore: " + store.LoadInfo);
+                var language = new CardLanguage(store, config, ui, Log);
+                language.Initialize();
+                HsbgCardLookup.Ui.DarkGiftPanel.SetKeywordHighlight(language.Vocab.Keyword.Values);
+                DarkGiftWatcher.TribeLabel = t => language.Vocab.TribeLabel(t) ?? t;
+
+                var hud = new BgHud(store, config, ui);
+                var mmr = new BgMmr(config, ui, Log, id => store.Lookup(id)?.DisplayName);
+                var gifts = new DarkGiftWatcher(store, config, ui, Log);
+
+                var reader = new GameReader(Log);
                 var tray = new Forms.NotifyIcon
                 {
                     Icon = System.Drawing.SystemIcons.Application,
@@ -48,49 +72,63 @@ namespace Toolkit.Standalone
                 };
                 tray.ContextMenuStrip.Items.Add("Exit", null, (s, e) => app.Shutdown());
 
-                // Reader thread: one read a second, results handed to the UI thread.
+                // Reader thread: a snapshot every 250 ms, handed to the UI thread.
                 var stop = new ManualResetEvent(false);
                 var worker = new Thread(() =>
                 {
                     string lastSummary = null;
-                    while (!stop.WaitOne(1000))
+                    while (!stop.WaitOne(250))
                     {
                         var snap = reader.Read();
-                        if (snap?.Region != null) mmr.Ensure(snap.Region);
                         string summary = Summary(snap);
                         if (summary != lastSummary) { Log(summary); lastSummary = summary; }
-                        app.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            overlay.Update(snap, mmr);
-                            // Test aid: drop a file named snap.trigger next to the exe to get snap.png.
-                            string trigger = Path.Combine(dir, "snap.trigger");
-                            if (File.Exists(trigger))
-                            {
-                                try { File.Delete(trigger); } catch { }
-                                Log("snap: " + overlay.SaveComposite(Path.Combine(dir, "snap.png")));
-                            }
-                        }));
+                        ui.BeginInvoke(new Action(() => game.Publish(snap)));
                     }
                 }) { IsBackground = true, Name = "reader" };
 
-                app.Startup += (s, e) => worker.Start();
-                app.Exit += (s, e) => { stop.Set(); tray.Visible = false; tray.Dispose(); reader.Dispose(); Log("=== exit"); };
+                // The features' poll, every 100 ms on the UI thread — what HDT's OnUpdate does for the plugin.
+                var poll = new DispatcherTimer(DispatcherPriority.Background, ui) { Interval = TimeSpan.FromMilliseconds(100) };
+                poll.Tick += (s, e) =>
+                {
+                    try { hud.Poll(); } catch (Exception ex) { Log("BgHud.Poll: " + ex.Message); }
+                    try { mmr.Poll(); } catch (Exception ex) { Log("BgMmr.Poll: " + ex.Message); }
+                    try { gifts.Poll(); } catch (Exception ex) { Log("DarkGiftWatcher.Poll: " + ex.Message); }
+                    // Test aid: drop a file named snap.trigger next to the exe to get snap.png.
+                    string trigger = Path.Combine(dir, "snap.trigger");
+                    if (File.Exists(trigger))
+                    {
+                        try { File.Delete(trigger); } catch { }
+                        Log("snap: " + overlay.SaveComposite(Path.Combine(dir, "snap.png")));
+                    }
+                };
+
+                app.Startup += (s, e) => { worker.Start(); poll.Start(); };
+                app.Exit += (s, e) =>
+                {
+                    stop.Set(); poll.Stop();
+                    try { hud.CloseAll(); } catch { }
+                    try { gifts.CloseAll(); } catch { }
+                    tray.Visible = false; tray.Dispose(); reader.Dispose(); Log("=== exit");
+                };
                 app.Run();
                 return 0;
             }
         }
 
-        // One line per change, so the log shows what the overlay was given.
+        private static int Turn(Snapshot s)
+        {
+            EntitySnap g; int t;
+            return s.Entities.TryGetValue(s.GameEntityId, out g) && g.Tags.TryGetValue(20, out t) ? t : -1;   // TURN
+        }
+
+        // One line per change of what matters, so the log shows what the features were given.
         private static string Summary(Snapshot s)
         {
             if (s == null) return "no read";
-            var sb = new System.Text.StringBuilder("me=" + s.Me + " region=" + s.Region + " lobbyTribes=[" + string.Join(",", s.LobbyTribes) + "]");
-            foreach (var t in s.Tiles)
-            {
-                int c; string tribe = HsbgCardLookup.Data.TribeTally.Dominant(t.Races, out c);
-                sb.Append(" | p" + t.PlayerId + " " + (t.Name ?? "?") + " T" + t.Tier + " " + tribe + (c > 0 ? c.ToString() : ""));
-            }
-            return sb.ToString();
+            if (s.GameStateAddr == 0) return "region=" + s.Region + " no game";
+            return "region=" + s.Region + " game 0x" + s.GameStateAddr.ToString("X") + " tiles=" + s.Tiles.Count
+                + " duoTeams=" + s.TeamsWithTwo + " lobby=" + s.Lobby.Count + " tribes=[" + string.Join(",", s.LobbyTribes) + "]"
+                + " entities~" + (s.Entities.Count / 25 * 25) + " turn=" + Turn(s) + " readMs~" + (s.ReadMs / 10 * 10);
         }
     }
 }

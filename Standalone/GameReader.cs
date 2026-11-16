@@ -5,23 +5,33 @@ using MemSpike;
 
 namespace Toolkit.Standalone
 {
-    /// <summary>One leaderboard tile, in the order the client draws them.</summary>
-    internal sealed class Tile
+    /// <summary>One entity of the client's own entity map, frozen at read time.</summary>
+    internal sealed class EntitySnap
     {
-        public string HeroCardId;
-        public int PlayerId, Place, Tier, Health;
-        public string Name;                                    // display name from the lobby map
-        public bool IsMe;
+        public int Id;
+        public string CardId;
+        public Dictionary<int, int> Tags;
+    }
+
+    /// <summary>One leaderboard tile, in the order the client draws them.</summary>
+    internal sealed class TileSnap
+    {
+        public int HeroEntityId;
         public Dictionary<int, int> Races = new Dictionary<int, int>();
     }
 
-    /// <summary>What one read of the client returned. Null fields = not available right now.</summary>
+    /// <summary>What one read of the client returned. Immutable once published.</summary>
     internal sealed class Snapshot
     {
-        public string Me;                                      // own display name
-        public string Region;                                  // "US" / "EU" / "AP" / "CN", or null
-        public List<Tile> Tiles = new List<Tile>();            // empty outside a BG match
-        public List<int> LobbyTribes = new List<int>();        // TAG_RACE ids, empty outside a match
+        public string Region;                                    // "US" / "EU" / "AP" / "CN", or null
+        public long GameStateAddr;                               // 0 = no game; a new address = a new game object
+        public Dictionary<int, EntitySnap> Entities = new Dictionary<int, EntitySnap>();
+        public int GameEntityId, LocalPlayerEntityId, OpponentPlayerEntityId;
+        public List<TileSnap> Tiles = new List<TileSnap>();      // screen order
+        public int TeamsWithTwo;                                 // duos: teams holding two tiles
+        public List<KeyValuePair<string, string>> Lobby = new List<KeyValuePair<string, string>>();   // name, hero card id
+        public List<int> LobbyTribes = new List<int>();
+        public long ReadMs;
     }
 
     /// <summary>
@@ -37,12 +47,16 @@ namespace Toolkit.Standalone
         private int _pid;
         private bool _statics;
         private string _lastError;
+        // Strings in the client never move (Boehm GC, non-moving) and card ids repeat endlessly:
+        // remember them by address for the life of one game object.
+        private readonly Dictionary<long, string> _strings = new Dictionary<long, string>();
+        private long _stringsFor;
 
         public GameReader(Action<string> log) { _log = log; }
 
         public void Dispose() { Detach(); }
 
-        private void Detach() { _mem?.Dispose(); _mem = null; _mono = null; _pid = 0; _statics = false; }
+        private void Detach() { _mem?.Dispose(); _mem = null; _mono = null; _pid = 0; _statics = false; _strings.Clear(); }
 
         /// <summary>Null when Hearthstone isn't running or can't be read yet.</summary>
         public Snapshot Read()
@@ -67,7 +81,9 @@ namespace Toolkit.Standalone
                     if (!_statics) return null;
                     _log("statics calibrated");
                 }
+                var sw = Stopwatch.StartNew();
                 var snap = Walk();
+                snap.ReadMs = sw.ElapsedMilliseconds;
                 _lastError = null;
                 return snap;
             }
@@ -80,66 +96,93 @@ namespace Toolkit.Standalone
             }
         }
 
+        private string CachedStr(long addr)
+        {
+            if (addr == 0) return null;
+            string s;
+            if (_strings.TryGetValue(addr, out s)) return s;
+            s = _mono.Str(addr);
+            if (s != null) _strings[addr] = s;
+            return s;
+        }
+
+        private Dictionary<int, int> TagsOf(long entity)
+        {
+            var d = new Dictionary<int, int>();
+            foreach (var t in _mono.IntIntDict(_mono.Obj(_mono.Obj(entity, "m_tags"), "m_values"))) d[t.Key] = t.Value;
+            return d;
+        }
+
         private Snapshot Walk()
         {
             var m = _mono;
             var s = new Snapshot();
 
             long presence = m.StaticObj("BnetPresenceMgr", "s_instance");
-            long myTag = m.Obj(m.Obj(m.Obj(presence, "m_myPlayer"), "m_account"), "m_battleTag");
-            s.Me = m.Str(myTag, "m_name");
             s.Region = Region(m.Obj(m.Obj(presence, "m_myGameAccountId"), "<EntityId>k__BackingField"));
 
             long gs = m.StaticObj("GameState", "s_instance");
+            s.GameStateAddr = gs;
             if (gs == 0) return s;
+            if (_stringsFor != gs) { _strings.Clear(); _stringsFor = gs; }
 
-            // Lobby: player id -> display name. Filled from Battle.net presence, so present in a real
-            // match from the first read; empty for the opponents of a replay.
-            var names = new Dictionary<int, string>();
-            foreach (var kv in m.IntMap(m.Obj(gs, "m_playerInfoMap")))
-                names[kv.Key] = m.Str(kv.Value, "m_name");
-
-            // The tribes in this lobby (excluding the amalgam), a List<TAG_RACE>: 4-byte enums inline.
-            long tribes = m.Obj(gs, "m_availableRacesInBattlegroundsExcludingAmalgam");
-            long items = m.Obj(tribes, "_items");
-            int count = Math.Min(m.Int(tribes, "_size"), m.ArrayLen(items));
-            for (int i = 0; i < count && i < 32; i++)
+            // Every entity the client holds: id -> card id + tags.
+            foreach (var kv in m.IntMap(m.Obj(gs, "m_entityMap")))
             {
-                int race = m.M.I32(items + 0x20 + i * 4L);
-                if (race > 0) s.LobbyTribes.Add(race);
+                if (kv.Value == 0) continue;
+                s.Entities[kv.Key] = new EntitySnap
+                {
+                    Id = kv.Key,
+                    CardId = CachedStr(m.Obj(kv.Value, "m_cardIdInternal")),
+                    Tags = TagsOf(kv.Value)
+                };
             }
+            long gameEntity = m.Obj(gs, "m_gameEntity");
+            if (gameEntity != 0)
+            {
+                int id;
+                if (TagsOf(gameEntity).TryGetValue(53, out id)) s.GameEntityId = id;      // ENTITY_ID
+            }
+
+            // The two Player objects: the local one, and whoever it faces now.
+            foreach (var kv in m.IntMap(m.Obj(gs, "m_playerMap")))
+            {
+                long local = m.FieldAddr(kv.Value, "m_local");
+                bool isLocal = local != 0 && (m.M.I32(local) & 0xFF) != 0;
+                if (isLocal) s.LocalPlayerEntityId = kv.Key; else s.OpponentPlayerEntityId = kv.Key;
+            }
+
+            // Lobby: display name + hero per player, from Battle.net presence.
+            foreach (var kv in m.IntMap(m.Obj(gs, "m_playerInfoMap")))
+            {
+                long hero = m.Obj(kv.Value, "m_playerHero");
+                s.Lobby.Add(new KeyValuePair<string, string>(m.Str(kv.Value, "m_name"), CachedStr(m.Obj(hero, "m_cardIdInternal"))));
+            }
+
+            foreach (int race in m.IntList(m.Obj(gs, "m_availableRacesInBattlegroundsExcludingAmalgam")))
+                if (race > 0) s.LobbyTribes.Add(race);
 
             long mgr = m.StaticObj("PlayerLeaderboardManager", "s_instance");
             if (mgr == 0) return s;
             foreach (long team in m.List(m.Obj(mgr, "m_teams")))
+            {
+                int cards = 0;
                 foreach (long card in m.List(m.Obj(team, "m_playerLeaderboardCards")))
                 {
-                    long hero = m.Obj(card, "m_playerHeroEntity");
-                    var t = new Tile { HeroCardId = m.Str(hero, "m_cardIdInternal") };
-                    int health = 0, damage = 0;
-                    foreach (var tag in m.IntIntDict(m.Obj(m.Obj(hero, "m_tags"), "m_values")))
-                    {
-                        switch (tag.Key)
-                        {
-                            case 30: t.PlayerId = tag.Value; break;      // PLAYER_ID
-                            case 1373: t.Place = tag.Value; break;       // PLAYER_LEADERBOARD_PLACE
-                            case 1377: t.Tier = tag.Value; break;        // PLAYER_TECH_LEVEL
-                            case 45: health = tag.Value; break;          // HEALTH
-                            case 44: damage = tag.Value; break;          // DAMAGE
-                        }
-                    }
-                    t.Health = health - damage;
+                    cards++;
+                    var t = new TileSnap();
+                    int id;
+                    if (TagsOf(m.Obj(card, "m_playerHeroEntity")).TryGetValue(53, out id)) t.HeroEntityId = id;
                     foreach (var r in m.IntIntMap(m.Obj(m.Obj(card, "m_overlay"), "m_raceCounts"))) t.Races[r.Key] = r.Value;
-                    string name;
-                    if (names.TryGetValue(t.PlayerId, out name)) t.Name = name;
-                    t.IsMe = t.Name != null && t.Name == s.Me;
                     s.Tiles.Add(t);
                 }
+                if (cards >= 2) s.TeamsWithTwo++;
+            }
             return s;
         }
 
-        // Battle.net EntityId { high_, low_ }: the region is byte 4 of the high half
-        // (1 = US, 2 = EU, 3 = Asia, 5 = China).
+        // Battle.net EntityId { high_, low_ }: the region is byte 4 of the high half of the game
+        // account logged in now (1 = US, 2 = EU, 3 = Asia, 5 = China).
         private string Region(long entityId)
         {
             if (entityId == 0) return null;

@@ -17,28 +17,43 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="System.Xaml" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="WindowsBase" />
+    <!-- The features use Json.NET (MIT). HDT ships it to the plugin; standing alone, we bring it. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\libs\Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The plugin assembly itself: its features run here on the standalone host seams. Its HDT
+         references are never loaded, because nothing here touches Host\Hdt\ or Plugin. -->
+    <ProjectReference Include="..\HsbgCardLookup\HsbgCardLookup.csproj">
+      <Project>{E53BEEE6-D1E5-41EA-8F48-8D807F9E706D}</Project>
+      <Name>HsbgCardLookup</Name>
+      <!-- Always the Release plugin: a Debug build would start its HDT-only probes. -->
+      <SetConfiguration>Configuration=Release</SetConfiguration>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\MemSpike\Mem.cs"><Link>Reader\Mem.cs</Link></Compile>
     <Compile Include="..\MemSpike\Mono.cs"><Link>Reader\Mono.cs</Link></Compile>
-    <Compile Include="..\HsbgCardLookup\data\TribeTally.cs"><Link>Shared\TribeTally.cs</Link></Compile>
     <Compile Include="GameReader.cs" />
     <Compile Include="HsWindow.cs" />
-    <Compile Include="MmrTable.cs" />
     <Compile Include="OverlayWindow.cs" />
+    <Compile Include="StandaloneHost.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\HsbgCardLookup\data\tiers\*.png"><Link>tiers\%(Filename)%(Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
-    <None Include="..\HsbgCardLookup\data\tribes\*.jpg"><Link>tribes\%(Filename)%(Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+    <!-- The plugin's bundled data, where its code looks for it: next to the assembly, under data\. -->
+    <None Include="..\HsbgCardLookup\data\**\*.json;..\HsbgCardLookup\data\**\*.png;..\HsbgCardLookup\data\**\*.jpg">
+      <Link>data\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
