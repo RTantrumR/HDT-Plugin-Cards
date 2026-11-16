@@ -39,19 +39,28 @@ if (-not $SkipBuild) {
     Write-Host "Building Release..." -ForegroundColor Cyan
     & $msbuild "$repo\HsbgCardLookup.sln" /t:Rebuild /p:Configuration=Release /v:minimal /nologo
     if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)." }
+    # The standalone exe (not in the solution; it builds the Release plugin it references itself).
+    & $msbuild "$repo\Standalone\Standalone.csproj" /t:Rebuild /p:Configuration=Release /v:minimal /nologo
+    if ($LASTEXITCODE -ne 0) { throw "Standalone build failed (exit $LASTEXITCODE)." }
 }
 
 $bin = "$repo\HsbgCardLookup\bin\Release"
 if (-not (Test-Path "$bin\HsbgCardLookup.dll")) { throw "DLL not found at $bin\HsbgCardLookup.dll" }
 if (-not (Test-Path "$bin\data\cards.json")) { throw "data\cards.json missing from build output" }
+$standaloneBin = "$repo\Standalone\bin\Release"
+if (-not (Test-Path "$standaloneBin\TantrumsToolkitStandalone.exe")) { throw "Standalone exe not found in $standaloneBin" }
 
-# HDT's own assemblies are Private=False, so bin holds only our DLL + the bundled runtime deps.
-# The PDB is omitted.
+# Two sets, one per mode. Plugin: our DLL + the bundled runtime deps (HDT's own assemblies are
+# Private=False) + data\. Standalone: the exe, its config, every DLL next to it (the plugin assembly,
+# Json.NET, the WebP decoder), data\ and the icon. No PDBs, logs or test leftovers.
 $stage = Join-Path $here "stage"
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
-Copy-Item "$bin\*.dll" $stage -Force
-Copy-Item "$bin\data" $stage -Recurse -Force
+New-Item -ItemType Directory -Force -Path "$stage\plugin", "$stage\standalone" | Out-Null
+Copy-Item "$bin\*.dll" "$stage\plugin" -Force
+Copy-Item "$bin\data" "$stage\plugin" -Recurse -Force
+Copy-Item "$standaloneBin\TantrumsToolkitStandalone.exe", "$standaloneBin\TantrumsToolkitStandalone.exe.config", "$standaloneBin\toolkit.ico" "$stage\standalone" -Force
+Copy-Item "$standaloneBin\*.dll" "$stage\standalone" -Force
+Copy-Item "$standaloneBin\data" "$stage\standalone" -Recurse -Force
 
 # The language page's flags: the plugin's own Ui\Flags.cs rendered to BMPs (out\flags) by
 # tools\RenderFlags.cs, so the wizard shows the same marks as the plugin and the site.
