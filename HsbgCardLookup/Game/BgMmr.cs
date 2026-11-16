@@ -5,11 +5,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Newtonsoft.Json;
-using Hearthstone_Deck_Tracker;                 // Core
-using Hearthstone_Deck_Tracker.Enums;           // Region
-using HearthDb.Enums;                            // GameTag
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Host;
 using HsbgCardLookup.Net;
 using HsbgCardLookup.Ui;
 
@@ -32,7 +30,7 @@ namespace HsbgCardLookup.Game
 
         // The game's own per-opponent minion-type counts (what its leaderboard tile shows), read from
         // client memory — see LeaderboardRaceScry. Keyed by hero entity id; refreshed every RaceMs.
-        private readonly LeaderboardRaceScry _raceScry;
+        private readonly IRaceReader _raceScry;
         private Dictionary<int, Dictionary<int, int>> _races;
         private DateTime _lastRaceRead = DateTime.MinValue;
         private const int RaceMs = 2000;
@@ -74,7 +72,7 @@ namespace HsbgCardLookup.Game
         public BgMmr(PluginConfig config, Dispatcher ui, Action<string> log, Func<string, string> heroName = null)
         {
             _config = config; _ui = ui; _log = log; _heroName = heroName;
-            _raceScry = new LeaderboardRaceScry(log);
+            _raceScry = HostServices.Memory?.CreateRaceReader(log);
             HookGameEvents();
         }
 
@@ -88,7 +86,7 @@ namespace HsbgCardLookup.Game
                 bool isBg = false, isDuos = false;
                 try
                 {
-                    var gg = Core.Game;
+                    var gg = HostServices.Game;
                     isBg = gg != null && gg.IsBattlegroundsMatch;
                     isDuos = isBg && gg.IsBattlegroundsDuosMatch;
                 }
@@ -117,7 +115,7 @@ namespace HsbgCardLookup.Game
                         if (_races == null || (now - _lastRaceRead).TotalMilliseconds >= RaceMs)
                         {
                             _lastRaceRead = now;
-                            var r = _raceScry.Read();
+                            var r = _raceScry?.Read();
                             if (r != null) _races = r;
                         }
                     }
@@ -201,16 +199,16 @@ namespace HsbgCardLookup.Game
             var outp = new List<LeaderboardOverlay.Row>();
             try
             {
-                var g = Core.Game;
-                if (g?.Entities == null) return outp;
+                var g = HostServices.Game;
+                if (g == null) return outp;
 
                 // Hero card id (skin/gold-normalized) -> player battletag, from the lobby roster.
                 var heroToName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
-                    var lobby = HearthMirror.Reflection.Client?.GetBattlegroundsLobbyInfo();
-                    if (lobby?.Players != null)
-                        foreach (var p in lobby.Players)
+                    var lobby = HostServices.Memory?.LobbyPlayers();
+                    if (lobby != null)
+                        foreach (var p in lobby)
                             if (!string.IsNullOrEmpty(p?.HeroCardId) && !string.IsNullOrWhiteSpace(p?.Name))
                                 heroToName[NormHero(p.HeroCardId)] = p.Name;
                 }
@@ -218,15 +216,15 @@ namespace HsbgCardLookup.Game
 
                 // Ghost hero copies can briefly duplicate a place — prefer the in-play entity.
                 var byPlace = new Dictionary<int, KeyValuePair<bool, LeaderboardOverlay.Row>>();
-                foreach (var e in Snapshot(g.Entities.Values))
+                foreach (var e in g.Entities())
                 {
-                    int place; try { place = e.GetTag(GameTag.PLAYER_LEADERBOARD_PLACE); } catch { continue; }
+                    int place; try { place = e.GetTag(Tags.PLAYER_LEADERBOARD_PLACE); } catch { continue; }
                     if (place <= 0) continue;
                     string cid = e?.CardId;
                     if (string.IsNullOrEmpty(cid)) continue;
 
                     int pid = 0;
-                    try { if (e.HasTag(GameTag.PLAYER_ID)) pid = e.GetTag(GameTag.PLAYER_ID); } catch { }
+                    try { if (e.HasTag(Tags.PLAYER_ID)) pid = e.GetTag(Tags.PLAYER_ID); } catch { }
                     bool inPlay = false;
                     try { inPlay = e.IsInPlay; } catch { }
 
@@ -235,22 +233,22 @@ namespace HsbgCardLookup.Game
                         // Tier can transiently read 0 while HS swaps hero entities → latch last valid.
                         try
                         {
-                            if (e.HasTag(GameTag.PLAYER_TECH_LEVEL))
+                            if (e.HasTag(Tags.PLAYER_TECH_LEVEL))
                             {
-                                int t = e.GetTag(GameTag.PLAYER_TECH_LEVEL);
+                                int t = e.GetTag(Tags.PLAYER_TECH_LEVEL);
                                 if (t >= 1 && t <= 7) _lastTier[pid] = t;
                             }
                         }
                         catch { }
                         // Death is latched — a BG player can't resurrect, and a later ghost copy may
                         // read full health again.
-                        try { if (e.HasTag(GameTag.HEALTH) && e.Health <= 0) _dead.Add(pid); } catch { }
+                        try { if (e.HasTag(Tags.HEALTH) && e.Health <= 0) _dead.Add(pid); } catch { }
                     }
 
                     // The hero name is read unconditionally: the panel can display it in place of the
                     // player name (streamer mode), not just when there is no battletag to show.
                     string heroName = null;
-                    try { heroName = _heroName?.Invoke(cid) ?? _heroName?.Invoke(NormHero(cid)) ?? e.Card?.Name; } catch { }
+                    try { heroName = _heroName?.Invoke(cid) ?? _heroName?.Invoke(NormHero(cid)) ?? e.CardName; } catch { }
 
                     string name = heroToName.TryGetValue(NormHero(cid), out var n) ? n : null;
                     int rating = 0, delta = 0; bool pending = _players == null;
@@ -337,16 +335,16 @@ namespace HsbgCardLookup.Game
             var outp = new List<LeaderboardOverlay.Row>();
             try
             {
-                var g = Core.Game;
-                if (g?.Entities == null) return outp;
+                var g = HostServices.Game;
+                if (g == null) return outp;
 
                 // Hero card id (skin/gold-normalized) -> player battletag, from the lobby roster.
                 var heroToName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
-                    var lobby = HearthMirror.Reflection.Client?.GetBattlegroundsLobbyInfo();
-                    if (lobby?.Players != null)
-                        foreach (var p in lobby.Players)
+                    var lobby = HostServices.Memory?.LobbyPlayers();
+                    if (lobby != null)
+                        foreach (var p in lobby)
                             if (!string.IsNullOrEmpty(p?.HeroCardId) && !string.IsNullOrWhiteSpace(p?.Name))
                                 heroToName[NormHero(p.HeroCardId)] = p.Name;
                 }
@@ -354,10 +352,10 @@ namespace HsbgCardLookup.Game
 
                 var recs = new Dictionary<int, DuoRec>();
                 var ffPids = new HashSet<int>();
-                foreach (var e in Snapshot(g.Entities.Values))
+                foreach (var e in g.Entities())
                 {
                     int pid = 0;
-                    try { if (e.HasTag(GameTag.PLAYER_ID)) pid = e.GetTag(GameTag.PLAYER_ID); } catch { }
+                    try { if (e.HasTag(Tags.PLAYER_ID)) pid = e.GetTag(Tags.PLAYER_ID); } catch { }
                     if (pid <= 0) continue;
 
                     // Team-link + fights-first tags can sit on any of the player's entities (hero or
@@ -365,23 +363,23 @@ namespace HsbgCardLookup.Game
                     // that PLAYER_ID), so read them before the hero-row filter below.
                     try
                     {
-                        if (e.HasTag(GameTag.BACON_DUO_TEAMMATE_PLAYER_ID))
+                        if (e.HasTag(Tags.BACON_DUO_TEAMMATE_PLAYER_ID))
                         {
-                            int mate = e.GetTag(GameTag.BACON_DUO_TEAMMATE_PLAYER_ID);
+                            int mate = e.GetTag(Tags.BACON_DUO_TEAMMATE_PLAYER_ID);
                             if (mate > 0 && mate != pid) _teammate[pid] = mate;   // latched
                         }
                     }
                     catch { }
                     try
                     {
-                        if (e.HasTag(GameTag.BACON_DUO_PLAYER_FIGHTS_FIRST_NEXT_COMBAT)
-                            && e.GetTag(GameTag.BACON_DUO_PLAYER_FIGHTS_FIRST_NEXT_COMBAT) > 0)
+                        if (e.HasTag(Tags.BACON_DUO_PLAYER_FIGHTS_FIRST_NEXT_COMBAT)
+                            && e.GetTag(Tags.BACON_DUO_PLAYER_FIGHTS_FIRST_NEXT_COMBAT) > 0)
                             ffPids.Add(pid);
                     }
                     catch { }
 
                     int place = 0;
-                    try { place = e.GetTag(GameTag.PLAYER_LEADERBOARD_PLACE); } catch { }
+                    try { place = e.GetTag(Tags.PLAYER_LEADERBOARD_PLACE); } catch { }
                     string cid = e?.CardId;
                     if (place <= 0 || string.IsNullOrEmpty(cid)) continue;   // hero rows only below
 
@@ -389,19 +387,19 @@ namespace HsbgCardLookup.Game
                     // swaps hero entities; death is permanent, ghost copies may read full health).
                     try
                     {
-                        if (e.HasTag(GameTag.PLAYER_TECH_LEVEL))
+                        if (e.HasTag(Tags.PLAYER_TECH_LEVEL))
                         {
-                            int t = e.GetTag(GameTag.PLAYER_TECH_LEVEL);
+                            int t = e.GetTag(Tags.PLAYER_TECH_LEVEL);
                             if (t >= 1 && t <= 7) _lastTier[pid] = t;
                         }
                     }
                     catch { }
-                    try { if (e.HasTag(GameTag.HEALTH) && e.Health <= 0) _dead.Add(pid); } catch { }
+                    try { if (e.HasTag(Tags.HEALTH) && e.Health <= 0) _dead.Add(pid); } catch { }
 
                     bool inPlay = false;
                     try { inPlay = e.IsInPlay; } catch { }
                     string heroName = null;
-                    try { heroName = _heroName?.Invoke(cid) ?? _heroName?.Invoke(NormHero(cid)) ?? e.Card?.Name; } catch { }
+                    try { heroName = _heroName?.Invoke(cid) ?? _heroName?.Invoke(NormHero(cid)) ?? e.CardName; } catch { }
 
                     if (!recs.TryGetValue(pid, out var rec))
                         recs[pid] = new DuoRec { Pid = pid, EntityId = e.Id, CardId = cid, HeroName = heroName, Place = place, InPlay = inPlay };
@@ -487,19 +485,19 @@ namespace HsbgCardLookup.Game
         {
             try
             {
-                var g = Core.Game;
+                var g = HostServices.Game;
                 int next = 0, nextMate = 0;
                 try
                 {
                     var pe = g?.PlayerEntity;
-                    if (pe != null && pe.HasTag(GameTag.NEXT_OPPONENT_PLAYER_ID))
-                        next = pe.GetTag(GameTag.NEXT_OPPONENT_PLAYER_ID);
-                    if (pe != null && pe.HasTag(GameTag.NEXT_OPPONENT_TEAMMATE_PLAYER_ID))
-                        nextMate = pe.GetTag(GameTag.NEXT_OPPONENT_TEAMMATE_PLAYER_ID);
+                    if (pe != null && pe.HasTag(Tags.NEXT_OPPONENT_PLAYER_ID))
+                        next = pe.GetTag(Tags.NEXT_OPPONENT_PLAYER_ID);
+                    if (pe != null && pe.HasTag(Tags.NEXT_OPPONENT_TEAMMATE_PLAYER_ID))
+                        nextMate = pe.GetTag(Tags.NEXT_OPPONENT_TEAMMATE_PLAYER_ID);
                 }
                 catch { }
                 int selfId = 0;
-                try { selfId = g?.Player?.Id ?? 0; } catch { }
+                try { selfId = g?.PlayerId ?? 0; } catch { }
                 if (next > 0 && next != selfId)
                 {
                     _trackedOpponentId = next;
@@ -513,7 +511,7 @@ namespace HsbgCardLookup.Game
                 if (isCombat)
                 {
                     if (_trackedOpponentId <= 0)
-                        try { var o = g?.Opponent; if (o != null && o.Id > 0) _trackedOpponentId = o.Id; } catch { }
+                        try { int o = g?.OpponentId ?? 0; if (o > 0) _trackedOpponentId = o; } catch { }
                     if (_trackedOpponentId > 0) _combatOpponentId = _trackedOpponentId;
                 }
                 else if (_wasCombat && _combatOpponentId > 0)
@@ -635,7 +633,7 @@ namespace HsbgCardLookup.Game
                 var o = _overlay; var p = _panel;
                 _overlay = null; _panel = null;
                 if (o != null || p != null)
-                    (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() =>
+                    (HostServices.Overlay?.Dispatcher ?? _ui)?.Invoke(new Action(() =>
                     {
                         o?.Detach();
                         p?.Close();
@@ -646,7 +644,7 @@ namespace HsbgCardLookup.Game
 
         private void Marshal(Action action)
         {
-            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
+            try { (HostServices.Overlay?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
         }
 
         // ── Leaderboard blob: fetch once per match+mode, disk-cache fallback ──────────────────────────
@@ -713,14 +711,7 @@ namespace HsbgCardLookup.Game
         {
             try
             {
-                switch (Core.Game.CurrentRegion)
-                {
-                    case Region.US: return "US";
-                    case Region.EU: return "EU";
-                    case Region.ASIA: return "AP";
-                    case Region.CHINA: return "CN";
-                    default: return null;
-                }
+                return HostServices.Game?.Region;
             }
             catch { return null; }
         }
@@ -743,14 +734,7 @@ namespace HsbgCardLookup.Game
             _dead.Clear(); _lastTier.Clear(); _teammate.Clear();
             _trackedOpponentId = 0; _trackedOpponentTeammateId = 0;
             _combatOpponentId = 0; _lastOpponentId = 0; _wasCombat = false;
-            _races = null; _lastRaceRead = DateTime.MinValue; _raceScry.ResetMatch();
-        }
-
-        private static IEnumerable<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity> Snapshot(
-            IEnumerable<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity> src)
-        {
-            try { return src == null ? Enumerable.Empty<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity>() : src.ToList(); }
-            catch { return Enumerable.Empty<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity>(); }
+            _races = null; _lastRaceRead = DateTime.MinValue; _raceScry?.ResetMatch();
         }
 
         private void HookGameEvents()
@@ -758,9 +742,9 @@ namespace HsbgCardLookup.Game
             _current = this;
             if (_hooked) return;
             _hooked = true;
-            try { Hearthstone_Deck_Tracker.API.GameEvents.OnGameEnd.Add(new Action(() => _current?.MarkEnded())); }
+            try { HostServices.Game.GameEnded += () => _current?.MarkEnded(); }
             catch { }
-            try { Hearthstone_Deck_Tracker.API.GameEvents.OnGameStart.Add(new Action(() => { var c = _current; if (c != null) c._startFlag = true; })); }
+            try { HostServices.Game.GameStarted += () => { var c = _current; if (c != null) c._startFlag = true; }; }
             catch { }
         }
 

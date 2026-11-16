@@ -7,8 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
-using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
@@ -70,7 +69,7 @@ namespace HsbgCardLookup.Ui
         /// <summary>The canvas this card lives in: HDT's game overlay by default, or a caller's own
         /// canvas for an off-game preview. Held per instance rather than swapped globally, so a preview
         /// can never capture a live in-match card's attach (and vice versa).</summary>
-        private Canvas Host => _host ?? Core.OverlayCanvas;
+        private Canvas Host => _host ?? HostServices.Overlay?.Canvas;
 
         /// <summary>Where the card currently sits in its canvas, at the size it will really measure in
         /// game. Zero-size until the first layout pass.</summary>
@@ -177,7 +176,7 @@ namespace HsbgCardLookup.Ui
 
                 // Registers with HDT's hover loop so the overlay window becomes clickable over this
                 // card. Meaningless for a preview, which is not in HDT's overlay at all.
-                try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+                try { HostServices.Overlay?.SetHitTestVisible(_root); } catch { }
             }
         }
 
@@ -411,7 +410,7 @@ namespace HsbgCardLookup.Ui
             xf = yf = wf = 0;
             try
             {
-                var canvas = Core.OverlayCanvas;
+                var canvas = HostServices.Overlay?.Canvas;
                 if (canvas == null) return false;
                 double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
                 if (cw <= 0 || ch <= 0) return false;

@@ -1,4 +1,4 @@
-using Hearthstone_Deck_Tracker.API;                 // Core.OverlayCanvas
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
@@ -24,7 +24,7 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
-                var canvas = Core.OverlayCanvas;
+                var canvas = HostServices.Overlay?.Canvas;
                 if (canvas != null && canvas.ActualWidth > 0 && canvas.ActualHeight > 0)
                 {
                     cw = canvas.ActualWidth; ch = canvas.ActualHeight;
@@ -34,8 +34,8 @@ namespace HsbgCardLookup.Ui
             catch { }
             try
             {
-                var r = Hearthstone_Deck_Tracker.User32.GetHearthstoneRect(true);   // true = DIPs
-                if (r.Width > 0 && r.Height > 0) { cw = r.Width; ch = r.Height; return; }
+                var r = HostServices.Overlay?.HearthstoneRect();   // DIPs
+                if (r.HasValue && r.Value.Width > 0 && r.Value.Height > 0) { cw = r.Value.Width; ch = r.Value.Height; return; }
             }
             catch { }
             cw = FallbackW; ch = FallbackH;

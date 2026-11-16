@@ -15,8 +15,9 @@ using Hearthstone_Deck_Tracker;                       // Core
 using Hearthstone_Deck_Tracker.Hearthstone.Entities;  // Entity
 using HearthDb.Enums;                                  // GameTag
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Game;
 
-namespace HsbgCardLookup.Game
+namespace HsbgCardLookup.Host.Hdt
 {
     /// <summary>
     /// READ-ONLY diagnostics. On a throttled poll (driven by IPlugin.OnUpdate) it snapshots live

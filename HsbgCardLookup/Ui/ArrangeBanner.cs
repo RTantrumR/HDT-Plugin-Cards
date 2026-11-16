@@ -3,9 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
-using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
 using HsbgCardLookup.Localization;
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
@@ -47,7 +46,7 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
-                Core.OverlayCanvas?.Dispatcher?.BeginInvoke(new Action(() => Apply(target)));
+                HostServices.Overlay?.Canvas?.Dispatcher?.BeginInvoke(new Action(() => Apply(target)));
             }
             catch { }
         }
@@ -56,9 +55,9 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
-                Core.OverlayCanvas?.Dispatcher?.Invoke(new Action(() =>
+                HostServices.Overlay?.Canvas?.Dispatcher?.Invoke(new Action(() =>
                 {
-                    var canvas = Core.OverlayCanvas;
+                    var canvas = HostServices.Overlay?.Canvas;
                     if (canvas == null || !_attached) return;
                     canvas.SizeChanged -= OnCanvasSizeChanged;
                     canvas.Children.Remove(_root);
@@ -78,7 +77,7 @@ namespace HsbgCardLookup.Ui
                 return;
             }
 
-            var canvas = Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null) return;
             if (!_attached)
             {
@@ -161,12 +160,12 @@ namespace HsbgCardLookup.Ui
 
             // Only this element becomes clickable, and only while the cursor is on it — the rest of
             // the overlay stays click-through so the game still receives everything else.
-            try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+            try { HostServices.Overlay?.SetHitTestVisible(_root); } catch { }
         }
 
         private void Layout()
         {
-            var canvas = Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null || _root == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;

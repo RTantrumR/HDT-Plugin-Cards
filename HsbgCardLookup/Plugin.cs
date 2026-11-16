@@ -39,8 +39,8 @@ namespace HsbgCardLookup
         private Ui.SearchButton _searchButton;                    // in-game 🔍 button by the card-list book
         private SettingsWindow _settings;
 #if DEBUG
-        private Game.GameStateProbe _probe;                     // read-only BG state logger (Debug-only diagnostics)
-        private Game.DarkGiftProbe _giftProbe;                  // Dark Gift / Dark Discovery capture (Debug-only)
+        private Host.Hdt.GameStateProbe _probe;                     // read-only BG state logger (Debug-only diagnostics)
+        private Host.Hdt.DarkGiftProbe _giftProbe;                  // Dark Gift / Dark Discovery capture (Debug-only)
 #endif
         private CardLanguage _cardLanguage;                      // game content: cards, art, the game's words
         private MenuItem _menuOpen, _menuSettings, _menuUpdate;  // HDT plugins-menu items, relabelled on a language change
@@ -121,6 +121,10 @@ namespace HsbgCardLookup
             // (the CLR probes HDT's app dir, not our subfolder).
             AppDomain.CurrentDomain.AssemblyResolve += ResolveBundledAssembly;
 
+            // The features reach HDT only through the host seams (Host\Seams.cs); install them before
+            // anything that reads game state, the overlay canvas or HDT's language is built.
+            Host.Hdt.HdtHost.Install();
+
             _name = DisplayName;   // HDT has matched plugins.xml by now (see Name)
 
             // OnLoad runs on HDT's WPF UI thread.
@@ -156,8 +160,8 @@ namespace HsbgCardLookup
             new System.Windows.Interop.WindowInteropHelper(_overlayLarge).EnsureHandle();
 
 #if DEBUG
-            _probe = new Game.GameStateProbe(_store);
-            _giftProbe = new Game.DarkGiftProbe(_store);
+            _probe = new Host.Hdt.GameStateProbe(_store);
+            _giftProbe = new Host.Hdt.DarkGiftProbe(_store);
 #endif
 
             RewireHotkeys();

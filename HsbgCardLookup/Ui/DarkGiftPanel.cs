@@ -11,10 +11,9 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
-using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
 using HsbgCardLookup.Search;
 using HsbgCardLookup.Localization;
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
@@ -22,7 +21,7 @@ namespace HsbgCardLookup.Ui
     /// The Dark Gift list panel — summoned by clicking the "?" marker that sits above the in-game Dark
     /// Discovery button (see <see cref="DarkGiftMarker"/>, <see cref="Game.DarkGiftWatcher"/>). It is
     /// NOT a window: the whole panel
-    /// lives inside HDT's own overlay canvas (<c>Core.OverlayCanvas</c>), registered with
+    /// lives inside HDT's own overlay canvas (<c>HostServices.Overlay?.Canvas</c>), registered with
     /// <c>OverlayExtensions.SetIsOverlayHitTestVisible</c> so HDT drops <c>WS_EX_TRANSPARENT</c> while
     /// the cursor is on it — real wheel/right-click reach us while the overlay window stays
     /// <c>WS_EX_NOACTIVATE</c>, so Hearthstone never loses foreground.
@@ -72,7 +71,7 @@ namespace HsbgCardLookup.Ui
         /// <summary>The canvas this panel lives in: HDT's game overlay by default, or a caller's own
         /// canvas for an off-game preview. Held per instance rather than swapped globally, so a preview
         /// can never capture the live in-match panel's attach (and vice versa).</summary>
-        private Canvas Host => _host ?? Core.OverlayCanvas;
+        private Canvas Host => _host ?? HostServices.Overlay?.Canvas;
 
         /// <summary>The panel's width. Read from <c>_root.Width</c>, not ActualWidth, and that
         /// matters: SetContent assigns the new width and the right-edge placement runs in the SAME
@@ -239,7 +238,7 @@ namespace HsbgCardLookup.Ui
                 // Ask HDT to treat this element as clickable: its 60Hz hover loop drops WS_EX_TRANSPARENT
                 // from the overlay window while the cursor is inside us, so wheel/right-click land here.
                 // Meaningless for a preview, which is not in HDT's overlay at all.
-                try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+                try { HostServices.Overlay?.SetHitTestVisible(_root); } catch { }
             }
         }
 

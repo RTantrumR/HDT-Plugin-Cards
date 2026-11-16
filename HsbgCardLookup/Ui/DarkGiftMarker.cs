@@ -5,9 +5,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using Hearthstone_Deck_Tracker.Utility.Extensions;  // OverlayExtensions
 
 using HsbgCardLookup.Localization;
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
@@ -90,7 +90,7 @@ namespace HsbgCardLookup.Ui
         public void SetVisible(bool visible)
         {
             if (!visible) { if (_root != null) { _root.Visibility = Visibility.Collapsed; _box = null; } return; }
-            var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null) return;
             if (!_attached)
             {
@@ -136,7 +136,7 @@ namespace HsbgCardLookup.Ui
             _box = null;
             try
             {
-                var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+                var canvas = HostServices.Overlay?.Canvas;
                 if (canvas == null || !_attached) return;
                 canvas.SizeChanged -= OnCanvasSizeChanged;
                 canvas.Children.Remove(_root);
@@ -175,7 +175,7 @@ namespace HsbgCardLookup.Ui
                 try { Clicked?.Invoke(); } catch { }
             };
 
-            try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+            try { HostServices.Overlay?.SetHitTestVisible(_root); } catch { }
         }
 
         private void ApplyColors()
@@ -189,7 +189,7 @@ namespace HsbgCardLookup.Ui
 
         private void Layout()
         {
-            var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null || _root == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;

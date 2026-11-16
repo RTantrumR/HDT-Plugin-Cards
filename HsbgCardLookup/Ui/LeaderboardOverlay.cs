@@ -5,14 +5,14 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
-using Hearthstone_Deck_Tracker.API;   // Core.OverlayCanvas
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
     /// <summary>
     /// Per-portrait MMR labels for the BG leaderboard, drawn inside HDT's own overlay canvas
-    /// (<c>Core.OverlayCanvas</c>). Solo and duos layouts (<see cref="IsDuos"/> picks the slot
+    /// (<c>HostServices.Overlay?.Canvas</c>). Solo and duos layouts (<see cref="IsDuos"/> picks the slot
     /// arrays). Reference geometry adapted from HDT-BGMMRPlugin (MIT) — see NOTICE (repo root).
     /// </summary>
     public sealed class LeaderboardOverlay
@@ -189,7 +189,7 @@ namespace HsbgCardLookup.Ui
         public void Attach()
         {
             if (_attached) return;
-            var canvas = Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null) return;
             for (int i = 0; i < MaxSlots; i++)
             {
@@ -210,7 +210,7 @@ namespace HsbgCardLookup.Ui
             _attached = false;
             try
             {
-                var canvas = Core.OverlayCanvas;
+                var canvas = HostServices.Overlay?.Canvas;
                 if (canvas == null) return;
                 canvas.SizeChanged -= OnCanvasSizeChanged;
                 for (int i = 0; i < MaxSlots; i++)
@@ -305,7 +305,7 @@ namespace HsbgCardLookup.Ui
 
         private void UpdateLayout()
         {
-            var canvas = Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;

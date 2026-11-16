@@ -3,10 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using Hearthstone_Deck_Tracker;                       // Core
-using Hearthstone_Deck_Tracker.Hearthstone.Entities;  // Entity
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Host;
 using HsbgCardLookup.Localization;
 using HsbgCardLookup.Search;
 using HsbgCardLookup.Ui;
@@ -87,7 +86,7 @@ namespace HsbgCardLookup.Game
         // The cards live on HDT's overlay canvas, so their work belongs on that canvas' dispatcher.
         private void Marshal(Action action)
         {
-            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
+            try { (HostServices.Overlay?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
         }
 
         // ── Poll (OnUpdate thread) ───────────────────────────────────────────────────────────────
@@ -97,7 +96,7 @@ namespace HsbgCardLookup.Game
             {
                 // Raw match transition (every tick): a fresh match (false→true) clears the end latch.
                 bool isBg = false;
-                try { var gg = Core.Game; isBg = gg != null && gg.IsBattlegroundsMatch; } catch { }
+                try { var gg = HostServices.Game; isBg = gg != null && gg.IsBattlegroundsMatch; } catch { }
                 if (isBg && !_wasBgMatch) { _ended = false; ClearSuppressions(); }
                 _wasBgMatch = isBg;
 
@@ -273,7 +272,7 @@ namespace HsbgCardLookup.Game
             try
             {
                 var t = _trinkets; var a = _anomaly;
-                (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() =>
+                (HostServices.Overlay?.Dispatcher ?? _ui)?.Invoke(new Action(() =>
                 {
                     foreach (var s in t) s.Close();
                     a.Close();
@@ -289,7 +288,7 @@ namespace HsbgCardLookup.Game
             _current = this;
             if (_hooked) return;
             _hooked = true;
-            try { Hearthstone_Deck_Tracker.API.GameEvents.OnGameEnd.Add(new Action(() => _current?.MarkEnded())); }
+            try { HostServices.Game.GameEnded += () => _current?.MarkEnded(); }
             catch { /* event API absent → fall back to between-match hiding only */ }
         }
 
@@ -309,7 +308,7 @@ namespace HsbgCardLookup.Game
             var d = new Desired();
             try
             {
-                var g = Core.Game;
+                var g = HostServices.Game;
                 if (g == null || !g.IsBattlegroundsMatch || _ended) return d;   // not in match / post-game → hide all
                 d.InMatch = true;
 
@@ -324,7 +323,7 @@ namespace HsbgCardLookup.Game
                     // and Mysterious Orb as a second LESSER. In each of those a real trinket landed
                     // in an overflow box while box 0 or box 1 sat empty.
                     int next = 0;
-                    foreach (var e in Snapshot(g.Player?.Trinkets).OrderBy(x => x?.Id ?? int.MaxValue))
+                    foreach (var e in g.PlayerTrinkets().OrderBy(x => x?.Id ?? int.MaxValue))
                     {
                         var c = _store.Lookup(StripGold(e?.CardId));
                         if (c == null) continue;
@@ -337,7 +336,7 @@ namespace HsbgCardLookup.Game
                 try
                 {
                     // The active anomaly is whichever in-game entity maps to one of our anomaly cards.
-                    foreach (var e in Snapshot(g.Entities?.Values))
+                    foreach (var e in g.Entities())
                     {
                         var c = _store.Lookup(StripGold(e?.CardId));
                         if (c != null && string.Equals(c.CardType, "anomaly", StringComparison.OrdinalIgnoreCase))
@@ -427,11 +426,6 @@ namespace HsbgCardLookup.Game
             string.IsNullOrEmpty(cardId) ? cardId
                 : (cardId.EndsWith("_G", StringComparison.Ordinal) ? cardId.Substring(0, cardId.Length - 2) : cardId);
 
-        private static IEnumerable<Entity> Snapshot(IEnumerable<Entity> src)
-        {
-            try { return src == null ? new List<Entity>() : src.ToList(); }
-            catch { return new List<Entity>(); }
-        }
 
         private sealed class Desired
         {

@@ -26,8 +26,9 @@ using Hearthstone_Deck_Tracker;                       // Core
 using Hearthstone_Deck_Tracker.Hearthstone.Entities;  // Entity
 using HearthDb.Enums;                                  // GameTag, Zone, CardType
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Game;
 
-namespace HsbgCardLookup.Game
+namespace HsbgCardLookup.Host.Hdt
 {
     internal sealed class DarkGiftProbe
     {

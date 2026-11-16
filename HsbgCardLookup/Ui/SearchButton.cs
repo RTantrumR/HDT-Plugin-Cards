@@ -4,11 +4,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using Hearthstone_Deck_Tracker;                     // Core (the canvas is API.Core, qualified inline)
-using Hearthstone_Deck_Tracker.Utility.Extensions;  // OverlayExtensions
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Localization;
 using HsbgCardLookup.Update;
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
@@ -86,14 +85,14 @@ namespace HsbgCardLookup.Ui
 
             bool show = false;
             try { show = _config.ShowSearchButton && ArrangeSession.AllowsSearchButton
-                       && Core.Game != null && Core.Game.IsBattlegroundsMatch; }
+                       && HostServices.Game != null && HostServices.Game.IsBattlegroundsMatch; }
             catch { }
 
             string sig = show ? "1" : "0";
             if (sig == _lastSig) return;
             _lastSig = sig;
 
-            try { Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher?.BeginInvoke(new Action(() => Apply(show))); }
+            try { HostServices.Overlay?.Canvas?.Dispatcher?.BeginInvoke(new Action(() => Apply(show))); }
             catch { }
         }
 
@@ -107,7 +106,7 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
-                Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher?.BeginInvoke(new Action(() =>
+                HostServices.Overlay?.Canvas?.Dispatcher?.BeginInvoke(new Action(() =>
                 {
                     _updateNotice = notice;
                     RefreshBadge();
@@ -121,7 +120,7 @@ namespace HsbgCardLookup.Ui
         private void Apply(bool show)
         {
             if (!show) { HideIfShown(); return; }
-            var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null) return;
             if (!_attached)
             {
@@ -145,9 +144,9 @@ namespace HsbgCardLookup.Ui
         {
             try
             {
-                Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher?.Invoke(new Action(() =>
+                HostServices.Overlay?.Canvas?.Dispatcher?.Invoke(new Action(() =>
                 {
-                    var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+                    var canvas = HostServices.Overlay?.Canvas;
                     if (canvas == null || !_attached) return;
                     canvas.SizeChanged -= OnCanvasSizeChanged;
                     canvas.Children.Remove(_root);
@@ -202,7 +201,7 @@ namespace HsbgCardLookup.Ui
             };
 
             // Register with HDT's hover loop so the overlay window becomes clickable over the button.
-            try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+            try { HostServices.Overlay?.SetHitTestVisible(_root); } catch { }
         }
 
         private void BuildBadge()
@@ -253,9 +252,9 @@ namespace HsbgCardLookup.Ui
                 try { _toggle?.Invoke(); } catch { }
             };
 
-            var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             canvas?.Children.Add(_badge);
-            try { OverlayExtensions.SetIsOverlayHitTestVisible(_badge, true); } catch { }
+            try { HostServices.Overlay?.SetHitTestVisible(_badge); } catch { }
         }
 
         // Whether there's currently something worth showing the badge for — a plain "up to date" /
@@ -291,7 +290,7 @@ namespace HsbgCardLookup.Ui
 
         private void Layout()
         {
-            var canvas = Hearthstone_Deck_Tracker.API.Core.OverlayCanvas;
+            var canvas = HostServices.Overlay?.Canvas;
             if (canvas == null || _root == null) return;
             double cw = canvas.ActualWidth, ch = canvas.ActualHeight;
             if (cw <= 0 || ch <= 0) return;

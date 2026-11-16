@@ -1,4 +1,4 @@
-namespace HsbgCardLookup.Localization
+namespace HsbgCardLookup.Host.Hdt
 {
     /// <summary>
     /// The language HDT's own interface is set to (Options → Appearance → Language), as HDT's

@@ -4,10 +4,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
-using Hearthstone_Deck_Tracker;                 // Core
-using HearthDb.Enums;                            // GameTag
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Host;
 using HsbgCardLookup.Localization;
 using HsbgCardLookup.Search;
 using HsbgCardLookup.Ui;
@@ -115,7 +114,7 @@ namespace HsbgCardLookup.Game
                 if (_startFlag) { _startFlag = false; _ended = false; ResetMatch(); }
 
                 bool isBg = false;
-                try { var gg = Core.Game; isBg = gg != null && gg.IsBattlegroundsMatch; } catch { }
+                try { var gg = HostServices.Game; isBg = gg != null && gg.IsBattlegroundsMatch; } catch { }
                 if (isBg && !_wasBgMatch) { _ended = false; ResetMatch(); }
                 _wasBgMatch = isBg;
 
@@ -228,32 +227,25 @@ namespace HsbgCardLookup.Game
         {
             try
             {
-                var g = Core.Game;
+                var g = HostServices.Game;
                 if (g == null) { _buttonFound = false; return; }
-                try { _turn = g.GetTurnNumber(); } catch { }   // == the player-facing shop turn (verified)
+                try { _turn = g.TurnNumber; } catch { }   // == the player-facing shop turn (verified)
                 try { _duos = g.IsBattlegroundsDuosMatch; } catch { }
 
                 if (_gifts == null) _gifts = DarkGifts.Resolve(_store);   // site data, static fallback
                 if (_lobbyTribes.Count == 0) ReadLobbyTribes();           // may be empty early — keep retrying
 
-                Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity btn = null;
-                var ents = g.Entities;
-                if (ents != null)
+                IGameEntity btn = null;
+                if (_buttonId > 0)
+                    try { btn = g.Entity(_buttonId); } catch { btn = null; }
+                if (btn != null && !string.Equals(btn.CardId, ButtonCardId, StringComparison.OrdinalIgnoreCase))
+                    btn = null;
+                if (btn == null)
                 {
-                    if (_buttonId > 0)
-                        try { ents.TryGetValue(_buttonId, out btn); } catch { btn = null; }
-                    if (btn != null && !string.Equals(btn.CardId, ButtonCardId, StringComparison.OrdinalIgnoreCase))
-                        btn = null;
-                    if (btn == null)
+                    foreach (var e in g.Entities())
                     {
-                        List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity> all;
-                        try { all = new List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity>(ents.Values); }
-                        catch { all = new List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity>(); }
-                        foreach (var e in all)
-                        {
-                            string cid = null; try { cid = e?.CardId; } catch { }
-                            if (string.Equals(cid, ButtonCardId, StringComparison.OrdinalIgnoreCase)) { btn = e; break; }
-                        }
+                        string cid = null; try { cid = e?.CardId; } catch { }
+                        if (string.Equals(cid, ButtonCardId, StringComparison.OrdinalIgnoreCase)) { btn = e; break; }
                     }
                 }
 
@@ -261,8 +253,8 @@ namespace HsbgCardLookup.Game
                 {
                     _buttonFound = true;
                     _buttonId = btn.Id;
-                    int uses = Tag(btn, GameTag.TAG_SCRIPT_DATA_NUM_2);
-                    bool exhausted = Tag(btn, GameTag.EXHAUSTED) != 0;
+                    int uses = Tag(btn, Tags.TAG_SCRIPT_DATA_NUM_2);
+                    bool exhausted = Tag(btn, Tags.EXHAUSTED) != 0;
                     // The player just pressed the real button — the three choices are coming up, so
                     // the panel gets out of the way (it would be covering them). EXHAUSTED flips on
                     // the press and clears next turn, so only its RISING edge counts; the uses
@@ -270,9 +262,9 @@ namespace HsbgCardLookup.Game
                     if ((exhausted && !_exhausted) || (_uses > 0 && uses >= 0 && uses < _uses)) _open = false;
                     _exhausted = exhausted;
                     _uses = uses;
-                    _tierMin = Tag(btn, GameTag.TAG_SCRIPT_DATA_NUM_3);
-                    _tierMax = Tag(btn, GameTag.TAG_SCRIPT_DATA_NUM_4);
-                    _locked = Tag(btn, GameTag.LOCK_VISUAL) != 0;
+                    _tierMin = Tag(btn, Tags.TAG_SCRIPT_DATA_NUM_3);
+                    _tierMax = Tag(btn, Tags.TAG_SCRIPT_DATA_NUM_4);
+                    _locked = Tag(btn, Tags.LOCK_VISUAL) != 0;
                 }
                 else { _buttonFound = false; _buttonId = -1; }
 
@@ -284,14 +276,14 @@ namespace HsbgCardLookup.Game
         // Most common minion type on the player's board — drives the turn-6+ guaranteed-offer tip and
         // the green emphasis. Multi-type minions count once per type; Amalgam-style "All" is skipped
         // (it isn't a specific type). Ties keep every top type.
-        private void ReadTopTribes(Hearthstone_Deck_Tracker.Hearthstone.GameV2 g)
+        private void ReadTopTribes(IGameState g)
         {
             try
             {
                 var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity> minions;
-                try { minions = g.Player?.Minions?.ToList() ?? new List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity>(); }
-                catch { minions = new List<Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity>(); }
+                IList<IGameEntity> minions;
+                try { minions = g.PlayerMinions(); }
+                catch { minions = new List<IGameEntity>(); }
                 foreach (var e in minions)
                 {
                     string cid = null; try { cid = e?.CardId; } catch { }
@@ -312,7 +304,7 @@ namespace HsbgCardLookup.Game
             catch { }
         }
 
-        private static int Tag(Hearthstone_Deck_Tracker.Hearthstone.Entities.Entity e, GameTag t)
+        private static int Tag(IGameEntity e, int t)
         {
             try { return e.GetTag(t); } catch { return 0; }
         }
@@ -494,7 +486,7 @@ namespace HsbgCardLookup.Game
         {
             try
             {
-                var races = HearthMirror.Reflection.Client?.GetAvailableBattlegroundsRaces();
+                var races = HostServices.Memory?.LobbyTribes();
                 if (races == null) return;
                 foreach (var r in races)
                 {
@@ -510,18 +502,18 @@ namespace HsbgCardLookup.Game
             // TAG_RACE.ABERRATION by number: HearthDb 36.4.2 (the newest HDT ships) still
             // predates the tribe, so there is no Race member to switch on.
             if (race == 126) return "Aberration";
-            switch ((Race)race)
+            switch (race)   // TAG_RACE ids
             {
-                case Race.BEAST: return "Beast";
-                case Race.MECHANICAL: return "Mech";
-                case Race.MURLOC: return "Murloc";
-                case Race.NAGA: return "Naga";
-                case Race.QUILBOAR: return "Quilboar";
-                case Race.UNDEAD: return "Undead";
-                case Race.DEMON: return "Demon";
-                case Race.DRAGON: return "Dragon";
-                case Race.ELEMENTAL: return "Elemental";
-                case Race.PIRATE: return "Pirate";
+                case 20: return "Beast";
+                case 17: return "Mech";
+                case 14: return "Murloc";
+                case 92: return "Naga";
+                case 43: return "Quilboar";
+                case 11: return "Undead";
+                case 15: return "Demon";
+                case 24: return "Dragon";
+                case 18: return "Elemental";
+                case 23: return "Pirate";
                 default: return null;
             }
         }
@@ -738,14 +730,14 @@ namespace HsbgCardLookup.Game
             var p = _panel; var m = _marker;
             _panel = null; _marker = null;
             if (p == null && m == null) return;
-            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.Invoke(new Action(() => { p?.Close(); m?.Close(); })); }
+            try { (HostServices.Overlay?.Dispatcher ?? _ui)?.Invoke(new Action(() => { p?.Close(); m?.Close(); })); }
             catch { }
         }
 
         // The panel lives on HDT's overlay canvas, so its work belongs on that canvas' dispatcher.
         private void Marshal(Action action)
         {
-            try { (Hearthstone_Deck_Tracker.API.Core.OverlayCanvas?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
+            try { (HostServices.Overlay?.Dispatcher ?? _ui)?.BeginInvoke(action); } catch { }
         }
 
         private void ResetMatch()
@@ -787,9 +779,9 @@ namespace HsbgCardLookup.Game
             _current = this;
             if (_hooked) return;
             _hooked = true;
-            try { Hearthstone_Deck_Tracker.API.GameEvents.OnGameEnd.Add(new Action(() => _current?.MarkEnded())); }
+            try { HostServices.Game.GameEnded += () => _current?.MarkEnded(); }
             catch { }
-            try { Hearthstone_Deck_Tracker.API.GameEvents.OnGameStart.Add(new Action(() => _current?.MarkStarted())); }
+            try { HostServices.Game.GameStarted += () => _current?.MarkStarted(); }
             catch { }
         }
 

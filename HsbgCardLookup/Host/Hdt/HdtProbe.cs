@@ -1,7 +1,7 @@
 using System;
 using System.Reflection;
 
-namespace HsbgCardLookup.Localization
+namespace HsbgCardLookup.Host.Hdt
 {
     /// <summary>
     /// Reads HDT's own settings object without a compile-time reference: the member the language

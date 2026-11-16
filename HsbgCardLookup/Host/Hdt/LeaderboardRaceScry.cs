@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 
-namespace HsbgCardLookup.Game
+namespace HsbgCardLookup.Host.Hdt
 {
     /// <summary>
     /// Reads, straight out of the Hearthstone client's memory, the per-opponent minion-type counts
@@ -22,7 +22,7 @@ namespace HsbgCardLookup.Game
     /// Field names are the HS client's and can move with a patch; every read is guarded and a
     /// failure degrades to "no data" (the surfaces show nothing), logged once per match.
     /// </summary>
-    internal sealed class LeaderboardRaceScry
+    internal sealed class LeaderboardRaceScry : IRaceReader
     {
         private const int TagEntityId = 53;   // GAME_TAG.ENTITY_ID — the key HDT's entity table uses
 

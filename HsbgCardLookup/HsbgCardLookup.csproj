@@ -106,8 +106,6 @@
     <Compile Include="Config\PluginConfig.cs" />
     <Compile Include="Data\CardStore.cs" />
     <Compile Include="Localization\Locales.cs" />
-    <Compile Include="Localization\HdtProbe.cs" />
-    <Compile Include="Localization\HdtLanguage.cs" />
     <Compile Include="Localization\LocaleVocab.cs" />
     <Compile Include="Localization\LocaleTerms.cs" />
     <Compile Include="Localization\LocaleSync.cs" />
@@ -115,10 +113,7 @@
     <Compile Include="Localization\Strings.cs" />
     <Compile Include="Ui\Flags.cs" />
     <Compile Include="Data\TribeTally.cs" />
-    <Compile Include="Game\LeaderboardRaceScry.cs" />
     <Compile Include="Ui\TribeIcons.cs" />
-    <Compile Include="Game\GameStateProbe.cs" />
-    <Compile Include="Game\DarkGiftProbe.cs" />
     <Compile Include="Game\DarkGifts.cs" />
     <Compile Include="Game\DarkGiftWatcher.cs" />
     <Compile Include="Ui\DarkGiftPanel.cs" />
@@ -140,6 +135,13 @@
     <Compile Include="Net\AssetClient.cs" />
     <Compile Include="Net\PluginNotice.cs" />
     <Compile Include="Plugin.cs" />
+    <Compile Include="Host\Seams.cs" />
+    <Compile Include="Host\Hdt\HdtHost.cs" />
+    <Compile Include="Host\Hdt\HdtProbe.cs" />
+    <Compile Include="Host\Hdt\HdtLanguage.cs" />
+    <Compile Include="Host\Hdt\LeaderboardRaceScry.cs" />
+    <Compile Include="Host\Hdt\GameStateProbe.cs" />
+    <Compile Include="Host\Hdt\DarkGiftProbe.cs" />
     <Compile Include="Search\BgCard.cs" />
     <Compile Include="Search\Levenshtein.cs" />
     <Compile Include="Search\Aliases.cs" />

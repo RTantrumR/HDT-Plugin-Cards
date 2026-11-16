@@ -1480,7 +1480,7 @@ namespace HsbgCardLookup.Ui
 
         private static bool HearthstoneIsRunning()
         {
-            try { return Hearthstone_Deck_Tracker.User32.GetHearthstoneWindow() != System.IntPtr.Zero; }
+            try { return HsbgCardLookup.Host.HostServices.Shell?.IsHearthstoneRunning == true; }
             catch { return false; }
         }
 

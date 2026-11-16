@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System.Windows.Threading;
 using HsbgCardLookup.Config;
 using HsbgCardLookup.Data;
+using HsbgCardLookup.Host;
 using HsbgCardLookup.Search;
 
 namespace HsbgCardLookup.Localization
@@ -68,7 +69,7 @@ namespace HsbgCardLookup.Localization
             _log?.Invoke("Strings: " + Strings.LoadInfo);
             LocaleTerms.Load();
             _log?.Invoke("LocaleTerms: " + LocaleTerms.LoadInfo);
-            HdtCode = HdtLanguage.Detect();
+            HdtCode = HostServices.Shell?.HostLanguage();
             Apply(Resolve(Preference, HdtCode), force: true);
             _log?.Invoke("Card language: " + Describe());
         }
@@ -77,7 +78,7 @@ namespace HsbgCardLookup.Localization
         /// From cache only; a missing snapshot waits for <see cref="EnsureDataAsync"/>.</summary>
         public void Refresh()
         {
-            if (string.IsNullOrEmpty(Preference)) HdtCode = HdtLanguage.Detect();
+            if (string.IsNullOrEmpty(Preference)) HdtCode = HostServices.Shell?.HostLanguage();
             Apply(Resolve(Preference, HdtCode), force: false);
         }
 
@@ -89,7 +90,7 @@ namespace HsbgCardLookup.Localization
             var now = DateTime.UtcNow;
             if ((now - _lastHdtPoll).TotalSeconds < 60) return;
             _lastHdtPoll = now;
-            string code = HdtLanguage.Detect();
+            string code = HostServices.Shell?.HostLanguage();
             if (string.Equals(code, HdtCode, StringComparison.Ordinal)) return;
             HdtCode = code;
             _ui.BeginInvoke(new Action(() => Apply(Resolve(Preference, HdtCode), force: false)));

@@ -8,10 +8,9 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using Hearthstone_Deck_Tracker.API;                     // Core.OverlayCanvas
-using Hearthstone_Deck_Tracker.Utility.Extensions;      // OverlayExtensions
 using HsbgCardLookup.Data;
 using HsbgCardLookup.Localization;
+using HsbgCardLookup.Host;
 
 namespace HsbgCardLookup.Ui
 {
@@ -94,7 +93,7 @@ namespace HsbgCardLookup.Ui
         /// canvas for an off-game preview. Held per instance rather than swapped globally, so a preview
         /// can never capture the live in-match panel's attach (and vice versa) — _host is readonly and
         /// _attached caches, so an instance is bound to one canvas for its whole life.</summary>
-        private Canvas Host => _host ?? Core.OverlayCanvas;
+        private Canvas Host => _host ?? HostServices.Overlay?.Canvas;
 
         public MmrSidePanel() : this(null) { }
 
@@ -282,7 +281,7 @@ namespace HsbgCardLookup.Ui
 
                 // Registers with HDT's hover loop so the overlay stops being click-through over this
                 // element. Meaningless for a preview, which is not in HDT's overlay at all.
-                try { OverlayExtensions.SetIsOverlayHitTestVisible(_root, true); } catch { }
+                try { HostServices.Overlay?.SetHitTestVisible(_root); } catch { }
             }
         }
 
